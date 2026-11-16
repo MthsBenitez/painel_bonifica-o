@@ -1798,6 +1798,9 @@ storage: {
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
+                if (tabId === 'bi_banco_horas') {
+                    return this.isAdmin || tipo === 'Dev';
+                }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
                 if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
@@ -6169,6 +6172,7 @@ storage: {
                     horario: isIntegracao ? 'Integral' : (isReciclagem ? '08:00 às 17:00' : '__personalizado__'),
                     quantidadeAlunos: isReciclagem ? 10 : 0,
                     temaReciclagem: '',
+                    observacoesReciclagem: '',
                     treinadorMatricula: curUser.matricula || (app.isAdmin ? 'admin' : '-'),
                     treinadorNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a)'),
                     responsavelIntegracaoNome: curUser.nome || (app.isAdmin ? 'Administração Softmarketing' : 'Instrutor(a)'),
@@ -6315,6 +6319,7 @@ storage: {
                 const horaEl = document.getElementById('turma-input-horario');
                 const qtdEl = document.getElementById('rec-input-qtd');
                 const temaEl = document.getElementById('rec-input-tema');
+                const obsEl = document.getElementById('rec-input-obs');
                 const matEl = document.getElementById('turma-input-treinador-mat');
                 const nomeEl = document.getElementById('turma-input-treinador-nome');
 
@@ -6331,6 +6336,7 @@ storage: {
                 }
                 if (qtdEl) t.quantidadeAlunos = Math.max(0, parseInt(qtdEl.value, 10) || 0);
                 if (temaEl) t.temaReciclagem = (temaEl.value || '').trim();
+                if (obsEl) t.observacoesReciclagem = (obsEl.value || '').trim();
 
                 if (app.currentUser?.matricula && !app.isAdmin) {
                     t.treinadorMatricula = app.currentUser.matricula;
@@ -10482,24 +10488,28 @@ storage: {
                 validateField(el) {
                     if (!el || el.type === 'hidden' || el.type === 'button' || el.type === 'submit' || el.type === 'checkbox' || el.type === 'radio') return true;
                     if (el.readOnly || el.disabled) return true;
-                    
+
                     const val = el.value;
+                    // Não exibe erro na tela apenas por sair de uma caixa de texto ainda vazia (validação ocorre apenas ao enviar o formulário)
+                    if (!String(val || '').trim()) {
+                        this.clearError(el);
+                        el.classList.remove('is-valid-field');
+                        return true;
+                    }
+
                     let isValid = true;
                     let errorMsg = '';
 
-                    if (el.hasAttribute('required') && !this.rules.required.test(val)) {
-                        isValid = false;
-                        errorMsg = el.getAttribute('data-error-required') || 'Este campo é obrigatório e precisa ser preenchido.';
-                    } else if (el.type === 'email' && !this.rules.email.test(val)) {
+                    if (el.type === 'email' && !this.rules.email.test(val)) {
                         isValid = false;
                         errorMsg = 'Insira um e-mail válido como nome@empresa.com.';
-                    } else if (el.type === 'password' && val && !this.rules.password.test(val)) {
+                    } else if (el.type === 'password' && !this.rules.password.test(val)) {
                         isValid = false;
                         errorMsg = 'A senha deve conter no mínimo 6 caracteres.';
-                    } else if (el.type === 'number' && val && !this.rules.numeric.test(val)) {
+                    } else if (el.type === 'number' && !this.rules.numeric.test(val)) {
                         isValid = false;
                         errorMsg = 'Insira um valor numérico válido.';
-                    } else if (el.type === 'date' && val && !this.rules.date.test(val)) {
+                    } else if (el.type === 'date' && !this.rules.date.test(val)) {
                         isValid = false;
                         errorMsg = 'Selecione uma data válida no formato DD/MM/AAAA.';
                     }
@@ -10509,9 +10519,7 @@ storage: {
                         return false;
                     } else {
                         this.clearError(el);
-                        if (val && String(val).trim().length > 0) {
-                            el.classList.add('is-valid-field');
-                        }
+                        el.classList.add('is-valid-field');
                         return true;
                     }
                 },
@@ -13686,7 +13694,7 @@ storage: {
                 _saveReviewChecklist(cur) {
                     const mat = this.getUserMat();
                     const clean = (cur && typeof cur === 'object' && !Array.isArray(cur)) ? { ...cur } : {};
-                    try { localStorage.setItem(this.getChe          try { localStorage.setItem(this.getChecklistKey(mat), JSON.stringify(clean)); } catch (e) {}
+                    try { localStorage.setItem(this.getChecklistKey(mat), JSON.stringify(clean)); } catch (e) {}
 
                     const meta = this._readLocalMeta(mat);
                     const ts = this._nextTimestamp(meta.updatedAt);
@@ -13828,7 +13836,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -13872,6 +13880,11 @@ storage: {
                         if (base.includes('treinamento_capacitacao') || base.includes('csat_nps')) {
                             base = base.filter(id => id !== 'treinamento_capacitacao' && id !== 'csat_nps');
                             if (!base.includes('treinamentos')) base.push('treinamentos');
+                        }
+                        if (g !== 'Dev') {
+                            base = base.filter(id => id !== 'bi_banco_horas');
+                        } else if (!base.includes('bi_banco_horas')) {
+                            base.push('bi_banco_horas');
                         }
                         result[g] = [...new Set(base)];
                     });
@@ -13948,13 +13961,22 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'apresentacao_dental_uni'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
+                        if (tipo !== 'Dev') {
+                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
+                        } else if (!savedTabs.includes('bi_banco_horas')) {
+                            savedTabs.push('bi_banco_horas');
+                        }
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
-                        if (!hasAnyAdminSaved || savedTabs.length <= 2) return [...new Set([...savedTabs, ...presetTabs])];
+                        if (!hasAnyAdminSaved || savedTabs.length <= 2) {
+                            const merged = [...new Set([...savedTabs, ...presetTabs])];
+                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas');
+                        }
                         if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
-                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs)];
+                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
+                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas'))];
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
@@ -16524,7 +16546,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'apresentacao_dental_uni'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -16781,6 +16803,7 @@ storage: {
                             else if(tabId === 'regras') this.renderView_Regras(viewDiv);
                             else if(tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') this.renderView_Treinamentos(viewDiv);
                             else if(tabId === 'teste_duolingo') this.renderView_TesteDuolingo(viewDiv);
+                            else if(tabId === 'bi_banco_horas') this.renderView_BIBancoHoras(viewDiv);
                             else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
@@ -22444,6 +22467,11 @@ storage: {
                                                                         <strong>Tema:</strong> ${app.diarioBordo._escapeDbHtml(t.temaReciclagem)}
                                                                     </div>
                                                                 ` : ''}
+                                                                ${t.observacoesReciclagem ? `
+                                                                    <div class="pt-1 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 rounded-xl px-2.5 py-1.5 line-clamp-2" title="${app.diarioBordo._escapeDbHtml(t.observacoesReciclagem)}">
+                                                                        <strong><i class="fa-solid fa-triangle-exclamation mr-1"></i>Obs.:</strong> ${app.diarioBordo._escapeDbHtml(t.observacoesReciclagem)}
+                                                                    </div>
+                                                                ` : ''}
                                                                 <div class="pt-2 border-t border-violet-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
                                                                     <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
                                                                         <i class="fa-solid fa-paperclip text-violet-500"></i> Lista de Presença:
@@ -23050,6 +23078,12 @@ storage: {
                                                 </label>
                                                 <input type="text" id="rec-input-tema" value="${app.diarioBordo._escapeDbHtml(t.temaReciclagem || '')}" placeholder="Ex: Atualização de procedimento, abordagem, qualidade no atendimento..." class="w-full px-3.5 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
                                             </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                                <i class="fa-solid fa-clipboard-list text-violet-600 mr-1"></i> Observações / Eventos Importantes Acontecidos (Opcional):
+                                            </label>
+                                            <textarea id="rec-input-obs" rows="3" placeholder="Registre ocorrências relevantes, instabilidades de sistema, alterações de horário, atrasos ou eventos importantes acontecidos na reciclagem..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500 leading-relaxed">${app.diarioBordo._escapeDbHtml(t.observacoesReciclagem || '')}</textarea>
                                         </div>
                                     </div>
 
@@ -28258,9 +28292,15 @@ storage: {
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-2 sm:gap-3">
-                                        <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 shadow-xs" title="Extrair Relatório Detalhado em PDF para encaminhar aos gestores">
-                                            <i class="fa-solid fa-file-pdf text-rose-600"></i> Extrair PDF
+                                    <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                                        <button type="button" onclick="app.ui.copiarResumoGerenteIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold text-xs border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1.5 shadow-xs cursor-pointer" title="Copiar resumo executivo pronto para enviar à gerência">
+                                            <i class="fa-solid fa-copy text-indigo-600 dark:text-indigo-400"></i> Resumo Gerente
+                                        </button>
+                                        <button type="button" onclick="app.ui.gerarPDFSoGanttIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-bold text-xs border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1.5 shadow-xs cursor-pointer" title="Baixar PDF exclusivo somente com o gráfico visual Gantt">
+                                            <i class="fa-solid fa-chart-gantt text-emerald-600 dark:text-emerald-400"></i> PDF Só Gantt
+                                        </button>
+                                        <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition flex items-center gap-1.5 shadow-xs cursor-pointer" title="Extrair Relatório Detalhado Completo em PDF para encaminhar aos gestores">
+                                            <i class="fa-solid fa-file-pdf text-rose-600"></i> PDF Completo
                                         </button>
                                         <button type="button" onclick="app.ui.togglePausarImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-3 py-1.5 rounded-xl font-bold text-xs border transition flex items-center gap-1.5 shadow-xs ${p.status === 'pausado' ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800'}" title="${p.status === 'pausado' ? 'Retomar cronograma do projeto' : 'Colocar projeto temporariamente em pausa'}">
                                             <i class="fa-solid ${p.status === 'pausado' ? 'fa-play text-emerald-600' : 'fa-pause text-amber-600'}"></i> ${p.status === 'pausado' ? 'Retomar' : 'Pausar'}
@@ -28316,12 +28356,18 @@ storage: {
                                         <span class="flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
                                             <i class="fa-solid fa-chart-gantt text-indigo-500"></i> Cronograma Gantt das Etapas
                                         </span>
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
                                             <span class="text-[11px] tabular-nums bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg">
                                                 <i class="fa-regular fa-calendar text-slate-400 mr-1"></i>${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis)
                                             </span>
-                                            <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-2.5 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 shadow-xs" title="Extrair Relatório Detalhado do Gantt em PDF">
-                                                <i class="fa-solid fa-file-pdf text-rose-600"></i> Relatório PDF
+                                            <button type="button" onclick="app.ui.copiarResumoGerenteIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-2.5 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 font-bold text-[10px] border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1 shadow-xs cursor-pointer" title="Copiar resumo executivo rápido para a gerência">
+                                                <i class="fa-solid fa-copy text-indigo-600"></i> Copiar Resumo
+                                            </button>
+                                            <button type="button" onclick="app.ui.gerarPDFSoGanttIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-2.5 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-bold text-[10px] border border-emerald-200 dark:border-emerald-800 transition flex items-center gap-1 shadow-xs cursor-pointer" title="Extrair PDF apenas com o Gráfico Gantt">
+                                                <i class="fa-solid fa-chart-gantt text-emerald-600"></i> PDF Só Gantt
+                                            </button>
+                                            <button type="button" onclick="app.ui.gerarPDFImplantacaoIA(this.getAttribute('data-opkey'))" data-opkey="${esc(p.key)}" class="px-2.5 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-bold text-[10px] border border-rose-200 dark:border-rose-800 transition flex items-center gap-1 shadow-xs cursor-pointer" title="Extrair Relatório Completo em PDF">
+                                                <i class="fa-solid fa-file-pdf text-rose-600"></i> PDF Completo
                                             </button>
                                         </div>
                                     </div>
@@ -29547,6 +29593,414 @@ storage: {
                     );
                 },
 
+                _hexToRgbIA(hex) {
+                    const clean = String(hex || '').replace('#', '').trim();
+                    if (/^[0-9a-fA-F]{6}$/.test(clean)) {
+                        return [
+                            parseInt(clean.slice(0, 2), 16),
+                            parseInt(clean.slice(2, 4), 16),
+                            parseInt(clean.slice(4, 6), 16)
+                        ];
+                    }
+                    return [79, 70, 229];
+                },
+
+                copiarResumoGerenteIA(opKey) {
+                    const plano = this._findPlanoIA(opKey);
+                    if (!plano) {
+                        return app.ui.showAlert("Plano Não Encontrado", "Não foi possível localizar os dados desta implantação.", "error");
+                    }
+                    const cleanText = (s) => String(app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(s || '') : (s || '')).trim();
+                    const opNome = cleanText(plano.operacao || 'Operação');
+                    const etapas = Array.isArray(plano.etapas) ? plano.etapas : [];
+                    const total = etapas.length;
+                    const concluidasArr = etapas.filter(e => e.concluido);
+                    const pendentesArr = etapas.filter(e => !e.concluido);
+                    const pct = total > 0 ? Math.round((concluidasArr.length / total) * 100) : 0;
+                    const hojeISO = new Date().toISOString().split('T')[0];
+
+                    const statusLabel = plano.status === 'pausado'
+                        ? 'Em Pausa'
+                        : (plano.status === 'implantado' || (total > 0 && concluidasArr.length === total)
+                            ? 'Implantado (100%)'
+                            : (pct > 0 || plano.status === 'em_andamento' ? `Em Implantação (${pct}%)` : `Planejado (${pct}%)`));
+
+                    const dtProjIni = plano.dataInicio || (etapas[0] && etapas[0].dataInicio) || hojeISO;
+                    let dtMaxFim = dtProjIni;
+                    const pasAbertos = [];
+                    let ultimaAtt = null;
+
+                    etapas.forEach((e, idx) => {
+                        if (e.dataFim && !e.semPrevisao && e.dataFim > dtMaxFim) dtMaxFim = e.dataFim;
+                        (e.planosAcao || []).forEach(pa => {
+                            if (!pa.concluido) pasAbertos.push({ ...pa, etapaNum: idx + 1, etapaNome: cleanText(e.nome) });
+                        });
+                        (e.atualizacoes || []).forEach(att => {
+                            if (!ultimaAtt || Number(att.timestamp || 0) > Number(ultimaAtt.timestamp || 0)) {
+                                ultimaAtt = { ...att, etapaNum: idx + 1, etapaNome: cleanText(e.nome) };
+                            }
+                        });
+                    });
+
+                    const etapaAtual = pendentesArr[0] || null;
+                    const etapasAtrasadas = pendentesArr.filter(e => e.dataFim && !e.semPrevisao && e.dataFim < hojeISO);
+
+                    const linhas = [
+                        `*PANORAMA EXECUTIVO DE IMPLANTAÇÃO — ${opNome.toUpperCase()}*`,
+                        `• Status Geral: *${statusLabel}* (${concluidasArr.length}/${total} etapas concluídas)`,
+                        `• Quadro / Responsáveis: ${plano.hc || 0} operadores | Monitor: ${cleanText(plano.monitorNome || '-')} | Treinador: ${cleanText(plano.treinadorNome || '-')}`,
+                        `• Janela do Projeto: ${this._formatarDataBR(dtProjIni)} até ${this._formatarDataBR(dtMaxFim)} (${this._diferencaDias(dtProjIni, dtMaxFim)} dias úteis)`
+                    ];
+
+                    if (etapaAtual) {
+                        const prevFim = etapaAtual.semPrevisao ? 'Sem previsão fechada' : this._formatarDataBR(etapaAtual.dataFim || '');
+                        const atrasoTag = (etapaAtual.dataFim && !etapaAtual.semPrevisao && etapaAtual.dataFim < hojeISO) ? ' [EM ATRASO]' : '';
+                        linhas.push(`• Foco Atual: ${cleanText(etapaAtual.nome)} (Previsão: ${prevFim})${atrasoTag}`);
+                    } else if (total > 0) {
+                        linhas.push(`• Foco Atual: Todas as etapas do cronograma foram concluídas.`);
+                    }
+
+                    if (etapasAtrasadas.length > 0) {
+                        linhas.push(`• Ponto de Atenção (Cronograma): ${etapasAtrasadas.length} etapa(s) com prazo vencido.`);
+                    }
+
+                    if (concluidasArr.length > 0) {
+                        linhas.push('');
+                        linhas.push(`*Etapas Concluídas (${concluidasArr.length}):*`);
+                        concluidasArr.forEach(e => {
+                            const dtConc = e.dataConclusao ? ` em ${this._formatarDataBR(e.dataConclusao)}` : '';
+                            linhas.push(`- ${cleanText(e.nome)}${dtConc}`);
+                        });
+                    }
+
+                    if (pendentesArr.length > 0) {
+                        linhas.push('');
+                        linhas.push(`*Em Andamento / Próximas Etapas (${pendentesArr.length}):*`);
+                        pendentesArr.forEach(e => {
+                            const dtP = e.semPrevisao ? 'Sem previsão' : `${this._formatarDataBR(e.dataInicio || dtProjIni)} a ${this._formatarDataBR(e.dataFim || dtProjIni)}`;
+                            const atraso = (e.dataFim && !e.semPrevisao && e.dataFim < hojeISO) ? ' [ATRASADA]' : '';
+                            linhas.push(`- ${cleanText(e.nome)} (${dtP})${atraso}`);
+                        });
+                    }
+
+                    if (pasAbertos.length > 0) {
+                        linhas.push('');
+                        linhas.push(`*Planos de Ação em Aberto (${pasAbertos.length}):*`);
+                        pasAbertos.slice(0, 5).forEach(pa => {
+                            linhas.push(`- [Etp ${pa.etapaNum}] ${cleanText(pa.titulo || pa.descricao || 'Ação')} (Resp: ${cleanText(pa.responsavel || '-')}, Prazo: ${this._formatarDataBR(pa.prazo || '')})`);
+                        });
+                    } else {
+                        linhas.push(`• Planos de Ação: Sem pendências em aberto.`);
+                    }
+
+                    if (ultimaAtt) {
+                        linhas.push(`• Último Registro: [${cleanText(ultimaAtt.dataHora)}] ${cleanText(ultimaAtt.autorNome || '')} — "${cleanText(ultimaAtt.texto || '')}"`);
+                    }
+
+                    const textoFinal = linhas.join('\n');
+                    const showPreviewModal = (copiadoOk) => {
+                        const existing = document.getElementById('gantt-resumo-gerente-modal');
+                        if (existing) existing.remove();
+                        const esc = app.utils.escapeHtml;
+                        const modal = document.createElement('div');
+                        modal.id = 'gantt-resumo-gerente-modal';
+                        modal.className = 'fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/65 dark:bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
+                        modal.innerHTML = `
+                            <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden">
+                                <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-slate-900 text-white flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center text-lg">
+                                            <i class="fa-solid fa-copy"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-base font-black">Resumo Executivo para Gerência</h3>
+                                            <p class="text-[11px] text-indigo-100">${copiadoOk ? 'Copiado automaticamente para sua área de transferência! Basta colar (Ctrl+V).' : 'Clique em Copiar Texto para encaminhar via WhatsApp, Teams ou E-mail.'}</p>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="document.getElementById('gantt-resumo-gerente-modal')?.remove()" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm cursor-pointer">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                <div class="p-6 space-y-3">
+                                    <textarea id="gantt-resumo-gerente-ta" rows="12" class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 leading-relaxed outline-none focus:ring-2 focus:ring-indigo-500">${esc(textoFinal)}</textarea>
+                                </div>
+                                <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2">
+                                    <button type="button" onclick="document.getElementById('gantt-resumo-gerente-modal')?.remove()" class="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer">
+                                        Fechar
+                                    </button>
+                                    <button type="button" onclick="const ta=document.getElementById('gantt-resumo-gerente-ta'); if(ta){ ta.select(); navigator.clipboard?.writeText(ta.value); app.ui.showNotification('Resumo copiado para colar!', 'success', 2500); }" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer flex items-center gap-1.5">
+                                        <i class="fa-solid fa-copy"></i> Copiar Texto
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        document.body.appendChild(modal);
+                    };
+
+                    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                        navigator.clipboard.writeText(textoFinal).then(() => showPreviewModal(true)).catch(() => showPreviewModal(false));
+                    } else {
+                        showPreviewModal(false);
+                    }
+                },
+
+                gerarPDFSoGanttIA(opKey) {
+                    try {
+                        const plano = this._findPlanoIA(opKey);
+                        if (!plano) {
+                            return app.ui.showAlert("Plano Não Encontrado", "Não foi possível localizar os dados desta implantação.", "error");
+                        }
+                        if (!window.jspdf || !window.jspdf.jsPDF) {
+                            return app.ui.showAlert("Aviso", "Gerador PDF (jsPDF) ainda está carregando. Tente novamente em instantes.", "warning");
+                        }
+
+                        const cleanText = (s) => String(app.utils && app.utils.fixEncoding ? app.utils.fixEncoding(s || '') : (s || '')).trim();
+                        const opNome = cleanText(plano.operacao || 'Operação');
+                        const etapas = Array.isArray(plano.etapas) ? plano.etapas : [];
+                        const totalEtapas = etapas.length;
+                        const concluidas = etapas.filter(e => e.concluido).length;
+                        const pct = totalEtapas > 0 ? Math.round((concluidas / totalEtapas) * 100) : 0;
+                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const hojeBR = new Date().toLocaleDateString('pt-BR');
+                        const horaBR = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                        const statusTxt = plano.status === 'pausado'
+                            ? 'EM PAUSA'
+                            : (plano.status === 'implantado'
+                                ? 'IMPLANTADO (100%)'
+                                : (plano.status === 'em_andamento' ? `EM IMPLANTAÇÃO (${pct}%)` : `PLANEJADO (${pct}%)`));
+
+                        // Calcula janela min..max idêntica ao cronograma Gantt da tela
+                        const dtProjIniStr = plano.dataInicio || hojeISO;
+                        let minMs = this._parseDateMs(dtProjIniStr, Date.now());
+                        let maxMs = minMs + (86400000 * 7);
+                        etapas.forEach(e => {
+                            if (e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs);
+                                if (!isNaN(t) && t < minMs) minMs = t;
+                            }
+                            if (e.dataFim && !e.semPrevisao) {
+                                const t = this._parseDateMs(e.dataFim, maxMs);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            } else if (e.semPrevisao && e.dataInicio) {
+                                const t = this._parseDateMs(e.dataInicio, minMs) + (86400000 * 14);
+                                if (!isNaN(t) && t > maxMs) maxMs = t;
+                            }
+                        });
+                        if (isNaN(minMs)) minMs = Date.now();
+                        if (isNaN(maxMs) || maxMs <= minMs) maxMs = minMs + (86400000 * 7);
+
+                        const minDateISO = new Date(minMs).toISOString().split('T')[0];
+                        const maxDateISO = new Date(maxMs).toISOString().split('T')[0];
+                        const totalDiasUteis = this._diferencaDias(minDateISO, maxDateISO);
+                        const spanMs = Math.max(86400000, maxMs - minMs);
+                        const totalSpanDias = Math.max(1, Math.round(spanMs / 86400000) + 1);
+                        const numTicks = Math.min(7, Math.max(4, Math.round(totalSpanDias / 5)));
+
+                        const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                        const pageWidth = doc.internal.pageSize.getWidth(); // 297
+                        const pageHeight = doc.internal.pageSize.getHeight(); // 210
+                        const marginX = 12;
+                        const contentW = pageWidth - (marginX * 2); // 273mm
+                        const labelColW = 84;
+                        const chartX = marginX + labelColW + 4;
+                        const chartW = contentW - labelColW - 4; // 185mm
+
+                        const drawHeaderAndRuler = (isContinuation = false) => {
+                            doc.setFillColor(15, 23, 42);
+                            doc.rect(marginX, 10, contentW, 20, 'F');
+                            doc.setFillColor(79, 70, 229);
+                            doc.rect(marginX, 30, contentW, 1.2, 'F');
+
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(12);
+                            doc.setTextColor(255, 255, 255);
+                            doc.text(`CRONOGRAMA GANTT — ${opNome.toUpperCase()}${isContinuation ? ' (CONTINUAÇÃO)' : ''}`, marginX + 5, 18);
+
+                            doc.setFont("helvetica", "normal");
+                            doc.setFontSize(8);
+                            doc.setTextColor(203, 213, 225);
+                            doc.text(`Status: ${statusTxt}  •  Etapas: ${concluidas}/${totalEtapas} (${pct}%)  •  Período: ${this._formatarDataBR(minDateISO)} a ${this._formatarDataBR(maxDateISO)} (${totalDiasUteis} dias úteis)`, marginX + 5, 25);
+
+                            doc.setFontSize(7.5);
+                            doc.text(`Monitor: ${cleanText(plano.monitorNome || '-')} | Treinador: ${cleanText(plano.treinadorNome || '-')}`, marginX + contentW - 5, 18, { align: 'right' });
+                            doc.text(`HC: ${plano.hc || 0} op. | Emitido em ${hojeBR} ${horaBR}`, marginX + contentW - 5, 25, { align: 'right' });
+
+                            // Régua superior do calendário
+                            const rulerY = 35;
+                            doc.setFillColor(241, 245, 249);
+                            doc.setDrawColor(203, 213, 225);
+                            doc.setLineWidth(0.2);
+                            doc.rect(marginX, rulerY, contentW, 9, 'FD');
+
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(7.5);
+                            doc.setTextColor(51, 65, 85);
+                            doc.text("ETAPA / RESPONSÁVEL / PERÍODO", marginX + 3, rulerY + 5.8);
+
+                            // Ticks da linha do tempo
+                            for (let t = 0; t < numTicks; t++) {
+                                const frac = numTicks > 1 ? (t / (numTicks - 1)) : 0;
+                                const tx = chartX + (frac * chartW);
+                                const tMs = minMs + (frac * spanMs);
+                                const tIso = new Date(tMs).toISOString().split('T')[0];
+                                doc.setDrawColor(203, 213, 225);
+                                doc.line(tx, rulerY + 6.5, tx, rulerY + 9);
+                                doc.setFont("helvetica", "bold");
+                                doc.setFontSize(7);
+                                doc.setTextColor(71, 85, 105);
+                                const alignOpt = t === 0 ? 'left' : (t === numTicks - 1 ? 'right' : 'center');
+                                doc.text(this._formatarDiaMes(tIso), tx, rulerY + 5, { align: alignOpt });
+                            }
+
+                            return rulerY + 10;
+                        };
+
+                        const drawHojeLineSegment = (yTop, yBottom) => {
+                            const hojeMs = this._parseDateMs(hojeISO, Date.now());
+                            if (hojeMs >= minMs && hojeMs <= maxMs) {
+                                const frac = Math.min(1, Math.max(0, (hojeMs - minMs) / spanMs));
+                                const hx = chartX + (frac * chartW);
+                                doc.setDrawColor(239, 68, 68);
+                                doc.setLineWidth(0.45);
+                                doc.line(hx, yTop, hx, yBottom);
+                            }
+                        };
+
+                        let curY = drawHeaderAndRuler(false);
+                        let gridTopY = curY;
+                        const rowH = 15;
+                        const bottomLimit = pageHeight - 20;
+
+                        if (etapas.length === 0) {
+                            doc.setFont("helvetica", "italic");
+                            doc.setFontSize(9);
+                            doc.setTextColor(100, 116, 139);
+                            doc.text("Nenhuma etapa cadastrada neste cronograma Gantt.", marginX + 5, curY + 10);
+                        } else {
+                            etapas.forEach((etp, idx) => {
+                                if (curY + rowH > bottomLimit) {
+                                    drawHojeLineSegment(gridTopY, curY);
+                                    doc.addPage();
+                                    curY = drawHeaderAndRuler(true);
+                                    gridTopY = curY;
+                                }
+
+                                // Fundo alternado da linha
+                                if (idx % 2 === 0) {
+                                    doc.setFillColor(248, 250, 252);
+                                } else {
+                                    doc.setFillColor(255, 255, 255);
+                                }
+                                doc.setDrawColor(226, 232, 240);
+                                doc.setLineWidth(0.18);
+                                doc.rect(marginX, curY, contentW, rowH, 'FD');
+
+                                // Linhas verticais sutis dos marcos
+                                for (let t = 0; t < numTicks; t++) {
+                                    const frac = numTicks > 1 ? (t / (numTicks - 1)) : 0;
+                                    const tx = chartX + (frac * chartW);
+                                    doc.setDrawColor(241, 245, 249);
+                                    doc.line(tx, curY, tx, curY + rowH);
+                                }
+
+                                // Coluna Esquerda: Título e datas
+                                const etpNome = cleanText(etp.nome || `Etapa ${idx + 1}`);
+                                const nomeLines = doc.splitTextToSize(etpNome, labelColW - 6).slice(0, 2);
+                                doc.setFont("helvetica", "bold");
+                                doc.setFontSize(7.5);
+                                doc.setTextColor(15, 23, 42);
+                                doc.text(nomeLines, marginX + 3, curY + 4.8);
+
+                                const dtIniB = etp.dataInicio ? this._formatarDataBR(etp.dataInicio) : '-';
+                                const dtFimB = etp.semPrevisao ? 'Sem Previsão' : (etp.dataFim ? this._formatarDataBR(etp.dataFim) : '-');
+                                const respB = cleanText(etp.responsavelNome || etp.responsavelTipo || 'Monitor');
+                                doc.setFont("helvetica", "normal");
+                                doc.setFontSize(6.5);
+                                doc.setTextColor(100, 116, 139);
+                                doc.text(`${dtIniB} a ${dtFimB}  •  ${respB.slice(0, 24)}`, marginX + 3, curY + 12.6);
+
+                                // Coluna Direita: Barra Gantt posicionada proporcionalmente
+                                const isSemPrev = !!etp.semPrevisao;
+                                const eStartMs = this._parseDateMs(etp.dataInicio, minMs);
+                                const eEndMs = isSemPrev
+                                    ? maxMs
+                                    : this._parseDateMs(etp.dataFim, eStartMs + (parseInt(etp.diasEstimados, 10) || 5) * 86400000);
+                                const offsetFrac = Math.min(0.97, Math.max(0, (eStartMs - minMs) / spanMs));
+                                const durMs = Math.max(86400000, eEndMs - eStartMs + 86400000);
+                                const widthFrac = isSemPrev
+                                    ? Math.max(0.12, 1 - offsetFrac)
+                                    : Math.min(1 - offsetFrac, Math.max(0.04, durMs / spanMs));
+
+                                const barX = chartX + (offsetFrac * chartW);
+                                const barW = Math.max(6, widthFrac * chartW);
+                                const barY = curY + 3.5;
+                                const barH = 8;
+
+                                const isAtrasada = !etp.concluido && !isSemPrev && etp.dataFim && etp.dataFim < hojeISO;
+                                const rgb = etp.concluido
+                                    ? [16, 185, 129]
+                                    : (isAtrasada ? [244, 63, 94] : this._hexToRgbIA(etp.cor || '#4f46e5'));
+
+                                doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                                doc.roundedRect(barX, barY, barW, barH, 1.5, 1.5, 'F');
+
+                                const statusMini = etp.concluido
+                                    ? 'CONCLUÍDO'
+                                    : (isAtrasada ? 'EM ATRASO' : (isSemPrev ? 'CONTÍNUO' : `${etp.diasEstimados || 1}d úteis`));
+                                doc.setFont("helvetica", "bold");
+                                doc.setFontSize(6.5);
+                                doc.setTextColor(255, 255, 255);
+                                if (barW >= 18) {
+                                    doc.text(statusMini, barX + (barW / 2), barY + 5.2, { align: 'center' });
+                                } else {
+                                    doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+                                    const labelX = (barX + barW + 18 <= chartX + chartW) ? (barX + barW + 2) : Math.max(chartX + 1, barX - 18);
+                                    doc.text(statusMini, labelX, barY + 5.2);
+                                }
+
+                                curY += rowH;
+                            });
+                            drawHojeLineSegment(gridTopY, curY);
+                        }
+
+                        // Legenda no fim da última página
+                        const legendY = Math.min(pageHeight - 13, curY + 5);
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(7);
+                        doc.setTextColor(71, 85, 105);
+                        doc.setFillColor(16, 185, 129); doc.roundedRect(marginX, legendY - 2.5, 4, 3, 0.5, 0.5, 'F');
+                        doc.text("Concluído", marginX + 6, legendY);
+                        doc.setFillColor(79, 70, 229); doc.roundedRect(marginX + 28, legendY - 2.5, 4, 3, 0.5, 0.5, 'F');
+                        doc.text("Em Andamento / Planejado", marginX + 34, legendY);
+                        doc.setFillColor(244, 63, 94); doc.roundedRect(marginX + 76, legendY - 2.5, 4, 3, 0.5, 0.5, 'F');
+                        doc.text("Prazo Vencido", marginX + 82, legendY);
+                        doc.setDrawColor(239, 68, 68); doc.setLineWidth(0.6); doc.line(marginX + 112, legendY - 3, marginX + 112, legendY + 1);
+                        doc.text("Marcador Hoje", marginX + 115, legendY);
+
+                        const totalPages = doc.internal.getNumberOfPages();
+                        for (let p = 1; p <= totalPages; p++) {
+                            doc.setPage(p);
+                            doc.setDrawColor(226, 232, 240);
+                            doc.setLineWidth(0.2);
+                            doc.line(marginX, pageHeight - 8, marginX + contentW, pageHeight - 8);
+                            doc.setFont("helvetica", "normal");
+                            doc.setFontSize(7);
+                            doc.setTextColor(148, 163, 184);
+                            doc.text(`Softmarketing Soluções em Comunicação  •  Gráfico Gantt — ${opNome}  •  ${hojeBR}`, marginX, pageHeight - 4.5);
+                            doc.text(`Página ${p} de ${totalPages}`, marginX + contentW, pageHeight - 4.5, { align: 'right' });
+                        }
+
+                        const safeName = opNome.replace(/[^a-zA-Z0-9]/g, '_');
+                        const filename = `Gantt_Harmony_${safeName}_${hojeISO}.pdf`;
+                        doc.save(filename);
+                        app.ui.showAlert("PDF do Gantt Gerado!", `O gráfico Gantt exclusivo "${filename}" foi baixado em A4 Paisagem.`, "success");
+                    } catch (err) {
+                        console.error('Erro ao gerar PDF só do Gantt:', err);
+                        app.ui.showAlert("Erro ao Gerar PDF", err.message || String(err), "error");
+                    }
+                },
+
                 gerarPDFImplantacaoIA(opKey) {
                     try {
                         const plano = this._findPlanoIA(opKey);
@@ -29623,7 +30077,7 @@ storage: {
                         const paConcluidos = todosPA.filter(p => p.concluido).length;
                         const paPendentes = todosPA.length - paConcluidos;
 
-                        // Diagnóstico executivo imediato: Em que pé estamos?
+                        // Diagnóstico executivo imediato: Panorama Atual da Implantação
                         const etapaAtual = etapas.find(e => !e.concluido) || etapas[etapas.length - 1];
                         const etapaAtualNome = etapaAtual ? cleanText(etapaAtual.nome) : 'Todas as etapas concluídas';
                         const etapaAtualResp = etapaAtual ? cleanText(etapaAtual.responsavelNome || etapaAtual.responsavelTipo || 'Monitor Responsável') : '-';
@@ -29664,10 +30118,10 @@ storage: {
                         const baseStyles = { fontSize: 8.5, cellPadding: 2.2, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.1 };
                         const baseHeadStyles = { fillColor: [49, 46, 129], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' };
 
-                        // 1. EM QUE PÉ ESTAMOS? — PAINEL EXECUTIVO DO GERENTE
+                        // 1. PANORAMA ATUAL DA IMPLANTAÇÃO — SÍNTESE EXECUTIVA
                         doc.autoTable({
                             startY: 32,
-                            head: [['1. EM QUE PÉ ESTAMOS? — PAINEL EXECUTIVO', 'DIAGNÓSTICO EM TEMPO REAL']],
+                            head: [['1. PANORAMA ATUAL DA IMPLANTAÇÃO — SÍNTESE EXECUTIVA', 'DIAGNÓSTICO EM TEMPO REAL']],
                             body: [
                                 ['Status Geral do Projeto', `${statusTxt} — ${concluidas} de ${totalEtapas} etapas concluídas (${pct}%)`],
                                 ['Foco Atual / Etapa Vigente', etapaAtual ? `Etapa ${etapas.indexOf(etapaAtual) + 1}: ${etapaAtualNome} (Resp: ${etapaAtualResp})` : 'Implantação 100% Concluída'],
@@ -30013,7 +30467,7 @@ storage: {
                                 </div>
 
                                 <div class="section-card" style="border: 2px solid #0f172a;">
-                                    <div class="section-title" style="background:#0f172a; font-size:13px;">1. Em que pé estamos? — Painel Executivo</div>
+                                    <div class="section-title" style="background:#0f172a; font-size:13px;">1. Panorama Atual da Implantação — Síntese Executiva</div>
                                     <table style="background:#f8fafc;">
                                         <tr><td style="width:30%; font-weight:bold;">Status Geral do Projeto</td><td><strong style="font-size:14px;">${esc(statusTxt)}</strong> — ${concluidas} de ${totalEtapas} etapas concluídas (${pct}%)</td></tr>
                                         <tr><td style="font-weight:bold;">Foco Atual / Etapa Vigente</td><td><strong>${esc(etapaAtualNome)}</strong> (Resp: ${esc(etapaAtualResp)})</td></tr>
@@ -34654,7 +35108,6 @@ storage: {
                                                 </td>
                                                 <td class="py-2.5 px-2 text-center font-black tabular-nums ${item.ganhoOp > 0 ? 'text-teal-600 dark:text-teal-400' : 'text-slate-400'}">
                                                     ${item.incluido ? `+${item.ganhoOp.toFixed(1)}` : `<span class="line-through text-slate-400">+${item.ganhoSeMarcado.toFixed(1)}</span>`}
-                                       item.ganhoOp.toFixed(1)}` : `<span class="line-through text-slate-400">+${item.ganhoSeMarcado.toFixed(1)}</span>`}
                                                 </td>
                                                 <td class="py-2.5 px-3 text-right font-black tabular-nums ${item.impactoGlobal > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">
                                                     ${item.incluido ? `+${item.impactoGlobal.toFixed(2)} pts` : `<span class="text-[10px] text-slate-400">(+${item.impactoSeMarcado.toFixed(2)} se ativo)</span>`}
@@ -50839,6 +51292,1113 @@ Object.assign(app.ui, {
                     },
 
                     // =========================================================================
+                    // ABA EXCLUSIVA DEV: BI BANCO DE HORAS (ANÁLISE DE CSV)
+                    // =========================================================================
+                    _initBiBancoHorasState() {
+                        if (!this._biBancoHorasState) {
+                            this._biBancoHorasState = {
+                                fileName: '',
+                                refDateLabel: '',
+                                rawRecords: [],
+                                activeRecords: [],
+                                filteredRecords: [],
+                                activeStatus: 'ALL',
+                                hideZeroMovement: false,
+                                searchQuery: '',
+                                sortField: 'pendenteSec',
+                                sortDir: 'desc',
+                                kpis: null,
+                                transitionMatrix: null,
+                                paretoSummary: null,
+                                chartsData: null,
+                                charts: {}
+                            };
+                        }
+                        return this._biBancoHorasState;
+                    },
+
+                    _biTimeToSeconds(val) {
+                        const s = String(val || '').replace(/^"|"$/g, '').trim();
+                        if (!s) return 0;
+                        const neg = s.startsWith('-');
+                        const clean = s.replace(/^[+-]/, '').trim();
+                        const parts = clean.split(':').map(x => parseInt(x, 10) || 0);
+                        const hh = parts[0] || 0;
+                        const mm = parts[1] || 0;
+                        const ss = parts[2] || 0;
+                        return (neg ? -1 : 1) * (hh * 3600 + mm * 60 + ss);
+                    },
+
+                    _biSecondsToHHMM(totalSec) {
+                        const val = Math.round(Number(totalSec) || 0);
+                        const neg = val < 0;
+                        const abs = Math.abs(val);
+                        const hh = String(Math.floor(abs / 3600)).padStart(2, '0');
+                        const mm = String(Math.floor((abs % 3600) / 60)).padStart(2, '0');
+                        return `${neg ? '-' : ''}${hh}:${mm}`;
+                    },
+
+                    _biSecondsToHHMMSS(totalSec) {
+                        const val = Math.round(Number(totalSec) || 0);
+                        const neg = val < 0;
+                        const abs = Math.abs(val);
+                        const hh = String(Math.floor(abs / 3600)).padStart(2, '0');
+                        const mm = String(Math.floor((abs % 3600) / 60)).padStart(2, '0');
+                        const ss = String(abs % 60).padStart(2, '0');
+                        return `${neg ? '-' : ''}${hh}:${mm}:${ss}`;
+                    },
+
+                    _biSplitCsvLine(line, sep) {
+                        const out = [];
+                        let cur = '';
+                        let inQuotes = false;
+                        for (let i = 0; i < line.length; i++) {
+                            const ch = line[i];
+                            if (ch === '"') {
+                                if (inQuotes && line[i + 1] === '"') {
+                                    cur += '"';
+                                    i++;
+                                } else {
+                                    inQuotes = !inQuotes;
+                                }
+                            } else if (ch === sep && !inQuotes) {
+                                out.push(cur.replace(/^"|"$/g, '').trim());
+                                cur = '';
+                            } else {
+                                cur += ch;
+                            }
+                        }
+                        out.push(cur.replace(/^"|"$/g, '').trim());
+                        return out;
+                    },
+
+                    _biExtractRefDateFromFilename(fileName) {
+                        const cleanName = String(fileName || '');
+                        const mIso = cleanName.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+                        if (mIso) return `${mIso[3]}/${mIso[2]}/${mIso[1]} (${mIso[1]}-${mIso[2]}-${mIso[3]})`;
+                        const mBr = cleanName.match(/(\d{2})[-_](\d{2})[-_](\d{4})/);
+                        if (mBr) return `${mBr[1]}/${mBr[2]}/${mBr[3]} (${mBr[3]}-${mBr[2]}-${mBr[1]})`;
+                        return 'Corte acumulado do arquivo (sem data explícita no nome)';
+                    },
+
+                    processBancoHorasCSV(csvRawText, fileName = '') {
+                        const cleanText = String(csvRawText || '').replace(/^\uFEFF/, '').trim();
+                        const lines = cleanText.split(/\r?\n/).filter(l => l.trim().length > 0);
+                        if (lines.length < 2) {
+                            throw new Error('O CSV precisa conter o cabeçalho e pelo menos 1 linha de colaborador.');
+                        }
+
+                        const headerLine = lines[0];
+                        const semiCount = (headerLine.match(/;/g) || []).length;
+                        const commaCount = (headerLine.match(/,/g) || []).length;
+                        const sep = semiCount >= commaCount ? ';' : ',';
+
+                        const rawHeaders = this._biSplitCsvLine(headerLine, sep).map(h => h.replace(/^\uFEFF/, '').trim());
+                        const normHeader = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                        const normHeaders = rawHeaders.map(normHeader);
+
+                        const findColIdx = (candidates, fallbackIdx) => {
+                            for (const cand of candidates) {
+                                const idx = normHeaders.findIndex(h => h === cand || h.includes(cand));
+                                if (idx !== -1) return idx;
+                            }
+                            return fallbackIdx;
+                        };
+
+                        const idxCracha = findColIdx(['cracha'], 0);
+                        const idxFunc = findColIdx(['funcionario', 'colaborador', 'nome'], 1);
+                        const idxCred = findColIdx(['total horas credito', 'horas credito', 'credito'], 2);
+                        const idxDeb = findColIdx(['total horas debito', 'horas debito', 'debito'], 3);
+                        const idxSaldo = findColIdx(['total saldo'], 4);
+                        const idxComp = findColIdx(['total horas compensadas', 'horas compensadas', 'compensadas'], 5);
+                        const idxPend = findColIdx(['total saldo pendente', 'saldo pendente', 'pendente'], 6);
+
+                        if (rawHeaders.length < 7) {
+                            throw new Error(`Esquema inválido: esperadas 7 colunas oficiais, encontradas ${rawHeaders.length}.`);
+                        }
+
+                        const records = [];
+                        for (let i = 1; i < lines.length; i++) {
+                            const cols = this._biSplitCsvLine(lines[i], sep);
+                            if (!cols || cols.length < 7) continue;
+
+                            const crachaRaw = String(cols[idxCracha] || '').trim();
+                            const funcionario = String(cols[idxFunc] || '').trim();
+                            if (!crachaRaw && !funcionario) continue;
+
+                            const creditoSec = this._biTimeToSeconds(cols[idxCred]);
+                            const debitoSec = this._biTimeToSeconds(cols[idxDeb]);
+                            const saldoSec = this._biTimeToSeconds(cols[idxSaldo]);
+                            const compensadoSec = this._biTimeToSeconds(cols[idxComp]);
+                            const pendenteSec = this._biTimeToSeconds(cols[idxPend]);
+
+                            let status = 'Quitado';
+                            if (creditoSec === 0 && debitoSec === 0 && saldoSec === 0 && compensadoSec === 0 && pendenteSec === 0) {
+                                status = 'Sem Movimentação';
+                            } else if (pendenteSec > 0) {
+                                status = 'Credor';
+                            } else if (pendenteSec < 0) {
+                                status = 'Devedor';
+                            }
+
+                            const deltaAuditSec = saldoSec - (creditoSec - debitoSec);
+                            const volumeSec = creditoSec + debitoSec + compensadoSec;
+                            const indicePendenciaPct = saldoSec !== 0
+                                ? (Math.abs(pendenteSec) / Math.abs(saldoSec)) * 100
+                                : (pendenteSec !== 0 ? 100 : 0);
+
+                            records.push({
+                                cracha: crachaRaw,
+                                crachaNum: parseInt(crachaRaw.replace(/\D/g, ''), 10) || 0,
+                                funcionario,
+                                creditoStr: this._biSecondsToHHMMSS(creditoSec),
+                                creditoSec,
+                                debitoStr: this._biSecondsToHHMMSS(debitoSec),
+                                debitoSec,
+                                saldoStr: this._biSecondsToHHMMSS(saldoSec),
+                                saldoSec,
+                                compensadoStr: this._biSecondsToHHMMSS(compensadoSec),
+                                compensadoSec,
+                                pendenteStr: this._biSecondsToHHMMSS(pendenteSec),
+                                pendenteSec,
+                                volumeSec,
+                                deltaAuditSec,
+                                hasDeltaAudit: deltaAuditSec !== 0,
+                                indicePendenciaPct,
+                                status,
+                                isOutlier: false
+                            });
+                        }
+
+                        if (records.length === 0) {
+                            throw new Error('Nenhum registro válido foi encontrado no CSV enviado.');
+                        }
+
+                        return {
+                            fileName,
+                            refDateLabel: this._biExtractRefDateFromFilename(fileName),
+                            records
+                        };
+                    },
+
+                    _biComputeAnalytics(rawRecords, hideZeroMovement = false) {
+                        const basePool = hideZeroMovement
+                            ? rawRecords.filter(r => r.status !== 'Sem Movimentação')
+                            : rawRecords;
+
+                        const n = basePool.length;
+                        const pendentesArr = basePool.map(r => r.pendenteSec);
+                        const meanPendente = n > 0 ? pendentesArr.reduce((a, b) => a + b, 0) / n : 0;
+                        const variance = n > 0
+                            ? pendentesArr.reduce((acc, v) => acc + Math.pow(v - meanPendente, 2), 0) / n
+                            : 0;
+                        const stdDevPendente = Math.sqrt(variance);
+
+                        rawRecords.forEach(r => {
+                            r.isOutlier = stdDevPendente > 0 && Math.abs(r.pendenteSec - meanPendente) > (2 * stdDevPendente);
+                        });
+
+                        const sortedPend = [...pendentesArr].sort((a, b) => a - b);
+                        const medianPendente = n === 0
+                            ? 0
+                            : (n % 2 === 1 ? sortedPend[(n - 1) / 2] : (sortedPend[n / 2 - 1] + sortedPend[n / 2]) / 2);
+
+                        let totalCreditoSec = 0;
+                        let totalDebitoSec = 0;
+                        let saldoLiquidoSec = 0;
+                        let totalCompensadoSec = 0;
+                        let saldoPendenteGeralSec = 0;
+                        let passivoPositivoSec = 0;
+                        let ativoNegativoSec = 0;
+                        let sumAbsSaldoSec = 0;
+                        let sumAbsPendenteSec = 0;
+                        let credoresCount = 0;
+                        let devedoresCount = 0;
+                        let quitadosCount = 0;
+                        let zeradosCount = 0;
+                        let outliersCount = 0;
+                        let deltaAuditCount = 0;
+
+                        const matrix = {
+                            positivo: { credor: 0, devedor: 0, quitado: 0 },
+                            negativo: { credor: 0, devedor: 0, quitado: 0 },
+                            zero: { credor: 0, devedor: 0, quitado: 0 }
+                        };
+
+                        basePool.forEach(r => {
+                            totalCreditoSec += r.creditoSec;
+                            totalDebitoSec += r.debitoSec;
+                            saldoLiquidoSec += r.saldoSec;
+                            totalCompensadoSec += r.compensadoSec;
+                            saldoPendenteGeralSec += r.pendenteSec;
+                            sumAbsSaldoSec += Math.abs(r.saldoSec);
+                            sumAbsPendenteSec += Math.abs(r.pendenteSec);
+
+                            if (r.pendenteSec > 0) {
+                                passivoPositivoSec += r.pendenteSec;
+                                credoresCount++;
+                            } else if (r.pendenteSec < 0) {
+                                ativoNegativoSec += Math.abs(r.pendenteSec);
+                                devedoresCount++;
+                            } else if (r.status === 'Quitado') {
+                                quitadosCount++;
+                            } else {
+                                zeradosCount++;
+                            }
+
+                            if (r.isOutlier) outliersCount++;
+                            if (r.hasDeltaAudit) deltaAuditCount++;
+
+                            const srcKey = r.saldoSec > 0 ? 'positivo' : (r.saldoSec < 0 ? 'negativo' : 'zero');
+                            const dstKey = r.pendenteSec > 0 ? 'credor' : (r.pendenteSec < 0 ? 'devedor' : 'quitado');
+                            matrix[srcKey][dstKey]++;
+                        });
+
+                        const totalRawCount = rawRecords.length;
+                        const comMovRawCount = rawRecords.filter(r => r.status !== 'Sem Movimentação').length;
+                        const semMovRawCount = totalRawCount - comMovRawCount;
+
+                        const denomComp = totalCreditoSec + totalDebitoSec;
+                        const taxaCompensacaoPct = denomComp > 0 ? (totalCompensadoSec / denomComp) * 100 : 0;
+                        const indicePendenciaGlobalPct = sumAbsSaldoSec > 0 ? (sumAbsPendenteSec / sumAbsSaldoSec) * 100 : 0;
+
+                        const credoresDesc = basePool.filter(r => r.pendenteSec > 0).sort((a, b) => b.pendenteSec - a.pendenteSec);
+                        const devedoresAsc = basePool.filter(r => r.pendenteSec < 0).sort((a, b) => a.pendenteSec - b.pendenteSec);
+                        const topMovimento = [...basePool].sort((a, b) => b.volumeSec - a.volumeSec).slice(0, 10);
+
+                        const top10Credores = credoresDesc.slice(0, 10);
+                        const top10Devedores = devedoresAsc.slice(0, 10);
+
+                        let paretoAcc = 0;
+                        let pareto80Count = 0;
+                        const paretoPoints = credoresDesc.map((r, idx) => {
+                            paretoAcc += r.pendenteSec;
+                            const accPct = passivoPositivoSec > 0 ? (paretoAcc / passivoPositivoSec) * 100 : 0;
+                            if (pareto80Count === 0 && accPct >= 80) {
+                                pareto80Count = idx + 1;
+                            }
+                            return {
+                                cracha: r.cracha,
+                                funcionario: r.funcionario,
+                                pendenteHours: Number((r.pendenteSec / 3600).toFixed(2)),
+                                pendenteStr: r.pendenteStr,
+                                accPct: Number(accPct.toFixed(1))
+                            };
+                        });
+                        if (credoresDesc.length > 0 && pareto80Count === 0) pareto80Count = credoresDesc.length;
+                        const pareto80PctColabs = credoresDesc.length > 0 ? Number(((pareto80Count / credoresDesc.length) * 100).toFixed(1)) : 0;
+
+                        return {
+                            activeRecords: basePool,
+                            kpis: {
+                                totalRawCount,
+                                comMovRawCount,
+                                semMovRawCount,
+                                analyzedCount: n,
+                                totalCreditoSec,
+                                totalDebitoSec,
+                                saldoLiquidoSec,
+                                totalCompensadoSec,
+                                saldoPendenteGeralSec,
+                                passivoPositivoSec,
+                                ativoNegativoSec,
+                                meanPendenteSec: meanPendente,
+                                medianPendenteSec: medianPendente,
+                                stdDevPendenteSec: stdDevPendente,
+                                credoresCount,
+                                devedoresCount,
+                                quitadosCount,
+                                zeradosCount,
+                                outliersCount,
+                                deltaAuditCount,
+                                taxaCompensacaoPct,
+                                indicePendenciaGlobalPct
+                            },
+                            transitionMatrix: matrix,
+                            paretoSummary: {
+                                credoresTotal: credoresDesc.length,
+                                pareto80Count,
+                                pareto80PctColabs
+                            },
+                            chartsData: {
+                                top10Credores,
+                                top10Devedores,
+                                topMovimento,
+                                paretoChartItems: paretoPoints.slice(0, 20),
+                                statusCounts: [
+                                    credoresCount,
+                                    devedoresCount,
+                                    quitadosCount,
+                                    hideZeroMovement ? 0 : zeradosCount
+                                ],
+                                scatterPoints: basePool.map(r => ({
+                                    x: Number((r.creditoSec / 3600).toFixed(2)),
+                                    y: Number((r.debitoSec / 3600).toFixed(2)),
+                                    pendenteHours: Number((r.pendenteSec / 3600).toFixed(2)),
+                                    pendenteAbsHours: Number((Math.abs(r.pendenteSec) / 3600).toFixed(2)),
+                                    cracha: r.cracha,
+                                    funcionario: r.funcionario,
+                                    creditoStr: r.creditoStr,
+                                    debitoStr: r.debitoStr,
+                                    pendenteStr: r.pendenteStr,
+                                    status: r.status
+                                }))
+                            }
+                        };
+                    },
+
+                    _biDestroyCharts() {
+                        const st = this._initBiBancoHorasState();
+                        Object.values(st.charts || {}).forEach(ch => {
+                            if (ch && typeof ch.destroy === 'function') {
+                                try { ch.destroy(); } catch (e) {}
+                            }
+                        });
+                        st.charts = {};
+                    },
+
+                    biBancoHorasHandleFile(inputOrFile) {
+                        const file = inputOrFile && inputOrFile.files ? inputOrFile.files[0] : inputOrFile;
+                        if (!file) return;
+
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const text = e.target.result;
+                                const parsed = this.processBancoHorasCSV(text, file.name);
+                                const st = this._initBiBancoHorasState();
+                                st.fileName = parsed.fileName;
+                                st.refDateLabel = parsed.refDateLabel;
+                                st.rawRecords = parsed.records;
+                                st.activeStatus = 'ALL';
+                                st.searchQuery = '';
+                                st.sortField = 'pendenteSec';
+                                st.sortDir = 'desc';
+                                if (document.getElementById('bi-kpis')) {
+                                    this.biBancoHorasRefreshDashboard();
+                                } else {
+                                    this.renderTab('bi_banco_horas', true);
+                                }
+                                this.showAlert(
+                                    "CSV Processado",
+                                    `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}".`,
+                                    "success"
+                                );
+                            } catch (err) {
+                                console.error('Erro ao processar CSV de Banco de Horas:', err);
+                                this.showAlert("Erro na Leitura do CSV", err.message || String(err), "error");
+                            }
+                        };
+                        reader.readAsText(file, 'UTF-8');
+                    },
+
+                    biBancoHorasSetFilter(field, val) {
+                        const st = this._initBiBancoHorasState();
+                        st[field] = val;
+                        if (field === 'hideZeroMovement') {
+                            this.biBancoHorasRefreshDashboard();
+                        } else {
+                            this.biBancoHorasApplyTableState();
+                        }
+                    },
+
+                    biBancoHorasSortBy(field) {
+                        const st = this._initBiBancoHorasState();
+                        if (st.sortField === field) {
+                            st.sortDir = st.sortDir === 'desc' ? 'asc' : 'desc';
+                        } else {
+                            st.sortField = field;
+                            st.sortDir = (field === 'funcionario' || field === 'status') ? 'asc' : 'desc';
+                        }
+                        this.biBancoHorasApplyTableState();
+                    },
+
+                    biBancoHorasApplyTableState() {
+                        const st = this._initBiBancoHorasState();
+                        const pool = st.activeRecords || [];
+                        const q = String(st.searchQuery || '').trim().toLowerCase();
+
+                        const filtered = pool.filter(r => {
+                            if (st.activeStatus === 'Credor' && r.status !== 'Credor') return false;
+                            if (st.activeStatus === 'Devedor' && r.status !== 'Devedor') return false;
+                            if (st.activeStatus === 'Quitado' && r.status !== 'Quitado') return false;
+                            if (st.activeStatus === 'Sem Movimentação' && r.status !== 'Sem Movimentação') return false;
+                            if (st.activeStatus === 'OUTLIER' && !r.isOutlier) return false;
+                            if (st.activeStatus === 'AUDIT' && !r.hasDeltaAudit) return false;
+                            if (q) {
+                                const matchNome = r.funcionario.toLowerCase().includes(q);
+                                const matchCracha = r.cracha.toLowerCase().includes(q);
+                                if (!matchNome && !matchCracha) return false;
+                            }
+                            return true;
+                        });
+
+                        const field = st.sortField || 'pendenteSec';
+                        const dirMul = st.sortDir === 'asc' ? 1 : -1;
+                        filtered.sort((a, b) => {
+                            if (field === 'funcionario' || field === 'status') {
+                                return dirMul * String(a[field] || '').localeCompare(String(b[field] || ''));
+                            }
+                            if (field === 'cracha') {
+                                return dirMul * ((a.crachaNum || 0) - (b.crachaNum || 0));
+                            }
+                            return dirMul * ((Number(a[field]) || 0) - (Number(b[field]) || 0));
+                        });
+
+                        st.filteredRecords = filtered;
+                        this._biRenderTableBody();
+                    },
+
+                    biBancoHorasRefreshDashboard() {
+                        const st = this._initBiBancoHorasState();
+                        if (!Array.isArray(st.rawRecords) || st.rawRecords.length === 0) return;
+
+                        const computed = this._biComputeAnalytics(st.rawRecords, st.hideZeroMovement);
+                        st.activeRecords = computed.activeRecords;
+                        st.kpis = computed.kpis;
+                        st.transitionMatrix = computed.transitionMatrix;
+                        st.paretoSummary = computed.paretoSummary;
+                        st.chartsData = computed.chartsData;
+
+                        this._biRenderDashboardContent();
+                        this.biBancoHorasApplyTableState();
+                        this._biRenderCharts();
+                    },
+
+                    _biRenderDashboardContent() {
+                        const root = document.getElementById('bi-banco-horas-dashboard');
+                        const st = this._initBiBancoHorasState();
+                        if (!root || !st.kpis) return;
+
+                        const esc = app.utils.escapeHtml;
+                        const k = st.kpis;
+                        const mx = st.transitionMatrix;
+                        const pSum = st.paretoSummary;
+                        const truncateName = (name) => name.length > 28 ? name.slice(0, 27) + '...' : name;
+
+                        const headerEl = document.getElementById('bi-kpis');
+                        if (headerEl) {
+                            headerEl.innerHTML = `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-l-amber-500 border border-slate-200 dark:border-slate-700 shadow-xs space-y-1">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                                            <span>Passivo de Horas (Credores)</span>
+                                            <i class="fa-solid fa-arrow-trend-up"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${this._biSecondsToHHMM(k.passivoPositivoSec)}</div>
+                                        <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">${k.credoresCount} colaborador(es) credor(es)</div>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-l-rose-500 border border-slate-200 dark:border-slate-700 shadow-xs space-y-1">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center justify-between">
+                                            <span>Débito de Horas (Devedores)</span>
+                                            <i class="fa-solid fa-arrow-trend-down"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${this._biSecondsToHHMM(k.ativoNegativoSec)}</div>
+                                        <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">${k.devedoresCount} colaborador(es) devedor(es)</div>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-l-indigo-500 border border-slate-200 dark:border-slate-700 shadow-xs space-y-1">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center justify-between">
+                                            <span>Saldo Líquido Pendente</span>
+                                            <i class="fa-solid fa-scale-balanced"></i>
+                                        </div>
+                                        <div class="text-2xl font-black ${k.saldoPendenteGeralSec >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'} tabular-nums">${this._biSecondsToHHMM(k.saldoPendenteGeralSec)}</div>
+                                        <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                                            Média: ${this._biSecondsToHHMM(k.meanPendenteSec)} • Mediana: ${this._biSecondsToHHMM(k.medianPendenteSec)}
+                                        </div>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-l-emerald-500 border border-slate-200 dark:border-slate-700 shadow-xs space-y-1">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+                                            <span>Volume Total Compensado</span>
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${this._biSecondsToHHMM(k.totalCompensadoSec)}</div>
+                                        <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                                            Compensação: <strong>${k.taxaCompensacaoPct.toFixed(1)}%</strong> • Pendência: <strong>${k.indicePendenciaGlobalPct.toFixed(1)}%</strong>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800 border-l-4 border-l-slate-700 dark:border-l-slate-400 border border-slate-200 dark:border-slate-700 shadow-xs space-y-1">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300 flex items-center justify-between">
+                                            <span>Quadro Analisado</span>
+                                            <i class="fa-solid fa-users"></i>
+                                        </div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${k.analyzedCount} <span class="text-xs font-bold text-slate-400">/ ${k.totalRawCount}</span></div>
+                                        <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                                            ${k.comMovRawCount} mov. • ${k.semMovRawCount} zerados • ${k.outliersCount} outliers (&gt;2&sigma;)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Strip: Pareto 80/20 + Matriz de Transição de Saldo + Auditoria -->
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+                                    <div class="lg:col-span-5 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 space-y-2">
+                                        <div class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                            <i class="fa-solid fa-table-cells text-indigo-500"></i> Matriz de Transição (Saldo Bruto &rarr; Saldo Pendente)
+                                        </div>
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-[11px] text-center border-collapse">
+                                                <thead>
+                                                    <tr class="text-slate-400 font-black uppercase text-[10px] border-b border-slate-200 dark:border-slate-700">
+                                                        <th class="p-1.5 text-left">Total Saldo &darr; / Pendente &rarr;</th>
+                                                        <th class="p-1.5 text-amber-600">Credor</th>
+                                                        <th class="p-1.5 text-emerald-600">Quitado/Zero</th>
+                                                        <th class="p-1.5 text-rose-600">Devedor</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-200/70 dark:divide-slate-700/70 font-bold tabular-nums">
+                                                    <tr>
+                                                        <td class="p-1.5 text-left text-slate-700 dark:text-slate-200">Saldo Positivo</td>
+                                                        <td class="p-1.5">${mx.positivo.credor}</td>
+                                                        <td class="p-1.5 text-emerald-600">${mx.positivo.quitado}</td>
+                                                        <td class="p-1.5">${mx.positivo.devedor}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="p-1.5 text-left text-slate-700 dark:text-slate-200">Saldo Negativo</td>
+                                                        <td class="p-1.5">${mx.negativo.credor}</td>
+                                                        <td class="p-1.5 text-emerald-600">${mx.negativo.quitado}</td>
+                                                        <td class="p-1.5">${mx.negativo.devedor}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="p-1.5 text-left text-slate-700 dark:text-slate-200">Saldo Zero</td>
+                                                        <td class="p-1.5">${mx.zero.credor}</td>
+                                                        <td class="p-1.5">${mx.zero.quitado}</td>
+                                                        <td class="p-1.5">${mx.zero.devedor}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div class="lg:col-span-7 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                            <div class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                                <div class="text-[10px] font-black uppercase text-slate-400">Concentração Pareto 80/20</div>
+                                                <div class="text-sm font-black text-indigo-700 dark:text-indigo-300 mt-1 tabular-nums">${pSum.pareto80Count} credores (${pSum.pareto80PctColabs}%)</div>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400">concentram 80% do passivo</div>
+                                            </div>
+                                            <div class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                                <div class="text-[10px] font-black uppercase text-slate-400">Totais Brutos (Créd. / Déb.)</div>
+                                                <div class="text-sm font-black text-slate-800 dark:text-white mt-1 tabular-nums">${this._biSecondsToHHMM(k.totalCreditoSec)} / ${this._biSecondsToHHMM(k.totalDebitoSec)}</div>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400">Saldo bruto: ${this._biSecondsToHHMM(k.saldoLiquidoSec)}</div>
+                                            </div>
+                                            <div class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                                <div class="text-[10px] font-black uppercase text-slate-400">Auditoria (Delta Audit)</div>
+                                                <div class="text-sm font-black ${k.deltaAuditCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'} mt-1 tabular-nums">${k.deltaAuditCount} registro(s)</div>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400">Saldo &ne; Crédito - Débito</div>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/70 dark:border-slate-700/70">
+                                            <span><strong>Arquivo:</strong> ${esc(st.fileName)} • <strong>Referência:</strong> ${esc(st.refDateLabel)}</span>
+                                            <span><strong>Top Movimento:</strong> ${st.chartsData.topMovimento[0] ? `${esc(truncateName(st.chartsData.topMovimento[0].funcionario))} (${this._biSecondsToHHMM(st.chartsData.topMovimento[0].volumeSec)})` : '-'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        const chartsEl = document.getElementById('bi-charts-grid');
+                        if (chartsEl) {
+                            chartsEl.innerHTML = `
+                                <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                                    <div class="p-5 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <h3 class="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-arrows-left-right text-indigo-500"></i> Top 10 Credores vs. Top 10 Devedores (Saldo Pendente)</h3>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Horas Decimais</span>
+                                        </div>
+                                        <div class="h-80 relative"><canvas id="bi-chart-divergente"></canvas></div>
+                                    </div>
+
+                                    <div class="p-5 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <h3 class="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-chart-area text-amber-500"></i> Curva Pareto 80/20 (Concentração do Passivo)</h3>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Corte em 80%</span>
+                                        </div>
+                                        <div class="h-80 relative"><canvas id="bi-chart-pareto"></canvas></div>
+                                    </div>
+
+                                    <div class="p-5 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <h3 class="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-chart-pie text-emerald-500"></i> Distribuição do Quadro por Status</h3>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Quantidade</span>
+                                        </div>
+                                        <div class="h-72 relative flex items-center justify-center"><canvas id="bi-chart-status"></canvas></div>
+                                    </div>
+
+                                    <div class="p-5 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <h3 class="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2"><i class="fa-solid fa-braille text-rose-500"></i> Dispersão: Crédito (X) vs. Débito (Y)</h3>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">Tamanho = |Pendente|</span>
+                                        </div>
+                                        <div class="h-72 relative"><canvas id="bi-chart-scatter"></canvas></div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        const tableSection = document.getElementById('bi-table-section');
+                        if (tableSection) {
+                            const statusPills = [
+                                { id: 'ALL', label: `Todos (${k.analyzedCount})` },
+                                { id: 'Credor', label: `Credores (${k.credoresCount})` },
+                                { id: 'Devedor', label: `Devedores (${k.devedoresCount})` },
+                                { id: 'Quitado', label: `Quitados (${k.quitadosCount})` },
+                                { id: 'Sem Movimentação', label: `Zerados (${st.hideZeroMovement ? 0 : k.zeradosCount})` },
+                                { id: 'OUTLIER', label: `Outliers >2σ (${k.outliersCount})` },
+                                { id: 'AUDIT', label: `Delta Audit (${k.deltaAuditCount})` }
+                            ];
+
+                            const sortCol = (field, label, align = 'left') => `
+                                <th onclick="app.ui.biBancoHorasSortBy('${field}')" class="p-3 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 select-none text-${align}">
+                                    <span class="inline-flex items-center gap-1">${label} <i class="fa-solid ${st.sortField === field ? (st.sortDir === 'asc' ? 'fa-sort-up text-indigo-600' : 'fa-sort-down text-indigo-600') : 'fa-sort opacity-40'}"></i></span>
+                                </th>
+                            `;
+
+                            tableSection.innerHTML = `
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
+                                    <div class="flex flex-wrap items-center justify-between gap-3">
+                                        <div class="relative flex-1 min-w-[240px] max-w-md">
+                                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                            <input type="text" id="bi-bh-search" value="${esc(st.searchQuery)}" oninput="app.ui.biBancoHorasSetFilter('searchQuery', this.value)" placeholder="Buscar por Nome ou Crachá..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                        </div>
+
+                                        <div class="flex flex-wrap items-center gap-1.5" id="bi-bh-status-pills">
+                                            ${statusPills.map(p => `
+                                                <button type="button" data-bi-status="${p.id}" onclick="app.ui.biBancoHorasSetFilter('activeStatus', '${p.id}')" class="px-3 py-1.5 rounded-full text-[11px] font-extrabold border transition cursor-pointer ${st.activeStatus === p.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                                                    ${p.label}
+                                                </button>
+                                            `).join('')}
+                                        </div>
+
+                                        <button type="button" onclick="app.ui.biBancoHorasExportFilteredCSV()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-solid fa-file-csv"></i> Exportar Filtrado (CSV)
+                                        </button>
+                                    </div>
+
+                                    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[520px] overflow-y-auto custom-scrollbar">
+                                        <table class="w-full text-left border-collapse text-xs">
+                                            <thead class="sticky top-0 z-10 bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                <tr>
+                                                    ${sortCol('cracha', 'Crachá')}
+                                                    ${sortCol('funcionario', 'Funcionário')}
+                                                    ${sortCol('status', 'Status')}
+                                                    ${sortCol('creditoSec', 'Crédito', 'right')}
+                                                    ${sortCol('debitoSec', 'Débito', 'right')}
+                                                    ${sortCol('saldoSec', 'Total Saldo', 'right')}
+                                                    ${sortCol('compensadoSec', 'Compensadas', 'right')}
+                                                    ${sortCol('pendenteSec', 'Saldo Pendente', 'right')}
+                                                    ${sortCol('indicePendenciaPct', 'Índ. Pendência', 'right')}
+                                                </tr>
+                                            </thead>
+                                            <tbody id="bi-bh-tbody" class="divide-y divide-slate-100 dark:divide-slate-700/70"></tbody>
+                                        </table>
+                                    </div>
+                                    <div id="bi-bh-table-count" class="text-[11px] font-bold text-slate-400 text-right tabular-nums"></div>
+                                </div>
+                            `;
+                        }
+                    },
+
+                    _biRenderTableBody() {
+                        const st = this._initBiBancoHorasState();
+                        const tbody = document.getElementById('bi-bh-tbody');
+                        const countEl = document.getElementById('bi-bh-table-count');
+                        if (!tbody) return;
+
+                        document.querySelectorAll('#bi-bh-status-pills button').forEach(btn => {
+                            const id = btn.getAttribute('data-bi-status');
+                            if (id === st.activeStatus) {
+                                btn.className = 'px-3 py-1.5 rounded-full text-[11px] font-extrabold border transition cursor-pointer bg-indigo-600 text-white border-indigo-600 shadow-xs';
+                            } else {
+                                btn.className = 'px-3 py-1.5 rounded-full text-[11px] font-extrabold border transition cursor-pointer bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400';
+                            }
+                        });
+
+                        const rows = st.filteredRecords || [];
+                        tbody.innerHTML = '';
+
+                        if (rows.length === 0) {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `<td colspan="9" class="p-8 text-center text-xs text-slate-400 italic">Nenhum colaborador encontrado para o filtro aplicado.</td>`;
+                            tbody.appendChild(tr);
+                            if (countEl) countEl.textContent = '0 registro(s)';
+                            return;
+                        }
+
+                        const frag = document.createDocumentFragment();
+                        const badgeMap = {
+                            'Credor': 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                            'Devedor': 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+                            'Quitado': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                            'Sem Movimentação': 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                        };
+
+                        rows.forEach(r => {
+                            const tr = document.createElement('tr');
+                            tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-700/30 transition';
+                            const bCls = badgeMap[r.status] || badgeMap['Sem Movimentação'];
+                            const pendCls = r.pendenteSec > 0 ? 'text-amber-700 dark:text-amber-300 font-black' : (r.pendenteSec < 0 ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500 font-bold');
+
+                            const tdCracha = document.createElement('td');
+                            tdCracha.className = 'p-3 font-bold text-slate-600 dark:text-slate-300 tabular-nums';
+                            tdCracha.textContent = r.cracha;
+
+                            const tdFunc = document.createElement('td');
+                            tdFunc.className = 'p-3 font-bold text-slate-800 dark:text-white';
+                            tdFunc.textContent = r.funcionario + ' ';
+                            if (r.isOutlier) {
+                                const spO = document.createElement('span');
+                                spO.className = 'ml-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-[9px] font-black uppercase border border-purple-200 dark:border-purple-800';
+                                spO.textContent = 'Outlier >2σ';
+                                tdFunc.appendChild(spO);
+                            }
+                            if (r.hasDeltaAudit) {
+                                const spA = document.createElement('span');
+                                spA.className = 'ml-1 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[9px] font-black uppercase border border-amber-200 dark:border-amber-800';
+                                spA.title = `Delta Audit: ${this._biSecondsToHHMMSS(r.deltaAuditSec)}`;
+                                spA.textContent = 'Delta';
+                                tdFunc.appendChild(spA);
+                            }
+
+                            const tdSt = document.createElement('td');
+                            tdSt.className = 'p-3';
+                            const spSt = document.createElement('span');
+                            spSt.className = `px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${bCls}`;
+                            spSt.textContent = r.status;
+                            tdSt.appendChild(spSt);
+
+                            const addNumCell = (val, cls) => {
+                                const td = document.createElement('td');
+                                td.className = `p-3 text-right tabular-nums ${cls}`;
+                                td.textContent = val;
+                                return td;
+                            };
+
+                            tr.appendChild(tdCracha);
+                            tr.appendChild(tdFunc);
+                            tr.appendChild(tdSt);
+                            tr.appendChild(addNumCell(r.creditoStr, 'text-emerald-700 dark:text-emerald-400 font-semibold'));
+                            tr.appendChild(addNumCell(r.debitoStr, 'text-rose-600 dark:text-rose-400 font-semibold'));
+                            tr.appendChild(addNumCell(r.saldoStr, 'text-slate-700 dark:text-slate-200 font-bold'));
+                            tr.appendChild(addNumCell(r.compensadoStr, 'text-indigo-600 dark:text-indigo-400 font-semibold'));
+                            tr.appendChild(addNumCell(r.pendenteStr, pendCls));
+                            tr.appendChild(addNumCell(r.indicePendenciaPct.toFixed(1) + '%', 'text-slate-500 dark:text-slate-400 font-bold'));
+                            frag.appendChild(tr);
+                        });
+
+                        tbody.appendChild(frag);
+                        if (countEl) countEl.textContent = `Exibindo ${rows.length} colaborador(es)`;
+                    },
+
+                    _biRenderCharts() {
+                        this._biDestroyCharts();
+                        if (typeof Chart === 'undefined') return;
+
+                        const st = this._initBiBancoHorasState();
+                        const cd = st.chartsData;
+                        if (!cd) return;
+
+                        const trunc = (name) => name.length > 28 ? name.slice(0, 27) + '...' : name;
+
+                        // 1. Barras Horizontais Divergentes (Top 10 Credores vs Top 10 Devedores)
+                        const cDiv = document.getElementById('bi-chart-divergente');
+                        if (cDiv) {
+                            const itemsDiv = [...cd.top10Credores, ...cd.top10Devedores.slice().reverse()];
+                            st.charts.divergente = new Chart(cDiv, {
+                                type: 'bar',
+                                data: {
+                                    labels: itemsDiv.map(r => trunc(r.funcionario)),
+                                    datasets: [{
+                                        label: 'Saldo Pendente (h)',
+                                        data: itemsDiv.map(r => Number((r.pendenteSec / 3600).toFixed(2))),
+                                        backgroundColor: itemsDiv.map(r => r.pendenteSec >= 0 ? 'rgba(245, 158, 11, 0.85)' : 'rgba(244, 63, 94, 0.85)'),
+                                        borderRadius: 6
+                                    }]
+                                },
+                                options: {
+                                    indexAxis: 'y',
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: { display: false },
+                                        tooltip: {
+                                            callbacks: {
+                                                title: (ctx) => {
+                                                    const rec = itemsDiv[ctx[0].dataIndex];
+                                                    return rec ? `${rec.funcionario} (Crachá ${rec.cracha})` : '';
+                                                },
+                                                label: (ctx) => {
+                                                    const rec = itemsDiv[ctx.dataIndex];
+                                                    return `Saldo Pendente: ${rec ? rec.pendenteStr : ''} (${ctx.parsed.x}h)`;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: { grid: { color: 'rgba(148,163,184,0.18)' } },
+                                        y: { ticks: { font: { size: 10, weight: 'bold' } } }
+                                    }
+                                }
+                            });
+                        }
+
+                        // 2. Gráfico de Pareto (Passivo Pendente + % Acumulado + Corte 80%)
+                        const cPar = document.getElementById('bi-chart-pareto');
+                        if (cPar) {
+                            const pItems = cd.paretoChartItems || [];
+                            st.charts.pareto = new Chart(cPar, {
+                                data: {
+                                    labels: pItems.map(p => trunc(p.funcionario)),
+                                    datasets: [
+                                        {
+                                            type: 'bar',
+                                            label: 'Saldo Credor (h)',
+                                            data: pItems.map(p => p.pendenteHours),
+                                            backgroundColor: 'rgba(99, 102, 241, 0.82)',
+                                            borderRadius: 5,
+                                            yAxisID: 'y'
+                                        },
+                                        {
+                                            type: 'line',
+                                            label: '% Acumulado',
+                                            data: pItems.map(p => p.accPct),
+                                            borderColor: '#f59e0b',
+                                            backgroundColor: '#f59e0b',
+                                            borderWidth: 2.5,
+                                            tension: 0.25,
+                                            pointRadius: 3,
+                                            yAxisID: 'y1'
+                                        },
+                                        {
+                                            type: 'line',
+                                            label: 'Linha de Corte 80%',
+                                            data: pItems.map(() => 80),
+                                            borderColor: '#ef4444',
+                                            borderDash: [6, 5],
+                                            borderWidth: 1.5,
+                                            pointRadius: 0,
+                                            yAxisID: 'y1'
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, weight: 'bold' } } },
+                                        tooltip: {
+                                            callbacks: {
+                                                title: (ctx) => {
+                                                    const item = pItems[ctx[0].dataIndex];
+                                                    return item ? `${item.funcionario} (Crachá ${item.cracha})` : '';
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: { ticks: { display: false } },
+                                        y: { beginAtZero: true, title: { display: true, text: 'Horas', font: { size: 10 } } },
+                                        y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+                                    }
+                                }
+                            });
+                        }
+
+                        // 3. Rosca Distribuição por Status
+                        const cSt = document.getElementById('bi-chart-status');
+                        if (cSt) {
+                            st.charts.status = new Chart(cSt, {
+                                type: 'doughnut',
+                                data: {
+                                    labels: ['Credor', 'Devedor', 'Quitado com Mov.', 'Sem Movimentação'],
+                                    datasets: [{
+                                        data: cd.statusCounts,
+                                        backgroundColor: ['#f59e0b', '#f43f5e', '#10b981', '#94a3b8'],
+                                        borderWidth: 0
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    cutout: '62%',
+                                    plugins: {
+                                        legend: { position: 'bottom', labels: { boxWidth: 11, font: { size: 11, weight: 'bold' } } }
+                                    }
+                                }
+                            });
+                        }
+
+                        // 4. Scatter Plot: Crédito (X) vs Débito (Y)
+                        const cSc = document.getElementById('bi-chart-scatter');
+                        if (cSc) {
+                            const pts = cd.scatterPoints || [];
+                            const grouped = {
+                                Credor: pts.filter(p => p.status === 'Credor'),
+                                Devedor: pts.filter(p => p.status === 'Devedor'),
+                                Outros: pts.filter(p => p.status !== 'Credor' && p.status !== 'Devedor')
+                            };
+                            const makeRadius = (p) => Math.max(4, Math.min(14, 4 + (p.pendenteAbsHours / 12)));
+
+                            st.charts.scatter = new Chart(cSc, {
+                                type: 'scatter',
+                                data: {
+                                    datasets: [
+                                        {
+                                            label: 'Credores',
+                                            data: grouped.Credor,
+                                            backgroundColor: 'rgba(245, 158, 11, 0.72)',
+                                            pointRadius: (ctx) => ctx.raw ? makeRadius(ctx.raw) : 5
+                                        },
+                                        {
+                                            label: 'Devedores',
+                                            data: grouped.Devedor,
+                                            backgroundColor: 'rgba(244, 63, 94, 0.72)',
+                                            pointRadius: (ctx) => ctx.raw ? makeRadius(ctx.raw) : 5
+                                        },
+                                        {
+                                            label: 'Quitados / Zerados',
+                                            data: grouped.Outros,
+                                            backgroundColor: 'rgba(16, 185, 129, 0.65)',
+                                            pointRadius: 4
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10, weight: 'bold' } } },
+                                        tooltip: {
+                                            callbacks: {
+                                                label: (ctx) => {
+                                                    const r = ctx.raw;
+                                                    if (!r) return '';
+                                                    return `${r.funcionario} (#${r.cracha}) | Créd: ${r.creditoStr} | Déb: ${r.debitoStr} | Pend: ${r.pendenteStr}`;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: { beginAtZero: true, title: { display: true, text: 'Total Horas Crédito (h)', font: { size: 10, weight: 'bold' } } },
+                                        y: { beginAtZero: true, title: { display: true, text: 'Total Horas Débito (h)', font: { size: 10, weight: 'bold' } } }
+                                    }
+                                }
+                            });
+                        }
+                    },
+
+                    biBancoHorasExportFilteredCSV() {
+                        const st = this._initBiBancoHorasState();
+                        const rows = st.filteredRecords || [];
+                        if (rows.length === 0) {
+                            return this.showAlert("Sem Dados", "Não há registros filtrados para exportar.", "info");
+                        }
+                        const header = 'Crachá;Funcionário;Status;Total Horas Crédito;Total Horas Débito;Total Saldo;Total Horas Compensadas;Total Saldo Pendente;Índice Pendência (%)';
+                        const body = rows.map(r => [
+                            r.cracha,
+                            `"${String(r.funcionario || '').replace(/"/g, '""')}"`,
+                            r.status,
+                            r.creditoStr,
+                            r.debitoStr,
+                            r.saldoStr,
+                            r.compensadoStr,
+                            r.pendenteStr,
+                            r.indicePendenciaPct.toFixed(1).replace('.', ',')
+                        ].join(';'));
+
+                        const csvContent = '\uFEFF' + [header, ...body].join('\r\n');
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `BI_Banco_Horas_Filtrado_${new Date().toISOString().split('T')[0]}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    },
+
+                    renderView_BIBancoHoras(container) {
+                        const isDev = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev');
+                        if (!isDev) {
+                            container.innerHTML = `
+                                <div class="max-w-lg mx-auto my-12 p-8 rounded-3xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-center space-y-3">
+                                    <i class="fa-solid fa-lock text-3xl text-rose-500"></i>
+                                    <h2 class="text-lg font-black text-rose-800 dark:text-rose-200">Acesso Exclusivo Dev</h2>
+                                    <p class="text-xs text-rose-600 dark:text-rose-300">Esta ferramenta de BI de Banco de Horas é restrita ao perfil Desenvolvedor.</p>
+                                </div>
+                            `;
+                            return;
+                        }
+
+                        const st = this._initBiBancoHorasState();
+                        const hasData = Array.isArray(st.rawRecords) && st.rawRecords.length > 0;
+                        const esc = app.utils.escapeHtml;
+
+                        container.innerHTML = `
+                            <section id="bi-banco-horas-dashboard" class="bi-dashboard-root max-w-[1700px] mx-auto p-4 sm:p-6 space-y-6 animate-fade-in">
+                                <!-- Topo / Upload CSV -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                    <div class="flex items-start gap-3.5">
+                                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 text-white flex items-center justify-center text-xl shadow-md shrink-0">
+                                            <i class="fa-solid fa-business-time"></i>
+                                        </div>
+                                        <div>
+                                            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-800 mb-1">
+                                                <i class="fa-solid fa-code"></i> Exclusivo Dev • Análise Banco de Horas (CSV 7 Colunas)
+                                            </div>
+                                            <h2 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight">BI de Banco de Horas</h2>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                                ${hasData ? `Snapshot carregado: <strong>${esc(st.fileName)}</strong> • Referência: ${esc(st.refDateLabel)}` : 'Suba o arquivo CSV de Banco de Horas (Crachá, Funcionário, Crédito, Débito, Saldo, Compensadas, Pendente).'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        ${hasData ? `
+                                            <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                                <input type="checkbox" ${st.hideZeroMovement ? 'checked' : ''} onchange="app.ui.biBancoHorasSetFilter('hideZeroMovement', this.checked)" class="w-4 h-4 accent-indigo-600 cursor-pointer">
+                                                <span>Ocultar colaboradores sem movimentação</span>
+                                            </label>
+                                        ` : ''}
+                                        <label class="cursor-pointer px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-2 active:scale-95">
+                                            <i class="fa-solid fa-file-arrow-up"></i>
+                                            <span>${hasData ? 'Subir Novo CSV' : 'Subir Arquivo CSV'}</span>
+                                            <input type="file" accept=".csv,.txt" onchange="app.ui.biBancoHorasHandleFile(this)" class="hidden">
+                                        </label>
+                                    </div>
+                                </div>
+
+                                ${!hasData ? `
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-center space-y-4">
+                                        <div class="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl">
+                                            <i class="fa-solid fa-file-csv"></i>
+                                        </div>
+                                        <h3 class="text-base font-black text-slate-800 dark:text-white">Aguardando Importação do Arquivo CSV</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
+                                            O motor analítico lerá exclusivamente as 7 colunas do relatório de ponto (<strong>Crachá</strong>, <strong>Funcionário</strong>, <strong>Total Horas Crédito</strong>, <strong>Total Horas Débito</strong>, <strong>Total Saldo</strong>, <strong>Total Horas Compensadas</strong> e <strong>Total Saldo Pendente</strong>), calculando passivo, débito, Pareto 80/20, dispersão, matriz de transição, outliers (&gt;2&sigma;) e divergências de ponto automaticamente.
+                                        </p>
+                                        <label class="inline-flex cursor-pointer px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition items-center gap-2">
+                                            <i class="fa-solid fa-upload"></i> Selecionar Arquivo CSV do Banco de Horas
+                                            <input type="file" accept=".csv,.txt" onchange="app.ui.biBancoHorasHandleFile(this)" class="hidden">
+                                        </label>
+                                    </div>
+                                ` : `
+                                    <header id="bi-kpis"></header>
+                                    <main id="bi-charts-grid"></main>
+                                    <footer id="bi-table-section"></footer>
+                                `}
+                            </section>
+                        `;
+
+                        if (hasData) {
+                            this.biBancoHorasRefreshDashboard();
+                        }
+                    },
+
+                    // =========================================================================
                     // UX PREMIUM: DISMISS LISTENERS (ESC & CLIQUE FORA), SMOOTH TYPING & SENHAS
                     // =========================================================================
                     initDismissListeners() {
@@ -51242,6 +52802,16 @@ Object.assign(app.ui, {
                                 badge: 'Gamificação',
                                 iconBg: 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30',
                                 desc: 'Trilha gamificada de capacitação com lições interativas, sistema de vidas, mascotes e CMS por operação.'
+                            },
+                            {
+                                id: 'bi_banco_horas',
+                                title: 'BI Banco de Horas (Dev)',
+                                cat: 'analytics',
+                                catLabel: 'Analytics Exclusivo Dev',
+                                icon: 'fa-business-time',
+                                badge: 'Dev Only',
+                                iconBg: 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-lg shadow-indigo-500/30',
+                                desc: 'Analytics de banco de horas via CSV com passivo, débito, Pareto 80/20, dispersão, matriz de transição e auditoria.'
                             },
                             {
                                 id: 'gestao_atas',
@@ -59947,4 +61517,9 @@ app.duolingo = {
             // INICIALIZAÇÃO DE ALTA PERFORMANCE (SEM TRAVAMENTOS)
             // ==========================================
             // Remove elementos do cursor SVG customizado que causavam lentidão e repaints pesados na GPU
-            const legacyCursor = docu
+            const legacyCursor = document.querySelector(".curzr");
+            if (legacyCursor) legacyCursor.remove();
+            document.body.classList.remove('custom-cursor');
+            
+            app.ui.init(); 
+        });
