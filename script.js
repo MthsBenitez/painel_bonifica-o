@@ -992,7 +992,15 @@ storage: {
                                     app.ui.showApp();
                                 } else {
                                     const targetMatNorm = String(savedMat || '').trim().toUpperCase();
-                                    const userObj = (app.users || []).find(u => String(u.matricula || '').trim().toUpperCase() === targetMatNorm);
+                                    const matMatches = (app.users || []).filter(u => u && String(u.matricula || '').trim().toUpperCase() === targetMatNorm);
+                                    const userObj = matMatches.length > 1
+                                        ? matMatches.slice().sort((a, b) => {
+                                            const aPersonal = (a.primeiroAcesso === false && a.senha && !(app.utils && app.utils.isDefaultPassword(a.senha))) ? 1 : 0;
+                                            const bPersonal = (b.primeiroAcesso === false && b.senha && !(app.utils && app.utils.isDefaultPassword(b.senha))) ? 1 : 0;
+                                            if (bPersonal !== aPersonal) return bPersonal - aPersonal;
+                                            return Number(b.pwdUpdatedAt || 0) - Number(a.pwdUpdatedAt || 0);
+                                        })[0]
+                                        : (matMatches[0] || null);
                                     if (userObj) {
                                         app.isAdmin = false;
                                         app.currentUser = userObj;
@@ -1136,11 +1144,30 @@ storage: {
                         });
                     }
                     const keyByMat = new Map();
+                    const keysByMat = new Map();
+                    const bestEntryByMat = new Map();
+                    const isPersonalizedRecord = (u) => !!(u && u.primeiroAcesso === false && u.senha && !(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(u.senha)));
                     entries.forEach(item => {
                         const mKey = this._normalizeMat(item.user.matricula);
-                        if (mKey && !keyByMat.has(mKey)) keyByMat.set(mKey, item.key);
+                        if (!mKey) return;
+                        if (!keysByMat.has(mKey)) keysByMat.set(mKey, []);
+                        keysByMat.get(mKey).push(item.key);
+                        const prevBest = bestEntryByMat.get(mKey);
+                        if (!prevBest) {
+                            bestEntryByMat.set(mKey, item);
+                            keyByMat.set(mKey, item.key);
+                        } else {
+                            const curPers = isPersonalizedRecord(item.user) ? 1 : 0;
+                            const prevPers = isPersonalizedRecord(prevBest.user) ? 1 : 0;
+                            const curTs = Number(item.user.pwdUpdatedAt || 0);
+                            const prevTs = Number(prevBest.user.pwdUpdatedAt || 0);
+                            if (curPers > prevPers || (curPers === prevPers && curTs > prevTs)) {
+                                bestEntryByMat.set(mKey, item);
+                                keyByMat.set(mKey, item.key);
+                            }
+                        }
                     });
-                    return { entries, keyByMat };
+                    return { entries, keyByMat, keysByMat };
                 },
                 _nextNumericUserKey(val) {
                     if (Array.isArray(val)) return String(val.length);
@@ -1159,7 +1186,15 @@ storage: {
                     const localTs = Number(localU.pwdUpdatedAt || 0);
                     const localPwdDirty = !!(this._dirtyPwdMats && this._dirtyPwdMats.has(mKey));
                     const remoteHasPwd = !!(existing.senha && String(existing.senha).trim() !== '');
-                    const keepLocalPwd = localPwdDirty || (localTs > remoteTs) || (!remoteHasPwd && !!localU.senha);
+                    const isDefFn = app.utils && typeof app.utils.isDefaultPassword === 'function';
+                    const isRemotePersonalized = existing.primeiroAcesso === false && remoteHasPwd && !(isDefFn && app.utils.isDefaultPassword(existing.senha));
+                    const isLocalDefaultOrPending = localU.primeiroAcesso === true || !localU.senha || (isDefFn && app.utils.isDefaultPassword(localU.senha));
+                    let keepLocalPwd = localPwdDirty || (localTs > remoteTs) || (!remoteHasPwd && !!localU.senha);
+
+                    // Blinda senha ja personalizada no servidor contra sobrescrita por senha padrao (12345) ou clock skew
+                    if (isRemotePersonalized && !localPwdDirty && isLocalDefaultOrPending) {
+                        keepLocalPwd = false;
+                    }
 
                     if (!keepLocalPwd && remoteHasPwd) {
                         merged.senha = existing.senha;
@@ -1212,17 +1247,23 @@ storage: {
                             return usersRef.once('value').then(snap => {
                                 const { entries } = this._extractUsersSnapshot(snap.val());
 
-                                // SAFE MERGE MAP: preserva 100% dos usuários remotos existentes e senhas atualizadas na nuvem
+                                // SAFE MERGE MAP: preserva 100% dos usuarios remotos existentes e senhas personalizadas na nuvem
                                 const userMap = new Map();
                                 entries.forEach(item => {
                                     const u = item.user;
                                     const mKey = this._normalizeMat(u && u.matricula);
                                     if (mKey && !removedSet.has(mKey)) {
-                                        userMap.set(mKey, Object.assign({}, u));
+                                        const prev = userMap.get(mKey);
+                                        if (prev) {
+                                            userMap.set(mKey, this._mergeUserRecord(prev, u, mKey));
+                                        } else {
+                                            userMap.set(mKey, Object.assign({}, u));
+                                        }
                                     }
                                 });
+                                const uniqueRemoteCount = userMap.size;
 
-                                // Mescla com os usuários locais preservando senhas mais novas remotas
+                                // Mescla com os usuarios locais preservando senhas mais novas remotas
                                 app.users.forEach(u => {
                                     const mKey = this._normalizeMat(u && u.matricula);
                                     if (!mKey || removedSet.has(mKey)) return;
@@ -1235,7 +1276,7 @@ storage: {
                                 });
 
                                 const mergedUsers = Array.from(userMap.values());
-                                if (entries.length >= 5 && mergedUsers.length < entries.length && removedSet.size === 0) {
+                                if (uniqueRemoteCount >= 5 && mergedUsers.length < uniqueRemoteCount && removedSet.size === 0) {
                                     return Promise.reject(new Error("Seguranca de Integridade: merge reduziu quantidade de usuarios remotamente."));
                                 }
                                 app.users = mergedUsers;
@@ -1261,7 +1302,7 @@ storage: {
                     }
                     return Promise.resolve();
                 },
-                saveUserByMatricula(mat, fieldsObj) {
+                saveUserByMatricula(mat, fieldsObj, opts) {
                     const mKey = this._normalizeMat(mat);
                     if (!mKey || !fieldsObj || typeof fieldsObj !== 'object') return Promise.resolve();
 
@@ -1271,12 +1312,19 @@ storage: {
                         if (payload.pwdUpdatedAt === undefined) payload.pwdUpdatedAt = Date.now();
                     }
 
-                    const idx = (app.users || []).findIndex(u => u && this._normalizeMat(u.matricula) === mKey);
-                    if (idx > -1) {
-                        Object.assign(app.users[idx], payload);
-                        if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
-                            Object.assign(app.currentUser, payload);
+                    const isAuthPayload = payload.senha !== undefined || payload.primeiroAcesso !== undefined;
+                    let idx = -1;
+                    (app.users || []).forEach((u, i) => {
+                        if (!u || this._normalizeMat(u.matricula) !== mKey) return;
+                        if (idx === -1 || isAuthPayload) {
+                            Object.assign(u, payload);
                         }
+                        if (idx === -1 || (u.primeiroAcesso === false && u.senha && !(app.utils && app.utils.isDefaultPassword(u.senha)))) {
+                            idx = i;
+                        }
+                    });
+                    if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
+                        Object.assign(app.currentUser, payload);
                     }
 
                     this.invalidateCoreCache();
@@ -1294,11 +1342,14 @@ storage: {
                     if (typeof firebase !== 'undefined' && firebase.database) {
                         return this._enqueueUserSave(() => {
                             const usersRef = firebase.database().ref('sistema_bonificacao/users');
+                            let primaryRemoteKey = null;
                             return usersRef.once('value').then(snap => {
                                 const val = snap.val();
-                                const { entries, keyByMat } = this._extractUsersSnapshot(val);
+                                const { entries, keyByMat, keysByMat } = this._extractUsersSnapshot(val);
+                                const matchingKeys = (keysByMat && keysByMat.get(mKey)) || [];
                                 const remoteKey = keyByMat.get(mKey);
                                 if (remoteKey !== undefined) {
+                                    primaryRemoteKey = remoteKey;
                                     const remoteEntry = entries.find(e => e.key === remoteKey);
                                     if (idx > -1 && remoteEntry && remoteEntry.user) {
                                         const mergedLocal = Object.assign({}, remoteEntry.user, app.users[idx], payload);
@@ -1310,14 +1361,35 @@ storage: {
                                     }
                                     if (!this._userKeyMap) this._userKeyMap = new Map();
                                     this._userKeyMap.set(mKey, remoteKey);
-                                    return firebase.database().ref('sistema_bonificacao/users/' + remoteKey).update(payload);
+
+                                    // Se houver registros duplicados da mesma matricula e estivermos atualizando senha/acesso, sincroniza TODOS os registros no Firebase
+                                    const targetKeys = isAuthPayload && matchingKeys.length > 1 ? matchingKeys : [remoteKey];
+                                    const multiPatch = {};
+                                    targetKeys.forEach(rk => {
+                                        Object.keys(payload).forEach(pk => {
+                                            multiPatch[`${rk}/${pk}`] = payload[pk];
+                                        });
+                                    });
+                                    return usersRef.update(multiPatch);
                                 } else if (idx > -1) {
                                     const newKey = this._nextNumericUserKey(val);
+                                    primaryRemoteKey = newKey;
                                     if (!this._userKeyMap) this._userKeyMap = new Map();
                                     this._userKeyMap.set(mKey, newKey);
                                     return firebase.database().ref('sistema_bonificacao/users/' + newKey).set(app.users[idx]);
                                 } else {
                                     return Promise.reject(new Error("Usuário não localizado no servidor para atualização."));
+                                }
+                            }).then(() => {
+                                if (opts && opts.verifyPwdReadback && primaryRemoteKey !== null) {
+                                    return firebase.database().ref('sistema_bonificacao/users/' + primaryRemoteKey).once('value').then(checkSnap => {
+                                        const saved = checkSnap.val();
+                                        const okPwd = payload.senha === undefined || (saved && saved.senha === payload.senha);
+                                        const okFirst = payload.primeiroAcesso === undefined || (saved && saved.primeiroAcesso === payload.primeiroAcesso);
+                                        if (!saved || !okPwd || !okFirst) {
+                                            return Promise.reject(new Error("Confirmacao de gravacao da senha no banco falhou."));
+                                        }
+                                    });
                                 }
                             }).then(() => {
                                 if (payload.senha !== undefined && this._dirtyPwdMats) {
@@ -3083,31 +3155,90 @@ storage: {
                             details: cleanDetails,
                             triad: triad || '',
                             dueDate: dueDate || '',
-                            createdAt: nowTs,
-                            acknowledged: false,
-                            acknowledgedAt: null
-                        };
+                        createdAt: nowTs,
+                        acknowledged: false,
+                        acknowledgedAt: null
+                    };
 
-                        const writes = [];
-                        if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
-                            writes.push(firebase.database().ref(`sistema_bonificacao/task_reminders/${safeMat}/${remId}`).set(remObj));
-                        }
-                        this.notify(toMat, `Nova Tarefa de ${fromName}`, cleanText, 'info');
+                    const writes = [];
+                    if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+                        writes.push(firebase.database().ref(`sistema_bonificacao/task_reminders/${safeMat}/${remId}`).set(remObj));
+                    }
+                    this.notify(toMat, `Nova Tarefa de ${fromName}`, cleanText, 'info');
 
-                        if (alsoAddGtd && app.gtd && typeof app.gtd.appendAssignedNoteToUser === 'function') {
-                            writes.push(app.gtd.appendAssignedNoteToUser(u, {
-                                text: cleanDetails ? `${cleanText} — ${cleanDetails}` : cleanText,
-                                triad: triad || '',
-                                dueDate: dueDate || '',
-                                assignedBy: fromName,
-                                assignedByMat: fromMat
-                            }));
+                    if (alsoAddGtd && app.gtd && typeof app.gtd.appendAssignedNoteToUser === 'function') {
+                        writes.push(app.gtd.appendAssignedNoteToUser(u, {
+                            text: cleanDetails ? `${cleanText} — ${cleanDetails}` : cleanText,
+                            triad: triad || '',
+                            dueDate: dueDate || '',
+                            assignedBy: fromName,
+                            assignedByMat: fromMat
+                        }));
+                    }
+                    return Promise.all(writes);
+                });
+
+                return Promise.all(ops);
+            },
+
+            replyToTaskReminder({ toMat, toName = '', text, originalTaskText = '', reminderId = '', noteId = '' }) {
+                const targetMat = String(toMat || '').trim();
+                const cleanReply = String(text || '').trim();
+                if (!targetMat || !cleanReply) {
+                    return Promise.reject(new Error('Destinatário ou resposta inválida.'));
+                }
+                const fromMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || 'ADM').trim();
+                const fromName = app.isAdmin ? 'Administração' : String(app.currentUser?.nome || 'Colaborador').trim();
+                const cleanOrig = String(originalTaskText || '').trim();
+                const safeTargetMat = app.storage
+                    ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(targetMat))
+                    : targetMat.toUpperCase();
+                const nowTs = Date.now();
+                const replyId = 'trep_' + nowTs + '_' + Math.random().toString(36).slice(2, 6);
+
+                const replyObj = {
+                    id: replyId,
+                    kind: 'task_reply',
+                    parentReminderId: reminderId || '',
+                    fromMat,
+                    fromName,
+                    toMat: targetMat,
+                    toName: toName || targetMat,
+                    text: cleanReply,
+                    originalTaskText: cleanOrig,
+                    details: cleanOrig ? `Referente à demanda: "${cleanOrig}"` : '',
+                    createdAt: nowTs,
+                    acknowledged: false,
+                    acknowledgedAt: null
+                };
+
+                const writes = [];
+                if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+                    writes.push(firebase.database().ref(`sistema_bonificacao/task_reminders/${safeTargetMat}/${replyId}`).set(replyObj));
+                    if (reminderId) {
+                        const rawMyMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || '').trim();
+                        if (rawMyMat) {
+                            const mySafeMat = app.storage ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(rawMyMat)) : rawMyMat.toUpperCase();
+                            writes.push(firebase.database().ref(`sistema_bonificacao/task_reminders/${mySafeMat}/${reminderId}`).update({
+                                repliedAt: nowTs,
+                                replyPreview: cleanReply
+                            }).catch(() => {}));
                         }
-                        return Promise.all(writes);
+                    }
+                }
+
+                this.notify(targetMat, `Resposta de ${fromName}`, cleanReply, 'success');
+
+                if (noteId && app.gtd && typeof app.gtd.updateNote === 'function') {
+                    const hourStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    app.gtd.updateNote(noteId, {
+                        lastReplyText: cleanReply,
+                        lastReplyAt: hourStr
                     });
+                }
 
-                    return Promise.all(ops);
-                },
+                return Promise.all(writes);
+            },
 
                 checkTaskReminders(force = false) {
                     if (window.__TEST_MODE__ || (!app.isAdmin && !app.currentUser) || app.isGuest) return;
@@ -7875,7 +8006,7 @@ storage: {
                 app.ui.renderTab('diario_bordo', true);
 
                 setTimeout(() => {
-                    this.selecionarTurmaBase(targetTurmaId);
+                    this.selecionarTurmaBase(targetTurmaId, true);
                 }, 50);
             },
 
@@ -7887,9 +8018,24 @@ storage: {
                 }
                 const hoje = new Date().toISOString().split('T')[0];
                 const curUser = app.currentUser || {};
+                const tBase = item.turmaBaseId && app.turmasTreinamentoList ? app.turmasTreinamentoList[item.turmaBaseId] : null;
+                const chamadaLimpa = Array.isArray(item.chamada)
+                    ? item.chamada.map(c => {
+                        if (!c) return c;
+                        const isTO = (c.statusDia === 'T.O' || c.statusDia === 'Declínio' || c.riscado);
+                        return {
+                            ...JSON.parse(JSON.stringify(c)),
+                            statusDia: isTO ? (c.statusDia === 'Declínio' ? 'Declínio' : 'T.O') : 'Presente',
+                            riscado: !!isTO,
+                            perfil: ''
+                        };
+                    })
+                    : [];
                 const prev = parseInt(item.previstosSala) || 20;
                 const desl = Array.isArray(item.desligamentos) ? item.desligamentos.length : 0;
-                const novosPrevistos = Math.max(1, prev - desl);
+                const novosPrevistos = chamadaLimpa.length > 0
+                    ? Math.max(1, chamadaLimpa.filter(c => !c.riscado).length)
+                    : Math.max(1, prev - desl);
 
                 this.diarioEmEdicao = {
                     id: 'db_' + Date.now(),
@@ -7897,7 +8043,8 @@ storage: {
                     operacao: item.operacao || '',
                     turma: item.turma || '',
                     turmaBaseId: item.turmaBaseId || '',
-                    chamada: Array.isArray(item.chamada) ? JSON.parse(JSON.stringify(item.chamada)) : [],
+                    chamada: chamadaLimpa,
+                    faseDoDia: (tBase && tBase.dataInicioOperacao && hoje >= tBase.dataInicioOperacao) ? 'alo_acompanhado' : (item.faseDoDia || 'sala'),
                     treinadorMatricula: item.treinadorMatricula || curUser.matricula || '',
                     treinadorNome: item.treinadorNome || curUser.nome || 'Instrutor(a)',
                     treinadorFoto: item.treinadorFoto || curUser.foto || '',
@@ -7912,7 +8059,7 @@ storage: {
                 };
                 this.viewMode = 'form';
                 app.ui.renderTab('diario_bordo', true);
-                app.ui.showAlert("Turma Carregada", `Novo diário para a "${item.turma}" (${item.operacao}) iniciado! Previstos ajustados para ${novosPrevistos}.`, "success");
+                app.ui.showAlert("Novo Diário Iniciado", `Novo diário em branco para "${item.turma}" (${item.operacao}) criado! Previstos: ${novosPrevistos}.`, "success");
             },
 
             aplicarTurmaExistente(turmaId) {
@@ -7964,15 +8111,10 @@ storage: {
             },
 
             novoDiarioComTurma(turmaId) {
-                this.novoDiario();
-                if (turmaId) {
-                    setTimeout(() => {
-                        this.selecionarTurmaBase(turmaId);
-                    }, 50);
-                }
+                this.novoDiario(turmaId || null);
             },
 
-            selecionarTurmaBase(turmaId) {
+            selecionarTurmaBase(turmaId, silent = false) {
                 if (!turmaId) return;
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t || !this.diarioEmEdicao) return;
@@ -8033,7 +8175,9 @@ storage: {
 
                 this.sincronizarChamadaComMetricas();
                 this.renderTabelaChamada();
-                app.ui.showAlert("Turma Carregada", `Turma "${t.numeroTurma}" (${t.operacao}) vinculada com ${this.diarioEmEdicao.chamada.length} alunos!`, "success");
+                if (!silent) {
+                    app.ui.showAlert("Turma Carregada", `Turma "${t.numeroTurma}" (${t.operacao}) vinculada com ${this.diarioEmEdicao.chamada.length} alunos!`, "success");
+                }
             },
 
             alterarStatusChamada(matricula, novoStatus) {
@@ -8810,11 +8954,85 @@ storage: {
                 });
             },
 
+            _drawPdfTextBoxPaginated(doc, { title, text, startY, marginX, contentWidth, pageHeight, footerReserve = 16, fontSize = 7.5, lineHeight = 3.8 }) {
+                let y = startY;
+                const cleanText = String(text || '').trim();
+                if (!cleanText) return { page: doc.internal.getNumberOfPages(), finalY: y };
+
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(fontSize);
+                const allLines = doc.splitTextToSize(cleanText, contentWidth - 8);
+                if (!allLines || allLines.length === 0) return { page: doc.internal.getNumberOfPages(), finalY: y };
+
+                const topPad = 4;
+                const bottomPad = 3.5;
+                const titleStep = title ? 4.5 : 0;
+                const minChunkNeeded = titleStep + topPad + lineHeight + bottomPad;
+
+                if (y + minChunkNeeded > pageHeight - footerReserve) {
+                    doc.addPage();
+                    y = 14;
+                }
+
+                let cursorIdx = 0;
+                let firstChunk = true;
+
+                while (cursorIdx < allLines.length) {
+                    if (title) {
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(8);
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(firstChunk ? title : `${title} (continuação)`, marginX, y);
+                        y += 3.5;
+                    }
+
+                    const availH = (pageHeight - footerReserve) - y;
+                    const maxLinesFit = Math.max(1, Math.floor((availH - topPad - bottomPad) / lineHeight));
+                    const chunk = allLines.slice(cursorIdx, cursorIdx + maxLinesFit);
+                    const boxH = Math.max(11, (chunk.length * lineHeight) + topPad + bottomPad - 1);
+
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.setLineWidth(0.2);
+                    doc.roundedRect(marginX, y, contentWidth, boxH, 1, 1, 'FD');
+                    doc.setFillColor(16, 185, 129);
+                    doc.rect(marginX, y, 1.5, boxH, 'F');
+
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(fontSize);
+                    doc.setTextColor(51, 65, 85);
+                    doc.text(chunk, marginX + 4, y + topPad + 0.5);
+
+                    cursorIdx += chunk.length;
+                    y += boxH;
+                    firstChunk = false;
+
+                    if (cursorIdx < allLines.length) {
+                        doc.addPage();
+                        y = 14;
+                    }
+                }
+
+                return { page: doc.internal.getNumberOfPages(), finalY: y };
+            },
+
+            _resolveDiarioTargetForExport(diarioId = null) {
+                const isEditingTarget = this.diarioEmEdicao && (!diarioId || this.diarioEmEdicao.id === diarioId);
+                if (isEditingTarget) {
+                    const relatoEl = document.getElementById('db-input-relato');
+                    const dataEl = document.getElementById('db-input-data');
+                    if (relatoEl) this.diarioEmEdicao.relatoGeral = relatoEl.value;
+                    if (dataEl && dataEl.value) this.diarioEmEdicao.data = dataEl.value;
+                    return this.diarioEmEdicao;
+                }
+                return diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+            },
+
             gerarPDF(diarioId = null) {
                 if (!window.jspdf || !window.jspdf.jsPDF) {
                     return app.ui.showAlert("Aviso", "Aguarde o carregamento do gerador de PDF...", "error");
                 }
-                const diario = diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+                const diario = this._resolveDiarioTargetForExport(diarioId);
                 if (!diario) return app.ui.showAlert("Erro", "Nenhum diário selecionado para gerar PDF.", "error");
                 if (!this.canEditDiario(diario)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para visualizar o relatório deste diário.", "warning");
@@ -8961,11 +9179,10 @@ storage: {
                 doc.text(`• Desligamentos (T.O): ${pctD}% (${D})`, marginX + 115, barY + barH + 3.5);
 
                 // ==========================================
-                // TABELAS LADO A LADO EM A4 HORIZONTAL
+                // TABELAS LADO A LADO EM A4 HORIZONTAL (COM CONTROLE DE PÁGINA E MARGENS)
                 // ==========================================
-                // Coluna 1 (Esquerda): ABS (Faltas e Justificativas) -> ~131mm
-                // Coluna 2 (Direita): Desligamentos e Alterações de Quadro -> ~131mm
                 const tablesStartY = barY + barH + 7;
+                const tablesStartPage = doc.internal.getNumberOfPages();
                 const colW = (contentWidth - 6) / 2; // ~131.5mm cada coluna
 
                 const absRows = (diario.abs || []).map(item => [
@@ -8990,13 +9207,15 @@ storage: {
                 // 1) Tabela ABS na Coluna Esquerda
                 doc.autoTable({
                     startY: tablesStartY,
-                    margin: { left: marginX },
+                    margin: { top: 14, bottom: 16, left: marginX },
                     tableWidth: colW,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
                     head: [[`ABS - Absenteísmo e Faltas (${absRows.length})`, '', ''], ['Matrícula', 'Nome do Colaborador', 'Motivo da Falta']],
                     body: absRows.length > 0 ? absRows : [['Nenhuma falta registrada nesta turma.', '', '']],
                     theme: 'striped',
                     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 22, halign: 'center' },
@@ -9004,19 +9223,25 @@ storage: {
                         2: { cellWidth: colW - 70 }
                     }
                 });
+                const absEndPage = doc.internal.getNumberOfPages();
                 const absFinalY = doc.lastAutoTable.finalY;
+
+                // Volta à página inicial das tabelas para desenhar a Coluna Direita sem colisão
+                doc.setPage(tablesStartPage);
 
                 // 2) Tabela Desligamentos na Coluna Direita (Topo)
                 const rightColX = marginX + colW + 6;
                 doc.autoTable({
                     startY: tablesStartY,
-                    margin: { left: rightColX },
+                    margin: { top: 14, bottom: 16, left: rightColX },
                     tableWidth: colW,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
                     head: [[`Desligamentos da Turma / Evasões (${deslRows.length})`, ''], ['Matrícula', 'Nome do Colaborador']],
                     body: deslRows.length > 0 ? deslRows : [['Nenhum desligamento registrado.', '']],
                     theme: 'striped',
                     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 28, halign: 'center' },
@@ -9026,15 +9251,22 @@ storage: {
                 const deslFinalY = doc.lastAutoTable.finalY;
 
                 // 3) Tabela Remanejamentos de Quadro na Coluna Direita (Logo abaixo de Desligamentos)
+                let altStartY = deslFinalY + 4;
+                if (altStartY + 18 > pageHeight - 16) {
+                    doc.addPage();
+                    altStartY = 14;
+                }
                 doc.autoTable({
-                    startY: deslFinalY + 4,
-                    margin: { left: rightColX },
+                    startY: altStartY,
+                    margin: { top: 14, bottom: 16, left: rightColX },
                     tableWidth: colW,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
                     head: [[`Remanejamentos de Quadro - Opcional (${altRows.length})`, '', '', '', ''], ['Matrícula', 'Nome', 'De onde veio', 'Para onde vai', 'Observação']],
                     body: altRows.length > 0 ? altRows : [['Nenhum remanejamento registrado nesta turma (opcional).', '', '', '', '']],
                     theme: 'striped',
                     headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, cellPadding: 2 },
-                    bodyStyles: { fontSize: 6.5, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    bodyStyles: { fontSize: 6.5, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 18, halign: 'center' },
@@ -9044,52 +9276,51 @@ storage: {
                         4: { cellWidth: colW - 102 }
                     }
                 });
+                const rightEndPage = doc.internal.getNumberOfPages();
                 const altFinalY = doc.lastAutoTable.finalY;
 
+                // Sincroniza para a página mais avançada usada pelas tabelas antes de renderizar o Relato
+                const maxTablePage = Math.max(absEndPage, rightEndPage);
+                doc.setPage(maxTablePage);
+                let bottomY = (absEndPage === rightEndPage
+                    ? Math.max(absFinalY, altFinalY)
+                    : (absEndPage > rightEndPage ? absFinalY : altFinalY)) + 6;
+
                 // ==========================================
-                // RELATO DO INSTRUTOR (OCUPA A LARGURA INTEGRAL)
+                // RELATO DO INSTRUTOR COM PAGINAÇÃO AUTOMÁTICA (NUNCA CORTA NA PÁGINA)
                 // ==========================================
-                let bottomY = Math.max(absFinalY, altFinalY) + 5;
                 if (diario.relatoGeral && diario.relatoGeral.trim()) {
-                    if (bottomY > pageHeight - 35) {
-                        doc.addPage();
-                        bottomY = 14;
-                    }
-                    doc.setFont("helvetica", "bold");
-                    doc.setFontSize(8);
-                    doc.setTextColor(30, 41, 59);
-                    doc.text("RELATO DO DIA / OBSERVAÇÕES DO INSTRUTOR", marginX, bottomY);
-                    bottomY += 3;
-
-                    const splitRelato = doc.splitTextToSize(diario.relatoGeral.trim(), contentWidth - 8);
-                    const boxH = Math.max(12, (splitRelato.length * 3.8) + 4);
-
-                    doc.setFillColor(248, 250, 252);
-                    doc.setDrawColor(226, 232, 240);
-                    doc.setLineWidth(0.2);
-                    doc.roundedRect(marginX, bottomY, contentWidth, boxH, 1, 1, 'FD');
-                    doc.setFillColor(16, 185, 129); // Accent bar na esquerda
-                    doc.rect(marginX, bottomY, 1.5, boxH, 'F');
-
-                    doc.setFont("helvetica", "normal");
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(51, 65, 85);
-                    doc.text(splitRelato, marginX + 4, bottomY + 4);
+                    this._drawPdfTextBoxPaginated(doc, {
+                        title: "RELATO DO DIA / OBSERVAÇÕES DO INSTRUTOR",
+                        text: diario.relatoGeral,
+                        startY: bottomY,
+                        marginX,
+                        contentWidth,
+                        pageHeight,
+                        footerReserve: 16,
+                        fontSize: 7.5,
+                        lineHeight: 3.8
+                    });
                 }
 
-                // Página Complementar: Chamada Nominal e Perfil Comportamental (se houver alunos na chamada)
+                // Página Complementar: Chamada Nominal e Perfil Comportamental (com cabeçalho repetido se passar de 1 página)
                 if (Array.isArray(diario.chamada) && diario.chamada.length > 0) {
+                    const drawChamadaBanner = () => {
+                        doc.setFillColor(15, 23, 42);
+                        doc.rect(0, 0, pageWidth, 18, 'F');
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(10);
+                        doc.setTextColor(255, 255, 255);
+                        doc.text("LISTA DE CHAMADA NOMINAL & PERFIL DO COLABORADOR", marginX, 12);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(7.5);
+                        doc.setTextColor(148, 163, 184);
+                        doc.text(`Operação: ${String(diario.operacao || '').toUpperCase()}  |  Turma: ${String(diario.turma || '').toUpperCase()}  |  Data: ${dataFormatada}`, pageWidth - marginX, 12, { align: 'right' });
+                    };
+
                     doc.addPage();
-                    doc.setFillColor(15, 23, 42); // Navy Softmarketing
-                    doc.rect(0, 0, pageWidth, 18, 'F');
-                    doc.setFont("helvetica", "bold");
-                    doc.setFontSize(10);
-                    doc.setTextColor(255, 255, 255);
-                    doc.text("LISTA DE CHAMADA NOMINAL & PERFIL DO COLABORADOR", marginX, 12);
-                    doc.setFont("helvetica", "normal");
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(148, 163, 184);
-                    doc.text(`Operação: ${String(diario.operacao || '').toUpperCase()}  |  Turma: ${String(diario.turma || '').toUpperCase()}  |  Data: ${dataFormatada}`, pageWidth - marginX, 12, { align: 'right' });
+                    const chamadaStartPage = doc.internal.getNumberOfPages();
+                    drawChamadaBanner();
 
                     const chamadaRows = diario.chamada.map(c => [
                         c.matricula || '-',
@@ -9101,12 +9332,15 @@ storage: {
 
                     doc.autoTable({
                         startY: 23,
-                        margin: { left: marginX, right: marginX },
+                        margin: { top: 22, bottom: 16, left: marginX, right: marginX },
+                        tableWidth: contentWidth,
+                        rowPageBreak: 'avoid',
+                        showHead: 'everyPage',
                         head: [['Matrícula', 'Nome do Aluno', 'CPF', 'Presença / Status', 'Perfil Comportamental / Desempenho no Dia']],
                         body: chamadaRows,
                         theme: 'striped',
                         headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                        bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                        bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                         alternateRowStyles: { fillColor: [248, 250, 252] },
                         columnStyles: {
                             0: { cellWidth: 22, halign: 'center' },
@@ -9114,6 +9348,11 @@ storage: {
                             2: { cellWidth: 28 },
                             3: { cellWidth: 32 },
                             4: { cellWidth: contentWidth - 137 }
+                        },
+                        didDrawPage: (data) => {
+                            if (doc.internal.getNumberOfPages() > chamadaStartPage) {
+                                drawChamadaBanner();
+                            }
                         }
                     });
                 }
@@ -9143,14 +9382,16 @@ storage: {
             },
 
             gerarTextoEmailFormatado(diarioId = null) {
-                const diario = diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+                const diario = this._resolveDiarioTargetForExport(diarioId);
                 if (!diario) return '';
 
                 const op = (diario.operacao || 'OPERAÇÃO').toUpperCase();
                 const turma = (diario.turma || '').toUpperCase();
 
-                // Buscar diários da mesma turma ordenados por data até o diário atual
-                const todosDiarios = Object.values(app.diarioBordoList || {}).filter(Boolean);
+                // Buscar diários da mesma turma ordenados por data até o diário atual (incluindo o rascunho atual em edição)
+                const mergedMap = { ...(app.diarioBordoList || {}) };
+                if (diario.id) mergedMap[diario.id] = diario;
+                const todosDiarios = Object.values(mergedMap).filter(Boolean);
                 const diariosTurma = todosDiarios.filter(d => {
                     if (!d) return false;
                     const matchTurma = (diario.turmaBaseId && d.turmaBaseId === diario.turmaBaseId) ||
@@ -9159,7 +9400,12 @@ storage: {
                     if (!matchTurma) return false;
                     if (diario.data && d.data && d.data > diario.data) return false;
                     return true;
-                }).sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+                }).sort((a, b) => {
+                    const da = String(a.data || '');
+                    const db = String(b.data || '');
+                    if (da !== db) return da.localeCompare(db);
+                    return Number(a.criadoEm || 0) - Number(b.criadoEm || 0);
+                });
 
                 let texto = `Prezados Gestores\nSegue diário de bordo de novos colaboradores ${op} turma ${turma}.\n\n`;
 
@@ -9270,7 +9516,7 @@ storage: {
             },
 
             copiarEmailPronto(diarioId = null) {
-                const targetDiario = diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
+                const targetDiario = this._resolveDiarioTargetForExport(diarioId);
                 if (targetDiario && !this.canEditDiario(targetDiario)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para acessar o diário de bordo de outro colaborador.", "warning");
                 }
@@ -9395,35 +9641,31 @@ storage: {
                 renderKpi(marginX + (cardW + 3) * 4, "ALÔ ACOMPANHADO", `${diasAlo} de ${t.diasAloAcompanhado || 4} dias`, "Monitoria em Ilha", 245, 243, 255, 221, 214, 254, 109, 40, 217);
 
                 // ==========================================
-                // CONSIDERAÇÕES FINAIS DO INSTRUTOR (PARECER)
+                // CONSIDERAÇÕES FINAIS DO INSTRUTOR (PARECER PAGINADO)
                 // ==========================================
-                const parecerY = cardY + cardH + 5;
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(8.5);
-                doc.setTextColor(30, 41, 59);
-                doc.text("PARECER CONCLUSIVO E CONSIDERAÇÕES FINAIS DO TREINAMENTO", marginX, parecerY);
-
                 const parecerTxt = t.consideracoesFinais && t.consideracoesFinais.trim()
                     ? t.consideracoesFinais.trim()
                     : "Turma capacitada e qualificada com sucesso conforme plano pedagógico e diretrizes operacionais. Colaboradores prontos para entrega na operação com acompanhamento em ilha.";
-                const splitParecer = doc.splitTextToSize(parecerTxt, contentWidth - 8);
-                const parecerBoxH = Math.max(13, (splitParecer.length * 3.8) + 4);
-
-                doc.setFillColor(248, 250, 252);
-                doc.setDrawColor(226, 232, 240);
-                doc.setLineWidth(0.2);
-                doc.roundedRect(marginX, parecerY + 2, contentWidth, parecerBoxH, 1, 1, 'FD');
-                doc.setFillColor(16, 185, 129);
-                doc.rect(marginX, parecerY + 2, 1.5, parecerBoxH, 'F');
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(7.5);
-                doc.setTextColor(51, 65, 85);
-                doc.text(splitParecer, marginX + 4, parecerY + 6);
+                const parecerRes = this._drawPdfTextBoxPaginated(doc, {
+                    title: "PARECER CONCLUSIVO E CONSIDERAÇÕES FINAIS DO TREINAMENTO",
+                    text: parecerTxt,
+                    startY: cardY + cardH + 5,
+                    marginX,
+                    contentWidth,
+                    pageHeight,
+                    footerReserve: 16,
+                    fontSize: 7.5,
+                    lineHeight: 3.8
+                });
 
                 // ==========================================
                 // TABELA DO HISTÓRICO DE AULAS MINISTRADAS
                 // ==========================================
-                const tableAulasY = parecerY + 2 + parecerBoxH + 5;
+                let tableAulasY = parecerRes.finalY + 5;
+                if (tableAulasY + 24 > pageHeight - 16) {
+                    doc.addPage();
+                    tableAulasY = 14;
+                }
                 const aulasRows = diariosTurma.map((d, idx) => {
                     const dtFmt = d.data ? d.data.split('-').reverse().join('/') : '--/--/----';
                     const fase = d.faseDoDia === 'alo_acompanhado' ? 'Alô Acompanhado (Ilha)' : 'Treinamento em Sala';
@@ -9442,12 +9684,15 @@ storage: {
 
                 doc.autoTable({
                     startY: tableAulasY,
-                    margin: { left: marginX, right: marginX },
+                    margin: { top: 14, bottom: 16, left: marginX, right: marginX },
+                    tableWidth: contentWidth,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
                     head: [['Dia', 'Data', 'Fase', 'Frequência', 'Conteúdo Programático & Evolução da Turma']],
                     body: aulasRows.length > 0 ? aulasRows : [['-', '-', '-', '-', 'Nenhum diário registrado para esta turma.']],
                     theme: 'striped',
                     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 18, halign: 'center' },
@@ -9459,19 +9704,24 @@ storage: {
                 });
 
                 // ==========================================
-                // PÁGINA 2: QUADRO FINAL NOMINAL DE ALUNOS
+                // PÁGINA 2+: QUADRO FINAL NOMINAL DE ALUNOS
                 // ==========================================
+                const drawQuadroBanner = () => {
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, pageWidth, 18, 'F');
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(10);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text("QUADRO NOMINAL FINAL DE COLABORADORES ENTREGUES", marginX, 12);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text(`Operação: ${String(t.operacao || '').toUpperCase()}  |  Turma: ${String(t.numeroTurma || '').toUpperCase()}  |  Total: ${colabs.length} alunos`, pageWidth - marginX, 12, { align: 'right' });
+                };
+
                 doc.addPage();
-                doc.setFillColor(15, 23, 42);
-                doc.rect(0, 0, pageWidth, 18, 'F');
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(10);
-                doc.setTextColor(255, 255, 255);
-                doc.text("QUADRO NOMINAL FINAL DE COLABORADORES ENTREGUES", marginX, 12);
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(7.5);
-                doc.setTextColor(148, 163, 184);
-                doc.text(`Operação: ${String(t.operacao || '').toUpperCase()}  |  Turma: ${String(t.numeroTurma || '').toUpperCase()}  |  Total: ${colabs.length} alunos`, pageWidth - marginX, 12, { align: 'right' });
+                const quadroStartPage = doc.internal.getNumberOfPages();
+                drawQuadroBanner();
 
                 const alunosRows = colabs.map((c, idx) => {
                     const cMat = String(c.matricula || '').trim().toUpperCase();
@@ -9515,12 +9765,15 @@ storage: {
 
                 doc.autoTable({
                     startY: 23,
-                    margin: { left: marginX, right: marginX },
+                    margin: { top: 22, bottom: 16, left: marginX, right: marginX },
+                    tableWidth: contentWidth,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
                     head: [['#', 'Matrícula', 'Nome Completo do Colaborador', 'Linha do Tempo (Dia a Dia)', 'Frequência', 'Situação Final / Parecer']],
                     body: alunosRows,
                     theme: 'striped',
                     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, cellPadding: 2 },
-                    bodyStyles: { fontSize: 6.8, cellPadding: 1.8, textColor: [30, 41, 59] },
+                    bodyStyles: { fontSize: 6.8, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
                     columnStyles: {
                         0: { cellWidth: 8, halign: 'center' },
@@ -9529,11 +9782,20 @@ storage: {
                         3: { cellWidth: 95 },
                         4: { cellWidth: 32, halign: 'center' },
                         5: { cellWidth: contentWidth - 219, halign: 'center' }
+                    },
+                    didDrawPage: () => {
+                        if (doc.internal.getNumberOfPages() > quadroStartPage) {
+                            drawQuadroBanner();
+                        }
                     }
                 });
 
-                // Assinaturas no final da página 2
-                const finalY = Math.min(pageHeight - 25, (doc.lastAutoTable?.finalY || 130) + 18);
+                // Assinaturas protegidas contra corte/sobreposição no fim da página
+                let finalY = (doc.lastAutoTable?.finalY || 130) + 16;
+                if (finalY + 14 > pageHeight - 14) {
+                    doc.addPage();
+                    finalY = 30;
+                }
                 const sigW = 75;
                 const sig1X = marginX + 30;
                 const sig2X = marginX + contentWidth - 30 - sigW;
@@ -10935,29 +11197,39 @@ storage: {
                         return;
                     }
 
-                    // 2. Verifica credenciais com suporte a senha criptografada (SHA-256) e CPF
+                    // 2. Verifica credenciais com suporte a senha criptografada (SHA-256) e CPF (priorizando cadastro ja personalizado se houver duplicidade)
                     if (app.users && app.users.length > 0) {
-                        const userIdx = app.users.findIndex(u => {
+                        const matchCandidateIndices = [];
+                        app.users.forEach((u, idx) => {
+                            if (!u) return;
                             const uMat = String(u.matricula || '').trim().toUpperCase();
-                            if (uMat !== matUpper) return false;
+                            if (uMat !== matUpper) return;
 
-                            // Verificação de senha direta ou criptografada
-                            if (app.utils.verifyPassword(pwd, u.senha)) return true;
-
-                            // Verificação via CPF (para alunos cadastrados em turmas de treinamento)
-                            if (u.cpf) {
+                            let matched = false;
+                            if (app.utils.verifyPassword(pwd, u.senha)) matched = true;
+                            if (!matched && u.cpf) {
                                 const cleanInputPwd = pwd.replace(/\D/g, '');
                                 const cleanUserCpf = String(u.cpf).replace(/\D/g, '');
-                                if (cleanInputPwd && cleanUserCpf && cleanInputPwd === cleanUserCpf) return true;
-                                if (pwd === String(u.cpf).trim()) return true;
+                                if ((cleanInputPwd && cleanUserCpf && cleanInputPwd === cleanUserCpf) || pwd === String(u.cpf).trim()) matched = true;
                             }
-
-                            // Fallback para primeiro acesso com senha padrão 12345 (somente se a senha ainda for padrão ou vazia)
                             const hasSavedPassword = !!(u.senha && String(u.senha).trim() !== '');
-                            if (pwd === '12345' && (!hasSavedPassword || app.utils.isDefaultPassword(u.senha))) return true;
+                            if (!matched && pwd === '12345' && (!hasSavedPassword || app.utils.isDefaultPassword(u.senha))) matched = true;
 
-                            return false;
+                            if (matched) matchCandidateIndices.push(idx);
                         });
+
+                        let userIdx = -1;
+                        if (matchCandidateIndices.length > 0) {
+                            matchCandidateIndices.sort((ia, ib) => {
+                                const ua = app.users[ia];
+                                const ub = app.users[ib];
+                                const aPers = (ua.primeiroAcesso === false && ua.senha && !app.utils.isDefaultPassword(ua.senha)) ? 1 : 0;
+                                const bPers = (ub.primeiroAcesso === false && ub.senha && !app.utils.isDefaultPassword(ub.senha)) ? 1 : 0;
+                                if (bPers !== aPers) return bPers - aPers;
+                                return Number(ub.pwdUpdatedAt || 0) - Number(ua.pwdUpdatedAt || 0);
+                            });
+                            userIdx = matchCandidateIndices[0];
+                        }
 
                         if(userIdx > -1) {
                             app.isAdmin = false;
@@ -10967,9 +11239,10 @@ storage: {
                             const mKey = app.storage._normalizeMat(app.users[userIdx].matricula);
                             const wasPlaintextRemote = !!(app.storage._plaintextPwdMats && app.storage._plaintextPwdMats.has(mKey));
                             const loginFields = { loginCount: newLoginCount };
+                            const isLoggingWithDefaultPwd = app.users[userIdx].primeiroAcesso || app.utils.isDefaultPassword(pwd) || app.utils.isDefaultPassword(app.users[userIdx].senha);
 
-                            // Somente grava senha no login se o registro no banco ainda estava sem criptografia SHA-256
-                            if (pwd && (!app.users[userIdx].senha || !String(app.users[userIdx].senha).startsWith('enc$v1$') || wasPlaintextRemote)) {
+                            // Somente migra senha no login se NAO for senha padrao (evita corrida antes da troca obrigatoria de senha)
+                            if (pwd && !isLoggingWithDefaultPwd && (!app.users[userIdx].senha || !String(app.users[userIdx].senha).startsWith('enc$v1$') || wasPlaintextRemote)) {
                                 const encMigrated = app.utils.encryptPassword(app.users[userIdx].senha || pwd);
                                 app.users[userIdx].senha = encMigrated;
                                 loginFields.senha = encMigrated;
@@ -11178,18 +11451,21 @@ storage: {
                             senha: encPwd,
                             primeiroAcesso: false,
                             pwdUpdatedAt: nowTs
-                        });
+                        }, { verifyPwdReadback: true });
 
-                        if (app.users[idx]) {
-                            app.users[idx].senha = encPwd;
-                            app.users[idx].primeiroAcesso = false;
-                            app.users[idx].pwdUpdatedAt = nowTs;
-                        }
+                        (app.users || []).forEach(u => {
+                            if (u && app.storage._normalizeMat(u.matricula) === curMat) {
+                                u.senha = encPwd;
+                                u.primeiroAcesso = false;
+                                u.pwdUpdatedAt = nowTs;
+                            }
+                        });
                         if (app.currentUser) {
                             app.currentUser.senha = encPwd;
                             app.currentUser.primeiroAcesso = false;
                             app.currentUser.pwdUpdatedAt = nowTs;
                         }
+                        try { localStorage.setItem("soft_users_backup", JSON.stringify(app.users)); } catch(e) {}
 
                         if (newEl) { newEl.value = ''; newEl.type = 'password'; }
                         if (confEl) { confEl.value = ''; confEl.type = 'password'; }
@@ -12973,6 +13249,8 @@ storage: {
                     if (typeof n.dueDate !== 'string') n.dueDate = '';
                     if (typeof n.assignedBy !== 'string') n.assignedBy = '';
                     if (typeof n.assignedByMat !== 'string') n.assignedByMat = '';
+                    if (typeof n.lastReplyText !== 'string') n.lastReplyText = '';
+                    if (typeof n.lastReplyAt !== 'string') n.lastReplyAt = '';
                     n.twoMin = !!n.twoMin;
                     n.estMinutes = (n.estMinutes !== undefined && n.estMinutes !== null && !isNaN(Number(n.estMinutes))) ? Number(n.estMinutes) : null;
                     if (!n.updatedAt) n.updatedAt = 'Lembrete';
@@ -14799,6 +15077,9 @@ storage: {
                     if (typeof this.checkGtdTutorialAutoShow === 'function') {
                         setTimeout(() => this.checkGtdTutorialAutoShow(), 450);
                     }
+                    if (typeof this.checkDiarioTutorialAutoShow === 'function') {
+                        setTimeout(() => this.checkDiarioTutorialAutoShow(), 650);
+                    }
                 },
 
                 getGtdTutorialSlides() {
@@ -15193,6 +15474,334 @@ storage: {
 
                     if (goToGtdTab) {
                         this.renderTab('produtividade_gtd', true);
+                    } else if (typeof this.checkDiarioTutorialAutoShow === 'function') {
+                        setTimeout(() => this.checkDiarioTutorialAutoShow(), 250);
+                    }
+                },
+
+                getDiarioTutorialSlides() {
+                    return [
+                        {
+                            badge: 'Etapa 1 de 6 • Visão Geral',
+                            icon: 'fa-book-open',
+                            accent: 'from-emerald-600 via-teal-600 to-cyan-600',
+                            title: 'Como Funciona o Diário de Bordo do Treinamento',
+                            subtitle: 'Padronize turmas, chamadas diárias, absenteísmo e entregas para a operação sem planilhas paralelas.',
+                            bodyHtml: `
+                                <div class="space-y-4">
+                                    <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        O <strong>Diário de Bordo</strong> centraliza todo o ciclo da sala de treinamento — do cadastro oficial da turma até a auditoria diária de presença, atestados e desligamentos.
+                                    </p>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                        <div class="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 space-y-1.5">
+                                            <div class="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                                                <i class="fa-solid fa-chalkboard-user"></i> Para Instrutores e Analistas
+                                            </div>
+                                            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                Cadastre a turma uma única vez e registre os diários diários com contagem automática de presentes, faltas e ocorrências da sala.
+                                            </p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 space-y-1.5">
+                                            <div class="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                                                <i class="fa-solid fa-chart-line"></i> Para Gestores e Coordenação
+                                            </div>
+                                            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                Acompanhe o <strong>Dashboard Geral</strong> em tempo real por operação, taxa de ABS, presença e histórico completo de cada turma.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-center gap-3 text-xs text-amber-900 dark:text-amber-200 font-semibold">
+                                        <i class="fa-solid fa-shield-halved text-amber-600 dark:text-amber-400 text-base shrink-0"></i>
+                                        <span>Este tutorial aparece automaticamente apenas para os perfis de <strong>Treinamento</strong> e <strong>Gestão</strong>.</span>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 2 de 6 • Dashboard Geral',
+                            icon: 'fa-chart-pie',
+                            accent: 'from-teal-600 via-emerald-600 to-green-600',
+                            title: 'Painel Executivo &amp; Cards por Operação',
+                            subtitle: 'Bata o olho nos percentuais críticos de presença, ABS e turnover logo ao abrir a aba.',
+                            bodyHtml: `
+                                <div class="space-y-3.5 text-xs">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div class="p-4 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/35 border border-emerald-300 dark:border-emerald-700/70 space-y-1.5">
+                                            <div class="font-black text-emerald-700 dark:text-emerald-300 uppercase">Indicadores em Destaque</div>
+                                            <p class="text-slate-700 dark:text-slate-200 leading-relaxed">Os cards de <strong>Presentes (%)</strong>, <strong>ABS (%)</strong> e <strong>Desligamentos (%)</strong> ficam evidenciados para leitura imediata sem scroll.</p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-sky-50/90 dark:bg-sky-950/35 border border-sky-300 dark:border-sky-700/70 space-y-1.5">
+                                            <div class="font-black text-sky-700 dark:text-sky-300 uppercase">Filtro de Período</div>
+                                            <p class="text-slate-700 dark:text-slate-200 leading-relaxed">Alterne rapidamente entre <strong>Hoje</strong>, <strong>Últimos 7 dias</strong>, <strong>Mês Atual</strong> ou <strong>Todos os registros</strong>.</p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-violet-50/90 dark:bg-violet-950/35 border border-violet-300 dark:border-violet-700/70 space-y-1.5">
+                                            <div class="font-black text-violet-700 dark:text-violet-300 uppercase">Cards de Operação</div>
+                                            <p class="text-slate-700 dark:text-slate-200 leading-relaxed">Clique em qualquer card de operação (ex: Copel, Dental Uni, Unimed) para abrir os detalhes e registros daquela carteira.</p>
+                                        </div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-start gap-2.5 text-slate-600 dark:text-slate-300">
+                                        <i class="fa-solid fa-bolt text-amber-500 mt-0.5 shrink-0"></i>
+                                        <span><strong>Dica rápida:</strong> use a sub-aba <strong>Resumo Rápido</strong> para consultar números consolidados de chamadas e desvios em segundos antes de reuniões.</span>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 3 de 6 • Passo 1 Obrigatório',
+                            icon: 'fa-graduation-cap',
+                            accent: 'from-blue-600 via-indigo-600 to-violet-600',
+                            title: 'Passo 1: Cadastrar a Turma Oficialmente',
+                            subtitle: 'Toda chamada nasce de uma Turma Cadastrada com alunos vinculados à matrícula e operação.',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-black tabular-nums">1</div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Clique em "+ Criar Turma" no topo direito</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Informe o número/código da turma, operação, datas de início/previsão e instrutor responsável.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-black tabular-nums">2</div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Adicione os Alunos (Matrícula + Nome + CPF)</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Ao salvar a turma, o sistema cria automaticamente o login de cada aluno para responder a <strong>Pesquisa de Treinamento</strong>.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-amber-50/80 dark:bg-amber-950/35 border border-amber-200 dark:border-amber-800/70">
+                                        <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 font-black tabular-nums">3</div>
+                                        <div>
+                                            <div class="font-black text-amber-900 dark:text-amber-200">Conferência &amp; Trava Definitiva em 2 Etapas</div>
+                                            <p class="text-amber-800 dark:text-amber-300 mt-0.5">Após a confirmação 2/2, a lista nominal da turma fica protegida contra alterações indevidas para preservar a auditoria.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 4 de 6 • Passo 2 Diário',
+                            icon: 'fa-clipboard-check',
+                            accent: 'from-emerald-600 via-green-600 to-teal-700',
+                            title: 'Passo 2: Lançar "+ Novo Diário de Bordo"',
+                            subtitle: 'Registre diariamente a chamada, motivos de ausência e acontecimentos importantes da sala.',
+                            bodyHtml: `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                                        <div class="font-black text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5"><i class="fa-solid fa-users-viewfinder"></i> Vínculo com a Turma</div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Selecione a turma cadastrada e a data da aula. Os alunos vinculados carregam prontos para marcação de presença, falta ou desligamento.</p>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                                        <div class="font-black text-rose-700 dark:text-rose-300 flex items-center gap-1.5"><i class="fa-solid fa-user-xmark"></i> ABS, Atestados e Desligamentos</div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Sempre registre o motivo da falta ou desligamento no diário para alimentar automaticamente os índices de ABS e Turnover do painel.</p>
+                                    </div>
+                                    <div class="sm:col-span-2 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                                        <div class="font-black text-slate-800 dark:text-white flex items-center gap-1.5"><i class="fa-solid fa-pen-to-square text-indigo-500"></i> Relato do Dia &amp; Pendências de Sistema/Acesso</div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Anote bloqueios de login, ferramentas da operação, evolução do conteúdo e qualquer alinhamento necessário com Qualidade ou Coordenação.</p>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 5 de 6 • Histórico e Consultas',
+                            icon: 'fa-clock-rotate-left',
+                            accent: 'from-slate-700 via-slate-800 to-indigo-900',
+                            title: 'Acompanhando Turmas e Histórico Completo',
+                            subtitle: 'Consulte qualquer dia registrado, filtre por instrutor/operação ou acompanhe em "Turmas Cadastradas".',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/35 border border-indigo-200 dark:border-indigo-800/70 space-y-1.5">
+                                        <div class="font-black text-indigo-800 dark:text-indigo-200 flex items-center gap-2">
+                                            <i class="fa-solid fa-folder-open"></i> Aba "Turmas Cadastradas"
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Mostra todas as turmas com quantidade de alunos, instrutor, progresso dos dias e acesso rápido ao dossiê individual da turma.</p>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800/70 space-y-1.5">
+                                        <div class="font-black text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                                            <i class="fa-solid fa-list-check"></i> Aba "Diários &amp; Histórico"
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Busque por operação, instrutor, turma ou data para visualizar, revisar ou complementar registros anteriores rapidamente.</p>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 6 de 6 • Rotina de Ouro',
+                            icon: 'fa-award',
+                            accent: 'from-amber-500 via-orange-600 to-rose-600',
+                            title: 'Checklist Diário para Zero Pendências',
+                            subtitle: 'Siga estes 3 passos simples todos os dias e acesse este tutorial quando precisar.',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
+                                        <i class="fa-solid fa-check-double text-emerald-600 text-base shrink-0"></i>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Início da turma:</strong> cadastre a turma completa antes da 1ª aula em <strong>Criar Turma</strong>.</span>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/35 border border-indigo-200 dark:border-indigo-800 flex items-center gap-3">
+                                        <i class="fa-solid fa-calendar-day text-indigo-600 text-base shrink-0"></i>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Todo dia até o fim do turno:</strong> lance o <strong>Novo Diário de Bordo</strong> mantendo presença e ABS 100% atualizados.</span>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/35 border border-amber-200 dark:border-amber-800 flex items-center gap-3">
+                                        <i class="fa-solid fa-graduation-cap text-amber-600 text-base shrink-0"></i>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Rever a apresentação:</strong> o botão <strong>Tutorial</strong> no topo da aba Diário de Bordo abre este guia a qualquer momento.</span>
+                                    </div>
+                                </div>
+                            `
+                        }
+                    ];
+                },
+
+                checkDiarioTutorialAutoShow() {
+                    if (window.__TEST_MODE__ || app.isGuest) return;
+                    if (app.isAdmin || !app.currentUser) return;
+                    if (document.getElementById('gtd-tutorial-modal') || document.getElementById('diario-tutorial-modal')) return;
+
+                    const role = String(app.currentUser.tipoAcesso || '').trim();
+                    const isTreinOuGestor = ['Treinamento', 'Gestor', 'Gerente'].includes(role);
+                    if (!isTreinOuGestor) return;
+
+                    const allowed = this.getEffectiveUserTabs(app.currentUser);
+                    if (!allowed.includes('diario_bordo')) return;
+
+                    const mat = String(app.currentUser.matricula || '').trim();
+                    if (!mat) return;
+                    const seenKey = 'soft_diario_tutorial_v1_seen_' + mat;
+                    const seenCloud = !!app.currentUser.diarioTutorialSeen;
+                    const seenLocal = !!localStorage.getItem(seenKey);
+
+                    if (!seenCloud && !seenLocal) {
+                        this.openDiarioTutorialModal(0, true);
+                    }
+                },
+
+                openDiarioTutorialModal(startStep = 0, isAuto = false) {
+                    const slides = this.getDiarioTutorialSlides();
+                    this._diarioTutorialStep = Math.max(0, Math.min(slides.length - 1, Number(startStep) || 0));
+                    this._diarioTutorialAuto = !!isAuto;
+
+                    let modal = document.getElementById('diario-tutorial-modal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'diario-tutorial-modal';
+                        modal.className = 'fixed inset-0 z-[94] flex items-center justify-center bg-slate-900/70 dark:bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-fade-in';
+                        document.body.appendChild(modal);
+                    }
+                    if (!window._diarioTutorialKeyBound) {
+                        window._diarioTutorialKeyBound = true;
+                        document.addEventListener('keydown', (e) => {
+                            const m = document.getElementById('diario-tutorial-modal');
+                            if (!m) return;
+                            const total = app.ui.getDiarioTutorialSlides().length;
+                            const cur = app.ui._diarioTutorialStep || 0;
+                            if (e.key === 'ArrowRight' && cur < total - 1) app.ui.setDiarioTutorialStep(cur + 1);
+                            else if (e.key === 'ArrowLeft' && cur > 0) app.ui.setDiarioTutorialStep(cur - 1);
+                            else if (e.key === 'Escape') app.ui.finishDiarioTutorial(false);
+                        });
+                    }
+                    this._renderDiarioTutorialModalContent();
+                },
+
+                setDiarioTutorialStep(stepIdx) {
+                    const slides = this.getDiarioTutorialSlides();
+                    this._diarioTutorialStep = Math.max(0, Math.min(slides.length - 1, Number(stepIdx) || 0));
+                    this._renderDiarioTutorialModalContent();
+                },
+
+                _renderDiarioTutorialModalContent() {
+                    const modal = document.getElementById('diario-tutorial-modal');
+                    if (!modal) return;
+                    const slides = this.getDiarioTutorialSlides();
+                    const idx = this._diarioTutorialStep || 0;
+                    const slide = slides[idx];
+                    const total = slides.length;
+                    const pct = Math.round(((idx + 1) / total) * 100);
+                    const isFirst = idx === 0;
+                    const isLast = idx === total - 1;
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[92vh]">
+                            <div class="px-6 py-5 bg-gradient-to-r ${slide.accent} text-white relative">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div class="flex items-start gap-3.5 min-w-0">
+                                        <div class="w-12 h-12 rounded-2xl bg-white/20 border border-white/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                                            <i class="fa-solid ${slide.icon}"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <span class="inline-block px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider mb-1.5">
+                                                ${slide.badge}
+                                            </span>
+                                            <h3 class="text-lg sm:text-xl font-black leading-tight">${slide.title}</h3>
+                                            <p class="text-xs text-white/90 mt-1 leading-relaxed">${slide.subtitle}</p>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="app.ui.finishDiarioTutorial(false)" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm shrink-0 cursor-pointer transition" title="Fechar tutorial">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                <div class="w-full h-1.5 rounded-full bg-white/25 overflow-hidden mt-4">
+                                    <div style="width:${pct}%" class="h-full bg-white rounded-full transition-all duration-300"></div>
+                                </div>
+                            </div>
+
+                            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                                ${slide.bodyHtml}
+                            </div>
+
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                                <div class="flex items-center gap-1.5">
+                                    ${slides.map((_, i) => `
+                                        <button type="button" onclick="app.ui.setDiarioTutorialStep(${i})"
+                                            class="h-2.5 rounded-full transition-all cursor-pointer ${i === idx ? 'w-7 bg-emerald-600' : (i < idx ? 'w-2.5 bg-teal-500' : 'w-2.5 bg-slate-300 dark:bg-slate-600 hover:bg-slate-400')}"
+                                            title="Ir para Etapa ${i + 1}">
+                                        </button>
+                                    `).join('')}
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 ml-auto">
+                                    ${!isLast ? `
+                                        <button type="button" onclick="app.ui.finishDiarioTutorial(false)" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white cursor-pointer transition">
+                                            Pular Tutorial
+                                        </button>
+                                    ` : ''}
+                                    ${!isFirst ? `
+                                        <button type="button" onclick="app.ui.setDiarioTutorialStep(${idx - 1})" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-extrabold cursor-pointer transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-arrow-left"></i> Anterior
+                                        </button>
+                                    ` : ''}
+                                    ${!isLast ? `
+                                        <button type="button" onclick="app.ui.setDiarioTutorialStep(${idx + 1})" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                            Próximo <i class="fa-solid fa-arrow-right"></i>
+                                        </button>
+                                    ` : `
+                                        <button type="button" onclick="app.ui.finishDiarioTutorial(false)" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer transition">
+                                            Concluir
+                                        </button>
+                                        <button type="button" onclick="app.ui.finishDiarioTutorial(true)" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-book-open"></i> Abrir Diário de Bordo
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+
+                finishDiarioTutorial(goToDiarioTab = false) {
+                    const modal = document.getElementById('diario-tutorial-modal');
+                    if (modal) modal.remove();
+
+                    const mat = app.isAdmin ? 'admin' : String(app.currentUser?.matricula || '').trim();
+                    if (mat) {
+                        try { localStorage.setItem('soft_diario_tutorial_v1_seen_' + mat, '1'); } catch (e) {}
+                        if (!app.isAdmin && app.currentUser && !app.currentUser.diarioTutorialSeen) {
+                            app.currentUser.diarioTutorialSeen = true;
+                            if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                                app.storage.saveUserByMatricula(mat, { diarioTutorialSeen: true }).catch(() => {});
+                            }
+                        }
+                    }
+
+                    if (goToDiarioTab) {
+                        this.renderTab('diario_bordo', true);
                     }
                 },
 
@@ -15269,50 +15878,93 @@ storage: {
 
                     try { if (app.utils && typeof app.utils.playCuteSound === 'function') app.utils.playCuteSound(); } catch (e) {}
 
+                    this._activePopupReminders = reminders.slice();
                     const esc = app.utils.escapeHtml;
                     const idsJson = JSON.stringify(reminders.map(r => r.id).filter(Boolean)).replace(/"/g, '&quot;');
-                    const firstSender = reminders[0].fromName || 'um gestor';
+                    const first = reminders[0];
+                    const firstSender = first.fromName || 'um colega';
+                    const onlyReplies = reminders.every(r => r.kind === 'task_reply');
+                    const hasReplies = reminders.some(r => r.kind === 'task_reply');
                     const headline = reminders.length === 1
-                        ? `Você recebeu uma tarefa de ${firstSender}!`
-                        : `Você recebeu ${reminders.length} tarefas!`;
+                        ? (first.kind === 'task_reply'
+                            ? `${firstSender} respondeu à sua demanda!`
+                            : `Você recebeu uma tarefa de ${firstSender}!`)
+                        : (onlyReplies
+                            ? `Você recebeu ${reminders.length} respostas de demandas!`
+                            : (hasReplies
+                                ? `Você recebeu ${reminders.length} avisos (tarefas e respostas)!`
+                                : `Você recebeu ${reminders.length} tarefas!`));
 
                     const wrapper = document.createElement('div');
                     wrapper.id = 'task-reminder-popup-modal';
                     wrapper.className = 'fixed inset-0 z-[96] flex items-center justify-center bg-slate-900/65 dark:bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
                     wrapper.innerHTML = `
-                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 border-indigo-400 dark:border-indigo-700 overflow-hidden">
-                            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 via-blue-600 to-sky-600 text-white flex items-center justify-between gap-3">
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 ${onlyReplies ? 'border-emerald-400 dark:border-emerald-700' : 'border-indigo-400 dark:border-indigo-700'} overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r ${onlyReplies ? 'from-emerald-600 via-teal-600 to-cyan-600' : 'from-indigo-600 via-blue-600 to-sky-600'} text-white flex items-center justify-between gap-3">
                                 <div class="flex items-center gap-3">
                                     <div class="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center text-xl shrink-0">
-                                        <i class="fa-solid fa-paper-plane animate-bounce"></i>
+                                        <i class="fa-solid ${onlyReplies ? 'fa-reply' : 'fa-paper-plane'} animate-bounce"></i>
                                     </div>
                                     <div>
-                                        <div class="text-[10px] font-black uppercase tracking-wider opacity-90">Lembrete de Tarefa Recebida</div>
+                                        <div class="text-[10px] font-black uppercase tracking-wider opacity-90">${onlyReplies ? 'Retorno de Demanda Enviada' : 'Lembrete de Tarefa &amp; Retorno'}</div>
                                         <h3 class="text-base sm:text-lg font-black leading-tight">${esc(headline)}</h3>
                                     </div>
                                 </div>
                             </div>
                             <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                                ${reminders.map(r => {
+                                ${reminders.map((r, rIdx) => {
+                                    const isReply = r.kind === 'task_reply';
                                     const sp = r.triad && app.gtd && app.gtd.TRIAD_SPHERES[r.triad] ? app.gtd.TRIAD_SPHERES[r.triad] : null;
                                     const dueFmt = r.dueDate ? r.dueDate.split('-').reverse().join('/') : '';
                                     const dtFmt = r.createdAt ? new Date(r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+                                    const canReply = !!String(r.fromMat || '').trim();
                                     return `
-                                        <div class="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 space-y-2">
+                                        <div id="trem-card-${rIdx}" class="p-4 rounded-2xl ${isReply ? 'bg-emerald-50/75 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70' : 'bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70'} space-y-2">
                                             <div class="flex flex-wrap items-center justify-between gap-2">
-                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-black">
-                                                    <i class="fa-solid fa-user-tie text-[10px]"></i> Tarefa de ${esc(r.fromName || 'Colega')}
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full ${isReply ? 'bg-emerald-600' : 'bg-indigo-600'} text-white text-[11px] font-black">
+                                                    <i class="fa-solid ${isReply ? 'fa-reply' : 'fa-user-tie'} text-[10px]"></i> ${isReply ? `Resposta de ${esc(r.fromName || 'Colega')}` : `Tarefa de ${esc(r.fromName || 'Colega')}`}
                                                 </span>
                                                 <span class="text-[10px] text-slate-400 font-bold">${esc(dtFmt)}</span>
                                             </div>
+                                            ${isReply && r.originalTaskText ? `
+                                                <div class="px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-emerald-200/80 dark:border-emerald-800/60 text-[11px] text-slate-500 dark:text-slate-400">
+                                                    <span class="font-black uppercase text-[9px] text-emerald-700 dark:text-emerald-400 mr-1">Demanda original:</span>${esc(r.originalTaskText)}
+                                                </div>
+                                            ` : ''}
                                             <div class="text-sm font-black text-slate-800 dark:text-white leading-snug">
                                                 ${esc(r.text || '')}
                                             </div>
-                                            ${r.details ? `<div class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${esc(r.details)}</div>` : ''}
-                                            <div class="flex flex-wrap items-center gap-1.5 pt-1">
-                                                ${sp ? `<span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${sp.pillIdle}">${esc(sp.label)}</span>` : ''}
-                                                ${dueFmt ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-[10px] font-bold"><i class="fa-regular fa-calendar mr-1"></i>Prazo: ${esc(dueFmt)}</span>` : ''}
+                                            ${!isReply && r.details ? `<div class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${esc(r.details)}</div>` : ''}
+                                            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                                <div class="flex flex-wrap items-center gap-1.5">
+                                                    ${sp ? `<span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${sp.pillIdle}">${esc(sp.label)}</span>` : ''}
+                                                    ${dueFmt ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-[10px] font-bold"><i class="fa-regular fa-calendar mr-1"></i>Prazo: ${esc(dueFmt)}</span>` : ''}
+                                                </div>
+                                                ${canReply ? `
+                                                    <button type="button" onclick="app.ui.toggleInlineReminderReply(${rIdx})" class="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 text-[11px] font-extrabold transition flex items-center gap-1.5 cursor-pointer">
+                                                        <i class="fa-solid fa-reply text-[10px]"></i> Responder para ${esc((r.fromName || '').split(' ')[0] || 'Remetente')}
+                                                    </button>
+                                                ` : ''}
                                             </div>
+                                            ${canReply ? `
+                                                <div id="trem-reply-box-${rIdx}" class="hidden pt-2 border-t border-slate-200/80 dark:border-slate-700/70 space-y-2">
+                                                    <div class="flex flex-wrap gap-1">
+                                                        ${['Ciente, já vou iniciar!', 'Em andamento agora.', 'Demanda concluída!'].map(qTxt => `
+                                                            <button type="button" onclick="const inp=document.getElementById('trem-reply-input-${rIdx}'); if(inp){ inp.value='${qTxt}'; inp.focus(); }" class="px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer transition">
+                                                                ${qTxt}
+                                                            </button>
+                                                        `).join('')}
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <input id="trem-reply-input-${rIdx}" type="text" onkeydown="if(event.key==='Enter'){ event.preventDefault(); app.ui.sendInlineReminderReply(${rIdx}); }" placeholder="Escreva sua resposta para ${esc(r.fromName || 'quem enviou')}..."
+                                                            class="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                                                        <button id="trem-reply-btn-${rIdx}" type="button" onclick="app.ui.sendInlineReminderReply(${rIdx})" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs cursor-pointer transition flex items-center gap-1 shrink-0">
+                                                            <i class="fa-solid fa-paper-plane text-[10px]"></i> Enviar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div id="trem-reply-status-${rIdx}" class="hidden text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 pt-1"></div>
+                                            ` : ''}
                                         </div>
                                     `;
                                 }).join('')}
@@ -15328,6 +15980,146 @@ storage: {
                         </div>
                     `;
                     document.body.appendChild(wrapper);
+                },
+
+                toggleInlineReminderReply(idx) {
+                    const box = document.getElementById('trem-reply-box-' + idx);
+                    if (!box) return;
+                    box.classList.toggle('hidden');
+                    if (!box.classList.contains('hidden')) {
+                        const inp = document.getElementById('trem-reply-input-' + idx);
+                        if (inp) inp.focus();
+                    }
+                },
+
+                sendInlineReminderReply(idx) {
+                    const list = this._activePopupReminders || [];
+                    const rem = list[idx];
+                    if (!rem || !rem.fromMat) return;
+                    const inp = document.getElementById('trem-reply-input-' + idx);
+                    const btn = document.getElementById('trem-reply-btn-' + idx);
+                    const box = document.getElementById('trem-reply-box-' + idx);
+                    const statusEl = document.getElementById('trem-reply-status-' + idx);
+                    const replyText = inp ? inp.value.trim() : '';
+                    if (!replyText) {
+                        if (inp) inp.focus();
+                        return this.showNotification('Digite uma resposta antes de enviar.', 'info', 2500);
+                    }
+                    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+                    app.notifications.replyToTaskReminder({
+                        toMat: rem.fromMat,
+                        toName: rem.fromName || '',
+                        text: replyText,
+                        originalTaskText: rem.kind === 'task_reply' ? (rem.originalTaskText || rem.text || '') : (rem.text || ''),
+                        reminderId: rem.id || ''
+                    }).then(() => {
+                        if (box) box.classList.add('hidden');
+                        if (statusEl) {
+                            statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Resposta enviada para ${app.utils.escapeHtml(rem.fromName || 'o remetente')}: "${app.utils.escapeHtml(replyText)}"`;
+                            statusEl.classList.remove('hidden');
+                        }
+                        if (inp) inp.value = '';
+                        this.showNotification(`Resposta enviada para ${rem.fromName || 'o remetente'}!`, 'success', 3000);
+                    }).catch(err => {
+                        this.showNotification('Erro ao enviar resposta: ' + (err.message || err), 'error', 4000);
+                    }).finally(() => {
+                        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane text-[10px]"></i> Enviar'; }
+                    });
+                },
+
+                openResponderDemandaModal(noteId) {
+                    const notes = app.gtd.loadNotes();
+                    const note = notes.find(n => n.id === noteId);
+                    if (!note || !note.assignedByMat) {
+                        return this.showNotification('Esta tarefa não possui remetente vinculado para resposta.', 'info', 3000);
+                    }
+                    const existing = document.getElementById('reply-task-demand-modal');
+                    if (existing) existing.remove();
+
+                    const esc = app.utils.escapeHtml;
+                    const senderName = note.assignedBy || note.assignedByMat;
+                    const wrapper = document.createElement('div');
+                    wrapper.id = 'reply-task-demand-modal';
+                    wrapper.className = 'fixed inset-0 z-[96] flex items-center justify-center bg-slate-900/65 dark:bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
+                    wrapper.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-lg w-full border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-emerald-600 text-white flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-lg">
+                                        <i class="fa-solid fa-reply"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-base font-black leading-tight">Responder Demanda</h3>
+                                        <p class="text-[11px] text-white/90">Para: <strong>${esc(senderName)}</strong> (pop-up na tela)</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="document.getElementById('reply-task-demand-modal')?.remove()" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm cursor-pointer">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="p-6 space-y-4">
+                                <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200">
+                                    <div class="text-[10px] font-black uppercase text-slate-400 mb-1">Demanda recebida</div>
+                                    <div class="font-bold leading-snug">${esc(note.text || '')}</div>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <div class="text-[10px] font-black uppercase text-slate-400">Respostas rápidas</div>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${['Recebido, já estou atuando!', 'Demanda finalizada com sucesso.', 'Preciso de um alinhamento sobre este ponto.'].map(qTxt => `
+                                            <button type="button" onclick="const t=document.getElementById('reply-demand-textarea'); if(t){ t.value='${qTxt}'; t.focus(); }" class="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer transition">
+                                                ${qTxt}
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">Sua resposta *</label>
+                                    <textarea id="reply-demand-textarea" rows="3" placeholder="Digite o retorno para ${esc(senderName)}..."
+                                        class="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                                </div>
+                            </div>
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2">
+                                <button type="button" onclick="document.getElementById('reply-task-demand-modal')?.remove()" class="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer">
+                                    Cancelar
+                                </button>
+                                <button id="btn-submit-demand-reply" type="button" onclick="app.ui.submitResponderDemandaModal('${note.id}')" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md cursor-pointer flex items-center gap-1.5">
+                                    <i class="fa-solid fa-paper-plane"></i> Enviar Resposta
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(wrapper);
+                    setTimeout(() => document.getElementById('reply-demand-textarea')?.focus(), 50);
+                },
+
+                submitResponderDemandaModal(noteId) {
+                    const notes = app.gtd.loadNotes();
+                    const note = notes.find(n => n.id === noteId);
+                    if (!note || !note.assignedByMat) return;
+                    const ta = document.getElementById('reply-demand-textarea');
+                    const btn = document.getElementById('btn-submit-demand-reply');
+                    const replyText = ta ? ta.value.trim() : '';
+                    if (!replyText) {
+                        if (ta) ta.focus();
+                        return this.showAlert('Atenção', 'Escreva a resposta antes de enviar.', 'info');
+                    }
+                    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...'; }
+                    app.notifications.replyToTaskReminder({
+                        toMat: note.assignedByMat,
+                        toName: note.assignedBy || '',
+                        text: replyText,
+                        originalTaskText: note.text || '',
+                        noteId: note.id
+                    }).then(() => {
+                        const modal = document.getElementById('reply-task-demand-modal');
+                        if (modal) modal.remove();
+                        this.showNotification(`Resposta enviada para ${note.assignedBy || note.assignedByMat}!`, 'success', 3500);
+                        if (app.currentTab === 'produtividade_gtd') this.gtdRefresh(false);
+                    }).catch(err => {
+                        this.showAlert('Erro', 'Não foi possível enviar a resposta: ' + (err.message || err), 'error');
+                    }).finally(() => {
+                        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar Resposta'; }
+                    });
                 },
 
                 openEnviarTarefaModal() {
@@ -20782,6 +21574,9 @@ storage: {
                                 </button>
                             </div>
                             <div class="flex items-center gap-2">
+                                <button type="button" onclick="app.ui.openDiarioTutorialModal(0, false)" class="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer" title="Abrir tutorial passo a passo do Diário de Bordo">
+                                    <i class="fa-solid fa-graduation-cap text-amber-600 dark:text-amber-400"></i> Tutorial
+                                </button>
                                 <button type="button" onclick="app.diarioBordo.novaTurma()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer">
                                     <i class="fa-solid fa-user-plus text-emerald-600 dark:text-emerald-400"></i> Criar Turma
                                 </button>
@@ -22802,7 +23597,7 @@ storage: {
                                     <p class="text-xs text-slate-500 dark:text-slate-400">
                                         Descreva como foi a dinâmica da turma no dia, conteúdos e sistemas apresentados, simulações realizadas, pontos fortes e pontos a reforçar:
                                     </p>
-                                    <textarea id="db-input-relato" rows="5" placeholder="Ex: Apresentação de sistemas, técnicas de atendimento cordial e seguro, escutas operacionais, simulação prática..." class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed">${d.relatoGeral || ''}</textarea>
+                                    <textarea id="db-input-relato" autocomplete="off" rows="5" oninput="if(app.diarioBordo.diarioEmEdicao) app.diarioBordo.diarioEmEdicao.relatoGeral = this.value;" placeholder="Ex: Apresentação de sistemas, técnicas de atendimento cordial e seguro, escutas operacionais, simulação prática..." class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed">${app.diarioBordo._escapeDbHtml(d.relatoGeral || '')}</textarea>
                                 </div>
 
                                 <!-- Rodapé de Ações Finais -->
@@ -22826,6 +23621,10 @@ storage: {
                         `;
 
                         setTimeout(() => {
+                            const rEl = document.getElementById('db-input-relato');
+                            if (rEl && app.diarioBordo && app.diarioBordo.diarioEmEdicao) {
+                                rEl.value = app.diarioBordo.diarioEmEdicao.relatoGeral || '';
+                            }
                             if (app.diarioBordo && typeof app.diarioBordo.renderTabelaChamada === 'function') {
                                 app.diarioBordo.renderTabelaChamada();
                             }
@@ -51116,6 +51915,10 @@ Object.assign(app.ui, {
                                             <button type="button" onclick="app.ui.gtdResetFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Reiniciar cronômetro">
                                                 <i class="fa-solid fa-rotate-left"></i>
                                             </button>
+                                            <button type="button" onclick="app.ui.openGtdTimerPipPopup()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white text-[11px] font-black transition flex items-center gap-1.5 cursor-pointer" title="Destacar cronômetro em pop-up flutuante sobre outras abas ou aplicativos (Picture-in-Picture)">
+                                                <i class="fa-solid fa-up-right-from-square"></i>
+                                                <span class="hidden sm:inline">Pop-up</span>
+                                            </button>
                                             ${focus.active ? `
                                                 <button type="button" onclick="app.ui.gtdClearFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-xs transition" title="Encerrar sessão do cronômetro">
                                                     <i class="fa-solid fa-xmark"></i>
@@ -51606,6 +52409,7 @@ Object.assign(app.ui, {
                                             <i class="fa-solid fa-bolt text-[9px]"></i> 2m
                                         </button>
                                         ${n.assignedBy ? `<span class="px-1.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold" title="Tarefa enviada por ${esc(n.assignedBy)}"><i class="fa-solid fa-paper-plane text-[8px] mr-0.5"></i> De: ${esc(n.assignedBy.split(' ')[0])}</span>` : ''}
+                                        ${n.assignedByMat ? `<button type="button" onclick="app.ui.openResponderDemandaModal('${n.id}')" class="px-1.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-600 hover:text-white text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold transition cursor-pointer" title="${n.lastReplyText ? esc('Última resposta: ' + n.lastReplyText) : 'Responder para ' + esc(n.assignedBy || 'quem enviou')}"><i class="fa-solid fa-reply text-[8px] mr-0.5"></i> ${n.lastReplyText ? 'Respondido' : 'Responder'}</button>` : ''}
                                         ${dueBadge ? `<span class="px-1.5 py-0.5 rounded-full border text-[10px] font-bold ${dueBadge.cls}">${dueBadge.label}</span>` : ''}
                                     </div>
 
@@ -52063,6 +52867,7 @@ Object.assign(app.ui, {
                     _saveAndSyncGtdFocus(focusState) {
                         const saved = app.gtd.saveFocusState(focusState);
                         this.syncGtdFloatingTimer();
+                        if (typeof this._renderGtdTimerPipContent === 'function') this._renderGtdTimerPipContent();
                         return saved;
                     },
 
@@ -52228,6 +53033,182 @@ Object.assign(app.ui, {
                         this._gtdTimerInterval = null;
                         const existing = document.getElementById('gtd-floating-timer');
                         if (existing) existing.remove();
+                        if (typeof this.closeGtdTimerPip === 'function') this.closeGtdTimerPip();
+                    },
+
+                    closeGtdTimerPip() {
+                        try {
+                            if (this._gtdPipWindow && !this._gtdPipWindow.closed) {
+                                this._gtdPipWindow.close();
+                            }
+                        } catch (e) {}
+                        this._gtdPipWindow = null;
+                    },
+
+                    async openGtdTimerPipPopup() {
+                        const cur = this.getGtdFocusState();
+                        if (!cur.active) {
+                            this._saveAndSyncGtdFocus({
+                                ...cur,
+                                active: true,
+                                mode: cur.mode || 25,
+                                phase: cur.mode === 5 ? 'pausa' : (cur.mode === 2 ? 'rapido' : 'foco'),
+                                remainingSeconds: cur.remainingSeconds > 0 ? cur.remainingSeconds : ((cur.mode || 25) * 60)
+                            });
+                        }
+
+                        if (this._gtdPipWindow && !this._gtdPipWindow.closed) {
+                            try { this._gtdPipWindow.focus(); } catch (e) {}
+                            this._renderGtdTimerPipContent();
+                            return;
+                        }
+
+                        let pipWin = null;
+                        let usedDocPip = false;
+                        if (window.documentPictureInPicture && typeof window.documentPictureInPicture.requestWindow === 'function') {
+                            try {
+                                pipWin = await window.documentPictureInPicture.requestWindow({ width: 350, height: 220 });
+                                usedDocPip = true;
+                            } catch (err) {
+                                console.warn('Document Picture-in-Picture indisponivel, usando janela flutuante compacta:', err);
+                            }
+                        }
+
+                        if (!pipWin) {
+                            pipWin = window.open('', 'soft_gtd_focus_pip', 'popup=yes,width=360,height=240,resizable=yes,menubar=no,toolbar=no,location=no,status=no');
+                        }
+
+                        if (!pipWin) {
+                            return this.showAlert(
+                                'Pop-up Bloqueado',
+                                'Libere a abertura de pop-up/janela no seu navegador ou clique novamente no botão Pop-up para destacar o cronômetro em outras telas.',
+                                'info'
+                            );
+                        }
+
+                        this._gtdPipWindow = pipWin;
+                        this._gtdPipUsedDocApi = usedDocPip;
+
+                        const onPipClose = () => {
+                            if (this._gtdPipWindow === pipWin) {
+                                this._gtdPipWindow = null;
+                            }
+                        };
+                        try { pipWin.addEventListener('pagehide', onPipClose); } catch (e) {}
+                        try { pipWin.addEventListener('beforeunload', onPipClose); } catch (e) {}
+
+                        try {
+                            pipWin._gtdBridge = {
+                                toggleRun: () => this.gtdToggleFocusRun(),
+                                skipBreak: () => this.gtdSkipBreak(),
+                                completeTask: (noteId) => this.gtdToggleDone(noteId, true),
+                                resetFocus: () => this.gtdResetFocus(),
+                                closeAndFocusPortal: () => {
+                                    try { window.focus(); } catch (e) {}
+                                    try { this.renderTab('produtividade_gtd', true); } catch (e) {}
+                                }
+                            };
+                        } catch (e) {}
+
+                        this._initGtdTimerPipShell(pipWin);
+                        this._renderGtdTimerPipContent();
+                    },
+
+                    _initGtdTimerPipShell(pipWin) {
+                        if (!pipWin || pipWin.closed) return;
+                        try {
+                            const doc = pipWin.document;
+                            doc.open();
+                            doc.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cronômetro de Foco GTD</title><style>
+                                *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+                                body{background:#0f172a;color:#f8fafc;height:100vh;display:flex;flex-direction:column;justify-content:space-between;padding:12px 14px;overflow:hidden;border-top:4px solid #6366f1;}
+                                body.phase-pausa{border-top-color:#10b981;}
+                                body.phase-rapido{border-top-color:#f59e0b;}
+                                .top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+                                .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:#312e81;color:#e0e7ff;border:1px solid #6366f1;}
+                                body.phase-pausa .badge{background:#064e3b;color:#d1fae5;border-color:#10b981;}
+                                body.phase-rapido .badge{background:#78350f;color:#fef3c7;border-color:#f59e0b;}
+                                .dot{width:7px;height:7px;border-radius:999px;background:#818cf8;}
+                                body.phase-pausa .dot{background:#34d399;}
+                                body.phase-rapido .dot{background:#fbbf24;}
+                                .dot.pulse{animation:pulse 1.2s infinite;}
+                                @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+                                .cycles{font-size:10px;font-weight:700;color:#94a3b8;}
+                                .clock-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:4px 0;}
+                                .clock{font-size:38px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-0.02em;line-height:1;}
+                                .link-btn{background:rgba(255,255,255,.08);color:#cbd5e1;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;}
+                                .link-btn:hover{background:#4f46e5;color:#fff;border-color:#4f46e5;}
+                                .task{font-size:12px;font-weight:700;color:#e2e8f0;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;}
+                                .actions{display:flex;align-items:center;gap:6px;margin-top:6px;}
+                                .btn{flex:1;border:none;border-radius:10px;padding:8px 10px;font-size:11px;font-weight:800;color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;}
+                                .btn-play{background:#10b981;}
+                                .btn-play:hover{background:#059669;}
+                                .btn-pause{background:#f59e0b;}
+                                .btn-pause:hover{background:#d97706;}
+                                .btn-done{background:#4f46e5;}
+                                .btn-done:hover{background:#4338ca;}
+                                .btn-icon{flex:0 0 auto;background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:8px 10px;}
+                                .btn-icon:hover{background:#334155;color:#fff;}
+                            </style></head><body>
+                                <div class="top">
+                                    <span class="badge"><span id="pip-dot" class="dot"></span><span id="pip-phase">FOCO 25M</span></span>
+                                    <span id="pip-cycles" class="cycles"></span>
+                                </div>
+                                <div class="clock-row">
+                                    <div id="pip-clock" class="clock">25:00</div>
+                                    <button type="button" class="link-btn" onclick="window._gtdBridge && window._gtdBridge.closeAndFocusPortal()">Abrir Portal</button>
+                                </div>
+                                <div id="pip-task" class="task">Foco GTD</div>
+                                <div id="pip-actions" class="actions"></div>
+                            </body></html>`);
+                            doc.close();
+                        } catch (e) {}
+                    },
+
+                    _renderGtdTimerPipContent() {
+                        const pipWin = this._gtdPipWindow;
+                        if (!pipWin || pipWin.closed) {
+                            this._gtdPipWindow = null;
+                            return;
+                        }
+                        if (!app.currentUser) {
+                            this.closeGtdTimerPip();
+                            return;
+                        }
+                        try {
+                            const doc = pipWin.document;
+                            const focus = this.getGtdFocusState();
+                            const clockStr = app.gtd.formatClock(focus.remainingSeconds);
+                            const notes = app.gtd.loadNotes();
+                            const focusNote = focus.noteId ? notes.find(n => n.id === focus.noteId) : null;
+                            const targetLabel = focus.phase === 'pausa'
+                                ? 'Descanso 5 min: água e olhos fora da tela'
+                                : (focusNote ? (focusNote.text || '(Bloco sem texto)') : (focus.focusText || 'Foco livre (GTD)'));
+
+                            doc.body.className = focus.phase === 'pausa' ? 'phase-pausa' : (focus.phase === 'rapido' ? 'phase-rapido' : 'phase-foco');
+
+                            const phaseEl = doc.getElementById('pip-phase');
+                            const dotEl = doc.getElementById('pip-dot');
+                            const clockEl = doc.getElementById('pip-clock');
+                            const taskEl = doc.getElementById('pip-task');
+                            const cyclesEl = doc.getElementById('pip-cycles');
+                            const actEl = doc.getElementById('pip-actions');
+
+                            if (phaseEl) phaseEl.textContent = focus.phase === 'pausa' ? 'PAUSA 5M' : (focus.phase === 'rapido' ? 'REGRA 2M' : 'FOCO 25M');
+                            if (dotEl) dotEl.className = 'dot' + (focus.running ? ' pulse' : '');
+                            if (clockEl && clockEl.textContent !== clockStr) clockEl.textContent = clockStr;
+                            if (taskEl) taskEl.textContent = targetLabel;
+                            if (cyclesEl) cyclesEl.textContent = focus.completedCycles > 0 ? (focus.completedCycles + 'x 25m') : '';
+
+                            if (actEl) {
+                                const runBtn = `<button type="button" class="btn ${focus.running ? 'btn-pause' : 'btn-play'}" onclick="window._gtdBridge && window._gtdBridge.toggleRun()">${focus.running ? 'Pausar' : (focus.phase === 'pausa' ? 'Descansar' : 'Retomar')}</button>`;
+                                const secBtn = focus.phase === 'pausa'
+                                    ? `<button type="button" class="btn btn-done" onclick="window._gtdBridge && window._gtdBridge.skipBreak()">Ir p/ 25m</button>`
+                                    : (focusNote ? `<button type="button" class="btn btn-done" onclick="window._gtdBridge && window._gtdBridge.completeTask('${focusNote.id}')">Concluir</button>` : '');
+                                const resetBtn = `<button type="button" class="btn btn-icon" title="Reiniciar" onclick="window._gtdBridge && window._gtdBridge.resetFocus()">&#8634;</button>`;
+                                actEl.innerHTML = runBtn + secBtn + resetBtn;
+                            }
+                        } catch (e) {}
                     },
 
                     syncGtdFocusOnBoot() {
@@ -52326,6 +53307,9 @@ Object.assign(app.ui, {
                                         <span id="gtd-floating-display" class="text-base font-black tabular-nums tracking-tight">${clockStr}</span>
                                     </div>
                                     <div class="flex items-center gap-1 shrink-0">
+                                        <button type="button" onclick="app.ui.openGtdTimerPipPopup()" class="w-6 h-6 rounded-lg bg-white/10 hover:bg-indigo-600 flex items-center justify-center text-[10px] transition cursor-pointer" title="Abrir pop-up flutuante em outras abas/telas">
+                                            <i class="fa-solid fa-up-right-from-square"></i>
+                                        </button>
                                         <button type="button" onclick="app.ui.renderTab('produtividade_gtd', true)" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-indigo-600 text-[10px] font-bold transition" title="Abrir aba GTD & Tríade">
                                             GTD
                                         </button>
@@ -52450,6 +53434,12 @@ Object.assign(app.ui, {
                         if (disp && disp.textContent !== txt) disp.textContent = txt;
                         const floatDisp = document.getElementById('gtd-floating-display');
                         if (floatDisp && floatDisp.textContent !== txt) floatDisp.textContent = txt;
+                        if (this._gtdPipWindow && !this._gtdPipWindow.closed) {
+                            try {
+                                const pipClock = this._gtdPipWindow.document.getElementById('pip-clock');
+                                if (pipClock && pipClock.textContent !== txt) pipClock.textContent = txt;
+                            } catch (e) {}
+                        }
                     },
 
                     _startGtdTimerInterval() {
