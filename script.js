@@ -4243,12 +4243,20 @@ storage: {
 
         diarioBordo: {
             viewMode: null,
+            _returnViewMode: null,
             filtroOp: 'TODAS',
             filtroData: '',
             filtroBusca: '',
             filtroPeriodoDash: 'todos',
             filtroTurmaOp: 'TODAS',
             filtroTurmaBusca: '',
+            turmaDetalhesId: null,
+            turmaDetalhesBusca: '',
+            turmaDetalhesFaseFiltro: 'todas',
+            turmaDetalhesColabsAberto: false,
+            resumoRapidoOp: '',
+            resumoRapidoTurmaId: '',
+            resumoRapidoBusca: '',
             turmaEmEdicao: null,
             diarioEmEdicao: null,
             chartInstance: null,
@@ -4270,6 +4278,1059 @@ storage: {
             getTurmasCadastradas() {
                 const all = Object.values(app.turmasTreinamentoList || {}).filter(Boolean);
                 return this.canManageAll() ? all : all.filter(t => this.canEditTurma(t));
+            },
+
+            _escapeDbHtml(val) {
+                return String(val === undefined || val === null ? '' : val)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            },
+
+            _formatDataBr(isoStr) {
+                if (!isoStr || typeof isoStr !== 'string') return '--/--/----';
+                const parts = isoStr.trim().split('-');
+                if (parts.length !== 3) return isoStr;
+                return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            },
+
+            _parseDateLocal(isoStr) {
+                if (!isoStr || typeof isoStr !== 'string') return null;
+                const parts = isoStr.trim().split('-').map(n => parseInt(n, 10));
+                if (parts.length !== 3 || parts.some(isNaN)) return null;
+                return new Date(parts[0], parts[1] - 1, parts[2]);
+            },
+
+            _diffDaysLocal(dateA, dateB) {
+                if (!dateA || !dateB) return null;
+                return Math.round((dateA.getTime() - dateB.getTime()) / 86400000);
+            },
+
+            getTurmaById(turmaId) {
+                if (!turmaId || !app.turmasTreinamentoList) return null;
+                return app.turmasTreinamentoList[turmaId] || null;
+            },
+
+            findTurmaForDiario(d) {
+                if (!d) return null;
+                if (d.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[d.turmaBaseId]) {
+                    return app.turmasTreinamentoList[d.turmaBaseId];
+                }
+                const op = String(d.operacao || '').trim().toLowerCase();
+                const num = String(d.turma || '').trim().toLowerCase();
+                if (!op || !num) return null;
+                const turmas = this.getTurmasCadastradas();
+                return turmas.find(t =>
+                    String(t.operacao || '').trim().toLowerCase() === op &&
+                    String(t.numeroTurma || '').trim().toLowerCase() === num
+                ) || null;
+            },
+
+            getDiariosDaTurma(turmaOrId, asc = false) {
+                const t = typeof turmaOrId === 'string' ? this.getTurmaById(turmaOrId) : turmaOrId;
+                if (!t) return [];
+                const canSeeAll = this.canManageAll() || this.canEditTurma(t);
+                const tOp = String(t.operacao || '').trim().toLowerCase();
+                const tNum = String(t.numeroTurma || '').trim().toLowerCase();
+                const all = Object.values(app.diarioBordoList || {}).filter(d => {
+                    if (!d) return false;
+                    if (!canSeeAll && !this.canEditDiario(d)) return false;
+                    if (d.turmaBaseId && d.turmaBaseId === t.id) return true;
+                    return tOp && tNum &&
+                        String(d.operacao || '').trim().toLowerCase() === tOp &&
+                        String(d.turma || '').trim().toLowerCase() === tNum;
+                });
+                all.sort((a, b) => {
+                    const da = a.data || '';
+                    const db = b.data || '';
+                    if (da !== db) return asc ? da.localeCompare(db) : db.localeCompare(da);
+                    const ca = Number(a.criadoEm || 0);
+                    const cb = Number(b.criadoEm || 0);
+                    return asc ? (ca - cb) : (cb - ca);
+                });
+                return all;
+            },
+
+            _buildResumoDiarioItem(d, t = null, diaNumero = null) {
+                const absArr = Array.isArray(d.abs) ? d.abs : [];
+                const deslArr = Array.isArray(d.desligamentos) ? d.desligamentos : [];
+                const altArr = Array.isArray(d.alteracoesQuadro) ? d.alteracoesQuadro : [];
+                const chamadaArr = Array.isArray(d.chamada) ? d.chamada : [];
+
+                const absFromChamada = absArr.length === 0
+                    ? chamadaArr.filter(c => c && (c.statusDia === 'Falta' || c.statusDia === 'Atestado')).map(c => ({
+                        matricula: c.matricula || '',
+                        nome: c.nome || 'Colaborador',
+                        motivo: c.statusDia === 'Atestado' ? 'Atestado' : 'Falta'
+                    }))
+                    : [];
+                const deslFromChamada = deslArr.length === 0
+                    ? chamadaArr.filter(c => c && (c.statusDia === 'T.O' || c.statusDia === 'Declínio')).map(c => ({
+                        matricula: c.matricula || '',
+                        nome: c.nome || 'Colaborador',
+                        motivo: c.statusDia || 'T.O'
+                    }))
+                    : [];
+
+                const absItems = absArr.length > 0 ? absArr : absFromChamada;
+                const deslItems = deslArr.length > 0 ? deslArr : deslFromChamada;
+
+                const prev = Math.max(
+                    0,
+                    parseInt(d.previstosSala, 10) || (chamadaArr.length > 0 ? chamadaArr.length : (t && Array.isArray(t.colaboradores) ? t.colaboradores.length : 0))
+                );
+                const absCount = absItems.length;
+                const deslCount = deslItems.length;
+                const altCount = altArr.length;
+                const presentes = Math.max(0, prev - absCount - deslCount);
+                const taxaPresenca = prev > 0 ? Math.round((presentes / prev) * 100) : 0;
+
+                const relatoClean = String(d.relatoGeral || '').trim();
+                const maxLen = 220;
+                const foiTruncado = relatoClean.length > maxLen;
+                const resumoCurto = foiTruncado
+                    ? `${relatoClean.slice(0, maxLen).trim()}...`
+                    : (relatoClean || 'Sem descritivo registrado para este dia.');
+
+                const perfisObsCount = chamadaArr.filter(c => c && String(c.perfilDia || '').trim()).length;
+
+                return {
+                    raw: d,
+                    diaNumero,
+                    fase: d.faseDoDia === 'alo_acompanhado' ? 'alo_acompanhado' : 'sala',
+                    faseLabel: d.faseDoDia === 'alo_acompanhado' ? 'Alô Acompanhado' : 'Treinamento em Sala',
+                    dataIso: d.data || '',
+                    dataBr: this._formatDataBr(d.data),
+                    prev,
+                    presentes,
+                    absCount,
+                    deslCount,
+                    altCount,
+                    taxaPresenca,
+                    absItems,
+                    deslItems,
+                    altItems: altArr,
+                    relatoClean,
+                    resumoCurto,
+                    foiTruncado,
+                    hasRelato: relatoClean.length > 0,
+                    perfisObsCount
+                };
+            },
+
+            compilarResumoTurma(turmaId) {
+                const t = this.getTurmaById(turmaId);
+                if (!t) return null;
+
+                const isIntegracao = t.tipoTurma === 'integracao';
+                const diariosAsc = this.getDiariosDaTurma(t, true);
+                const diarioResumosAsc = diariosAsc.map((d, idx) => this._buildResumoDiarioItem(d, t, idx + 1));
+                const diarioResumosDesc = [...diarioResumosAsc].reverse();
+
+                const totalDiarios = diarioResumosAsc.length;
+                const diasSala = diarioResumosAsc.filter(item => item.fase !== 'alo_acompanhado').length;
+                const diasAlo = diarioResumosAsc.filter(item => item.fase === 'alo_acompanhado').length;
+                const ultimoDiario = diarioResumosDesc[0] || null;
+
+                const colabs = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                const totalInicial = colabs.length;
+
+                let ativos = 0;
+                let toCount = 0;
+                const desistentes = [];
+                const alunosAtencao = [];
+                const colabsResumo = [];
+                let presentesIntegracao = 0;
+                let faltasIntegracao = 0;
+
+                colabs.forEach(c => {
+                    const cMat = String(c.matricula || '').trim().toUpperCase();
+                    const cNomeNorm = String(c.nome || '').trim().toUpperCase();
+                    let isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
+                    let presCount = 0;
+                    let absCount = 0;
+                    let dataTO = '';
+
+                    if (isIntegracao) {
+                        const pres = c.presenca || 'Presente';
+                        if (pres === 'Falta' || pres === 'Ausente' || pres === 'Desistência') {
+                            faltasIntegracao++;
+                        } else {
+                            presentesIntegracao++;
+                        }
+                    }
+
+                    diariosAsc.forEach(d => {
+                        const chamada = Array.isArray(d.chamada) ? d.chamada : [];
+                        const itemChamada = chamada.find(item =>
+                            item && (
+                                (cMat && String(item.matricula || '').trim().toUpperCase() === cMat) ||
+                                (cNomeNorm && String(item.nome || '').trim().toUpperCase() === cNomeNorm)
+                            )
+                        );
+                        const inDesl = (Array.isArray(d.desligamentos) ? d.desligamentos : []).some(item =>
+                            item && (
+                                (cMat && String(item.matricula || '').trim().toUpperCase() === cMat) ||
+                                (cNomeNorm && String(item.nome || '').trim().toUpperCase() === cNomeNorm)
+                            )
+                        );
+                        const inAbs = (Array.isArray(d.abs) ? d.abs : []).some(item =>
+                            item && (
+                                (cMat && String(item.matricula || '').trim().toUpperCase() === cMat) ||
+                                (cNomeNorm && String(item.nome || '').trim().toUpperCase() === cNomeNorm)
+                            )
+                        );
+
+                        const st = itemChamada ? itemChamada.statusDia : (inDesl ? 'T.O' : (inAbs ? 'Falta' : (isTO ? 'T.O' : 'Presente')));
+                        if (st === 'T.O' || st === 'Declínio') {
+                            if (!dataTO && d.data) dataTO = this._formatDataBr(d.data);
+                            isTO = true;
+                        } else if (st === 'Falta' || st === 'Atestado' || st === 'ABS') {
+                            absCount++;
+                        } else {
+                            presCount++;
+                        }
+                    });
+
+                    const taxaAluno = totalDiarios > 0 ? Math.round((presCount / totalDiarios) * 100) : 100;
+                    if (isTO) {
+                        toCount++;
+                        desistentes.push({
+                            nome: c.nome || 'Colaborador',
+                            matricula: c.matricula || '-',
+                            status: c.statusGeral === 'Declínio' ? 'Declínio' : 'T.O',
+                            dataTO
+                        });
+                    } else {
+                        ativos++;
+                        if (absCount >= 2) {
+                            alunosAtencao.push({
+                                nome: c.nome || 'Colaborador',
+                                matricula: c.matricula || '-',
+                                absCount,
+                                taxaAluno
+                            });
+                        }
+                    }
+
+                    colabsResumo.push({
+                        nome: c.nome || 'Colaborador',
+                        matricula: c.matricula || '-',
+                        isTO,
+                        statusLabel: isTO ? (c.statusGeral === 'Declínio' ? 'Declínio' : 'T.O') : (isIntegracao ? (c.presenca || 'Presente') : 'Ativo'),
+                        dataTO,
+                        presCount,
+                        absCount,
+                        taxaAluno
+                    });
+                });
+
+                const pctRetencao = totalInicial > 0 ? Math.round((ativos / totalInicial) * 100) : null;
+                const pctTO = totalInicial > 0 ? Math.round((toCount / totalInicial) * 100) : null;
+                const pctPresenteismoIntegracao = (isIntegracao && totalInicial > 0)
+                    ? Math.round((presentesIntegracao / totalInicial) * 100)
+                    : null;
+
+                let somaPrev = 0;
+                let somaPres = 0;
+                let totalAbsOcorrencias = 0;
+                let totalDeslOcorrencias = 0;
+                let totalAltOcorrencias = 0;
+                diarioResumosAsc.forEach(item => {
+                    somaPrev += item.prev;
+                    somaPres += item.presentes;
+                    totalAbsOcorrencias += item.absCount;
+                    totalDeslOcorrencias += item.deslCount;
+                    totalAltOcorrencias += item.altCount;
+                });
+
+                const mediaPresencaPct = somaPrev > 0
+                    ? Math.round((somaPres / somaPrev) * 100)
+                    : pctPresenteismoIntegracao;
+
+                const hojeIso = new Date().toISOString().split('T')[0];
+                const hojeDate = this._parseDateLocal(hojeIso);
+                const iniDate = this._parseDateLocal(t.dataInicio);
+                const opDate = this._parseDateLocal(t.dataInicioOperacao);
+                const fimDate = this._parseDateLocal(t.previsaoEntrega);
+
+                let progressoTempoPct = 0;
+                if (t.status === 'Entregue' || t.status === 'Integrados') {
+                    progressoTempoPct = 100;
+                } else if (iniDate && fimDate && hojeDate) {
+                    const duracaoTotal = Math.max(1, this._diffDaysLocal(fimDate, iniDate));
+                    const decorrido = Math.max(0, this._diffDaysLocal(hojeDate, iniDate));
+                    progressoTempoPct = Math.min(100, Math.round((decorrido / duracaoTotal) * 100));
+                }
+
+                const diasParaEntrega = (fimDate && hojeDate) ? this._diffDaysLocal(fimDate, hojeDate) : null;
+                const ultimoDate = ultimoDiario ? this._parseDateLocal(ultimoDiario.dataIso) : null;
+                const diasDesdeUltimoDiario = (ultimoDate && hojeDate) ? Math.max(0, this._diffDaysLocal(hojeDate, ultimoDate)) : null;
+
+                let faseAtualLabel = 'Treinamento em Sala';
+                if (isIntegracao) {
+                    faseAtualLabel = t.status === 'Integrados' ? 'Integrados' : 'Integração Institucional';
+                } else if (t.status === 'Entregue') {
+                    faseAtualLabel = 'Turma Entregue à Operação';
+                } else if ((ultimoDiario && ultimoDiario.fase === 'alo_acompanhado') || (opDate && hojeDate && hojeDate >= opDate)) {
+                    faseAtualLabel = 'Alô Acompanhado (Ilha)';
+                }
+
+                const csatResumo = (Array.isArray(t.respostasCSAT) && t.respostasCSAT.length > 0 && typeof this.calcularCSATVerdadeiro === 'function')
+                    ? this.calcularCSATVerdadeiro(t)
+                    : null;
+
+                const alertasSaude = [];
+                let saude = 'saudavel';
+                const setNivelSaude = (nivel) => {
+                    if (nivel === 'critico') saude = 'critico';
+                    else if (nivel === 'atencao' && saude === 'saudavel') saude = 'atencao';
+                };
+
+                if (isIntegracao) {
+                    if (pctPresenteismoIntegracao !== null && pctPresenteismoIntegracao < 75) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Presenteísmo baixo na integração (${pctPresenteismoIntegracao}%).`);
+                    } else if (pctPresenteismoIntegracao !== null && pctPresenteismoIntegracao < 90) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push(`Faltas registradas na integração (${faltasIntegracao} ausências).`);
+                    }
+                } else if (t.status === 'Entregue') {
+                    if (pctRetencao !== null && pctRetencao < 70) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Retenção final crítica (${pctRetencao}%).`);
+                    } else if (pctRetencao !== null && pctRetencao < 85) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push(`Retenção final abaixo da meta (${pctRetencao}%).`);
+                    }
+                } else {
+                    if (pctRetencao !== null && pctRetencao < 70) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Evasão elevada: retenção em ${pctRetencao}% (${toCount} desligamentos).`);
+                    } else if (pctRetencao !== null && pctRetencao < 85) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push(`Retenção em ${pctRetencao}% (${toCount} T.O até agora).`);
+                    }
+                    if (mediaPresencaPct !== null && mediaPresencaPct < 75) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Frequência média crítica (${mediaPresencaPct}%).`);
+                    } else if (mediaPresencaPct !== null && mediaPresencaPct < 88) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push(`Frequência média em alerta (${mediaPresencaPct}%).`);
+                    }
+                    if (totalDiarios === 0) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push('Nenhum diário de bordo lançado ainda para esta turma.');
+                    } else if (diasDesdeUltimoDiario !== null && diasDesdeUltimoDiario >= 3) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Sem lançamento de diário há ${diasDesdeUltimoDiario} dias.`);
+                    } else if (diasDesdeUltimoDiario !== null && diasDesdeUltimoDiario >= 2) {
+                        setNivelSaude('atencao');
+                        alertasSaude.push(`Último diário há ${diasDesdeUltimoDiario} dias.`);
+                    }
+                    if (diasParaEntrega !== null && diasParaEntrega < 0) {
+                        setNivelSaude('critico');
+                        alertasSaude.push(`Previsão de entrega vencida há ${Math.abs(diasParaEntrega)} dia(s).`);
+                    }
+                }
+
+                if (alunosAtencao.length > 0 && saude === 'saudavel') {
+                    setNivelSaude('atencao');
+                }
+                if (alunosAtencao.length > 0) {
+                    alertasSaude.push(`${alunosAtencao.length} aluno(s) com 2+ faltas acumuladas.`);
+                }
+
+                const saudeLabel = saude === 'critico' ? 'Atenção Crítica' : (saude === 'atencao' ? 'Requer Atenção' : 'Andamento Saudável');
+                const saudeMotivo = alertasSaude[0] || (totalInicial > 0
+                    ? `Retenção de ${pctRetencao ?? 100}%${mediaPresencaPct !== null ? ` e frequência média de ${mediaPresencaPct}%` : ''}.`
+                    : 'Turma em acompanhamento regular.');
+
+                const partesTexto = [];
+                if (isIntegracao) {
+                    partesTexto.push(`Integração ${t.numeroTurma || t.operacao} (${t.status || 'Em Andamento'}), conduzida por ${t.responsavelIntegracaoNome || 'Instrutor'} em ${this._formatDataBr(t.dataInicio)}.`);
+                    partesTexto.push(`Presenteísmo de ${presentesIntegracao} de ${totalInicial} previstos (${pctPresenteismoIntegracao ?? 0}%).`);
+                } else {
+                    const quadroTxt = totalInicial > 0
+                        ? `com ${ativos} de ${totalInicial} colaboradores ativos (${pctRetencao}% de retenção${toCount > 0 ? `, ${toCount} T.O` : ', sem evasão'})`
+                        : 'sem colaboradores cadastrados na lista nominal';
+                    partesTexto.push(`Turma ${t.numeroTurma} (${t.operacao}) encontra-se ${t.status === 'Entregue' ? 'concluída/entregue' : `em ${faseAtualLabel}`}, ${quadroTxt}.`);
+                    if (totalDiarios > 0) {
+                        partesTexto.push(`Foram lançados ${totalDiarios} diário${totalDiarios > 1 ? 's' : ''} (${diasSala} Sala / ${diasAlo} Alô), com frequência média de ${mediaPresencaPct ?? 0}%.`);
+                        partesTexto.push(`Último dia (${ultimoDiario.dataBr}): ${ultimoDiario.presentes}/${ultimoDiario.prev} presentes — "${ultimoDiario.resumoCurto}"`);
+                    } else {
+                        partesTexto.push('Ainda não há diários diários registrados para esta turma.');
+                    }
+                    if (t.status !== 'Entregue' && diasParaEntrega !== null) {
+                        partesTexto.push(diasParaEntrega > 0
+                            ? `Previsão de entrega em ${this._formatDataBr(t.previsaoEntrega)} (faltam ${diasParaEntrega} dia${diasParaEntrega > 1 ? 's' : ''}).`
+                            : (diasParaEntrega === 0 ? 'Entrega prevista para hoje.' : `Previsão de entrega vencida em ${this._formatDataBr(t.previsaoEntrega)}.`));
+                    }
+                }
+                const textoExecutivo = partesTexto.join(' ');
+
+                const linhasCopia = [
+                    `*RESUMO DA TURMA: ${t.numeroTurma} (${t.operacao})*`,
+                    `• Status / Fase: ${t.status || 'Em Andamento'} — ${faseAtualLabel}`,
+                    `• Instrutor(a): ${isIntegracao ? (t.responsavelIntegracaoNome || '-') : (t.treinadorNome || '-')}`,
+                    `• Período: ${this._formatDataBr(t.dataInicio)} até ${this._formatDataBr(t.previsaoEntrega)}`
+                ];
+                if (isIntegracao) {
+                    linhasCopia.push(`• Presenteísmo: ${presentesIntegracao}/${totalInicial} (${pctPresenteismoIntegracao ?? 0}%)`);
+                } else {
+                    if (totalInicial > 0) {
+                        linhasCopia.push(`• Quadro: ${ativos}/${totalInicial} ativos (${pctRetencao}% retenção | ${toCount} T.O)`);
+                    }
+                    linhasCopia.push(`• Diários lançados: ${totalDiarios} (${diasSala} Sala / ${diasAlo} Alô) | Frequência média: ${mediaPresencaPct !== null ? mediaPresencaPct + '%' : 'N/A'}`);
+                    if (ultimoDiario) {
+                        linhasCopia.push(`• Último diário (${ultimoDiario.dataBr}): ${ultimoDiario.presentes}/${ultimoDiario.prev} pres. | ${ultimoDiario.absCount} ABS | ${ultimoDiario.deslCount} T.O`);
+                        if (ultimoDiario.hasRelato) {
+                            linhasCopia.push(`• Resumo da última aula: ${ultimoDiario.resumoCurto}`);
+                        }
+                    }
+                }
+                if (alertasSaude.length > 0) {
+                    linhasCopia.push(`• Pontos de atenção: ${alertasSaude.join(' ')}`);
+                }
+                const textoCopiavel = linhasCopia.join('\n');
+
+                return {
+                    t,
+                    isIntegracao,
+                    diariosAsc,
+                    diarioResumosAsc,
+                    diarioResumosDesc,
+                    totalDiarios,
+                    diasSala,
+                    diasAlo,
+                    colabsResumo,
+                    totalInicial,
+                    ativos,
+                    toCount,
+                    pctRetencao,
+                    pctTO,
+                    presentesIntegracao,
+                    faltasIntegracao,
+                    pctPresenteismoIntegracao,
+                    alunosAtencao,
+                    desistentes,
+                    mediaPresencaPct,
+                    totalAbsOcorrencias,
+                    totalDeslOcorrencias,
+                    totalAltOcorrencias,
+                    ultimoDiario,
+                    faseAtualLabel,
+                    progressoTempoPct,
+                    diasParaEntrega,
+                    diasDesdeUltimoDiario,
+                    csatResumo,
+                    saude,
+                    saudeLabel,
+                    saudeMotivo,
+                    alertasSaude,
+                    textoExecutivo,
+                    textoCopiavel
+                };
+            },
+
+            abrirDetalhesTurma(turmaId) {
+                const t = this.getTurmaById(turmaId);
+                if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
+                if (!this.canManageAll() && !this.canEditTurma(t)) {
+                    return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para visualizar esta turma.", "warning");
+                }
+                this.turmaDetalhesId = t.id;
+                this.turmaDetalhesBusca = '';
+                this.turmaDetalhesFaseFiltro = 'todas';
+                this.turmaDetalhesColabsAberto = false;
+                this.viewMode = 'turma_detalhes';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            abrirResumoRapido(turmaId = null, op = null) {
+                const turmas = this.getTurmasCadastradas();
+                const target = turmaId ? this.getTurmaById(turmaId) : null;
+                if (target) {
+                    this.resumoRapidoOp = target.operacao || '';
+                    this.resumoRapidoTurmaId = target.id;
+                } else if (op) {
+                    this.resumoRapidoOp = op;
+                    const daOp = turmas.filter(t => t.operacao === op);
+                    const pref = daOp.find(t => t.status === 'Em Andamento') || daOp[0];
+                    this.resumoRapidoTurmaId = pref ? pref.id : '';
+                } else if (!this.resumoRapidoTurmaId || !this.getTurmaById(this.resumoRapidoTurmaId)) {
+                    const pref = turmas.find(t => t.status === 'Em Andamento') || turmas[0];
+                    if (pref) {
+                        this.resumoRapidoOp = pref.operacao || '';
+                        this.resumoRapidoTurmaId = pref.id;
+                    }
+                }
+                this.resumoRapidoBusca = '';
+                this.viewMode = 'resumo_rapido';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            selecionarOpResumoRapido(op) {
+                this.resumoRapidoOp = op || 'TODAS';
+                const turmas = this.getTurmasCadastradas();
+                const candidatas = (this.resumoRapidoOp === 'TODAS')
+                    ? turmas
+                    : turmas.filter(t => (t.operacao || '') === this.resumoRapidoOp);
+                const sorted = [...candidatas].sort((a, b) => {
+                    const aAtiva = (a.status !== 'Entregue' && a.status !== 'Integrados') ? 0 : 1;
+                    const bAtiva = (b.status !== 'Entregue' && b.status !== 'Integrados') ? 0 : 1;
+                    if (aAtiva !== bAtiva) return aAtiva - bAtiva;
+                    return (b.dataInicio || '').localeCompare(a.dataInicio || '');
+                });
+                this.resumoRapidoTurmaId = sorted[0] ? sorted[0].id : '';
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            selecionarTurmaResumoRapido(turmaId) {
+                const t = this.getTurmaById(turmaId);
+                if (!t) return;
+                this.resumoRapidoTurmaId = t.id;
+                if (this.resumoRapidoOp !== 'TODAS') {
+                    this.resumoRapidoOp = t.operacao || '';
+                }
+                app.ui.renderTab('diario_bordo', true);
+            },
+
+            copiarResumoTurma(turmaId) {
+                const resumo = this.compilarResumoTurma(turmaId);
+                if (!resumo) return app.ui.showAlert("Aviso", "Turma não encontrada para gerar o resumo.", "warning");
+                const doneMsg = () => {
+                    if (app.ui && typeof app.ui.showToast === 'function') {
+                        app.ui.showToast("Resumo copiado! Pronto para colar no Teams ou WhatsApp.", "success");
+                    } else {
+                        app.ui.showAlert("Resumo Copiado", "Resumo da turma copiado para a área de transferência!", "success");
+                    }
+                };
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    navigator.clipboard.writeText(resumo.textoCopiavel).then(doneMsg).catch(() => {
+                        app.ui.showAlert("Resumo da Turma", resumo.textoCopiavel, "info");
+                    });
+                } else {
+                    app.ui.showAlert("Resumo da Turma", resumo.textoCopiavel, "info");
+                }
+            },
+
+            toggleExpandirRelatoDetalhe(diarioId) {
+                const shortEl = document.getElementById(`db-det-relato-short-${diarioId}`);
+                const fullEl = document.getElementById(`db-det-relato-full-${diarioId}`);
+                const btnEl = document.getElementById(`db-det-relato-btn-${diarioId}`);
+                if (!shortEl || !fullEl) return;
+                const expandindo = fullEl.classList.contains('hidden');
+                if (expandindo) {
+                    shortEl.classList.add('hidden');
+                    fullEl.classList.remove('hidden');
+                    if (btnEl) btnEl.textContent = 'Recolher resumo';
+                } else {
+                    fullEl.classList.add('hidden');
+                    shortEl.classList.remove('hidden');
+                    if (btnEl) btnEl.textContent = 'Ver relato completo';
+                }
+            },
+
+            renderDiariosListHtmlDaTurma(resumo) {
+                if (!resumo) return '';
+                const esc = (v) => this._escapeDbHtml(v);
+                const busca = String(this.turmaDetalhesBusca || '').trim().toLowerCase();
+                const faseFiltro = this.turmaDetalhesFaseFiltro || 'todas';
+
+                const filtrados = resumo.diarioResumosDesc.filter(item => {
+                    if (faseFiltro !== 'todas' && item.fase !== faseFiltro) return false;
+                    if (!busca) return true;
+                    const nomesOcorrencias = [
+                        ...item.absItems.map(x => `${x.nome || ''} ${x.motivo || ''}`),
+                        ...item.deslItems.map(x => `${x.nome || ''} ${x.motivo || ''}`),
+                        ...item.altItems.map(x => `${x.nome || ''} ${x.origem || ''} ${x.destino || ''}`)
+                    ].join(' ');
+                    const hay = `${item.dataBr} ${item.dataIso} ${item.raw.treinadorNome || ''} ${item.faseLabel} ${item.relatoClean} ${nomesOcorrencias}`.toLowerCase();
+                    return hay.includes(busca);
+                });
+
+                if (resumo.totalDiarios === 0) {
+                    return `
+                        <div class="bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
+                            <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl mb-3">
+                                <i class="fa-solid fa-book-open"></i>
+                            </div>
+                            <h4 class="text-sm font-extrabold text-slate-800 dark:text-white mb-1">Nenhum diário lançado nesta turma ainda</h4>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-4">
+                                Assim que os diários diários forem preenchidos, cada aula aparecerá aqui com frequência e resumo consolidado.
+                            </p>
+                            ${!resumo.isIntegracao ? `
+                                <button type="button" data-tid="${esc(resumo.t.id)}" onclick="app.diarioBordo.novoDiarioComTurma(this.dataset.tid)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm transition inline-flex items-center gap-2 cursor-pointer">
+                                    <i class="fa-solid fa-plus"></i> Lançar 1º Diário da Turma
+                                </button>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+
+                if (filtrados.length === 0) {
+                    return `
+                        <div class="bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs font-bold text-slate-500 dark:text-slate-400">Nenhum diário encontrado para o filtro aplicado.</p>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="space-y-3">
+                        ${filtrados.map(item => {
+                            const d = item.raw;
+                            const dIdEsc = esc(d.id);
+                            const isAlo = item.fase === 'alo_acompanhado';
+                            const canEdit = this.canEditDiario(d);
+                            const barCor = item.taxaPresenca >= 90 ? 'bg-emerald-500' : (item.taxaPresenca >= 75 ? 'bg-amber-500' : 'bg-rose-500');
+
+                            return `
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700 transition space-y-3">
+                                    <!-- Cabeçalho do Diário -->
+                                    <div class="flex flex-wrap items-center justify-between gap-3">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[11px] font-black">
+                                                ${item.diaNumero ? `${item.diaNumero}º Dia` : 'Diário'}
+                                            </span>
+                                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-extrabold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+                                                <i class="fa-regular fa-calendar text-emerald-600"></i> ${esc(item.dataBr)}
+                                            </span>
+                                            <span class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${isAlo ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'}">
+                                                <i class="fa-solid ${isAlo ? 'fa-headset' : 'fa-chalkboard-user'} mr-1"></i> ${esc(item.faseLabel)}
+                                            </span>
+                                            <span class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                                Instrutor(a): <strong class="text-slate-700 dark:text-slate-200">${esc(d.treinadorNome || 'Treinador')}</strong>
+                                            </span>
+                                        </div>
+
+                                        <!-- Pílulas Numéricas do Dia -->
+                                        <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-extrabold">
+                                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200">Prev: ${item.prev}</span>
+                                            <span class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800">Pres: ${item.presentes} (${item.taxaPresenca}%)</span>
+                                            ${item.absCount > 0 ? `<span class="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">ABS: ${item.absCount}</span>` : ''}
+                                            ${item.deslCount > 0 ? `<span class="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">T.O: ${item.deslCount}</span>` : ''}
+                                            ${item.altCount > 0 ? `<span class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">Reman.: ${item.altCount}</span>` : ''}
+                                        </div>
+                                    </div>
+
+                                    <!-- Barra sutil de frequência -->
+                                    <div class="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                                        <div class="h-full ${barCor} rounded-full" style="width: ${Math.min(100, item.taxaPresenca)}%"></div>
+                                    </div>
+
+                                    <!-- Pequeno Resumo do Dia -->
+                                    <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/70 space-y-2">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                                <i class="fa-solid fa-align-left text-emerald-600"></i> Resumo da Aula / Dinâmica
+                                            </span>
+                                            ${item.perfisObsCount > 0 ? `<span class="text-[10px] font-bold text-slate-400">${item.perfisObsCount} observação(ões) individuais na chamada</span>` : ''}
+                                        </div>
+                                        <p class="text-xs leading-relaxed ${item.hasRelato ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400 italic'}">
+                                            <span id="db-det-relato-short-${dIdEsc}">${esc(item.resumoCurto)}</span>
+                                            ${item.foiTruncado ? `<span id="db-det-relato-full-${dIdEsc}" class="hidden">${esc(item.relatoClean)}</span>` : ''}
+                                        </p>
+                                        ${item.foiTruncado ? `
+                                            <button type="button" id="db-det-relato-btn-${dIdEsc}" data-did="${dIdEsc}" onclick="app.diarioBordo.toggleExpandirRelatoDetalhe(this.dataset.did)" class="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer">
+                                                Ver relato completo
+                                            </button>
+                                        ` : ''}
+
+                                        ${(item.absCount > 0 || item.deslCount > 0 || item.altCount > 0) ? `
+                                            <div class="pt-2 border-t border-slate-200/70 dark:border-slate-700/70 flex flex-wrap gap-1.5">
+                                                ${item.absItems.map(a => `
+                                                    <span class="px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
+                                                        ABS: ${esc(a.nome || a.matricula || 'Aluno')}${a.motivo ? ` (${esc(a.motivo)})` : ''}
+                                                    </span>
+                                                `).join('')}
+                                                ${item.deslItems.map(dl => `
+                                                    <span class="px-2 py-0.5 rounded-md bg-rose-100/80 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 text-[10px] font-bold">
+                                                        T.O: ${esc(dl.nome || dl.matricula || 'Aluno')}${dl.motivo ? ` (${esc(dl.motivo)})` : ''}
+                                                    </span>
+                                                `).join('')}
+                                                ${item.altItems.map(al => `
+                                                    <span class="px-2 py-0.5 rounded-md bg-indigo-100/80 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 text-[10px] font-bold">
+                                                        Reman.: ${esc(al.nome || al.matricula || 'Aluno')}${al.destino ? ` (${esc(al.origem || '?')} -> ${esc(al.destino)})` : ''}
+                                                    </span>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+
+                                    <!-- Ações do Diário -->
+                                    <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+                                        ${canEdit ? `
+                                            <button type="button" data-did="${dIdEsc}" onclick="app.diarioBordo.editarDiario(this.dataset.did, 'turma_detalhes')" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                                <i class="fa-solid fa-pen-to-square text-emerald-600"></i> Abrir / Editar Diário
+                                            </button>
+                                        ` : ''}
+                                        <button type="button" data-did="${dIdEsc}" onclick="app.diarioBordo.gerarPDF(this.dataset.did)" class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-solid fa-file-pdf"></i> PDF do Dia
+                                        </button>
+                                        <button type="button" data-did="${dIdEsc}" onclick="app.diarioBordo.copiarEmailPronto(this.dataset.did)" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-regular fa-envelope"></i> Copiar E-mail
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            },
+
+            filtrarDiariosTurmaDetalheDOM() {
+                const container = document.getElementById('db-turma-det-lista');
+                if (!container || !this.turmaDetalhesId) return;
+                const resumo = this.compilarResumoTurma(this.turmaDetalhesId);
+                container.innerHTML = this.renderDiariosListHtmlDaTurma(resumo);
+            },
+
+            renderResumoRapidoPanelHtml(turmaId) {
+                const resumo = turmaId ? this.compilarResumoTurma(turmaId) : null;
+                if (!resumo) {
+                    return `
+                        <div class="bg-white dark:bg-slate-800 rounded-3xl p-10 text-center border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <div class="w-12 h-12 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl mb-3">
+                                <i class="fa-solid fa-bolt"></i>
+                            </div>
+                            <h3 class="text-sm font-extrabold text-slate-800 dark:text-white mb-1">Selecione uma operação e uma turma acima</h3>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">O resumo completo do andamento da turma aparecerá instantaneamente aqui.</p>
+                        </div>
+                    `;
+                }
+
+                const esc = (v) => this._escapeDbHtml(v);
+                const t = resumo.t;
+                const tidEsc = esc(t.id);
+                const saudeClasses = resumo.saude === 'critico'
+                    ? 'border-rose-200 dark:border-rose-800 bg-rose-50/70 dark:bg-rose-950/20'
+                    : (resumo.saude === 'atencao'
+                        ? 'border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/20'
+                        : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-emerald-950/20');
+                const saudeBadge = resumo.saude === 'critico'
+                    ? 'bg-rose-600 text-white'
+                    : (resumo.saude === 'atencao' ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white');
+
+                let prazoResumoTxt = 'Sem prazo definido';
+                if (t.status === 'Entregue' || t.status === 'Integrados') {
+                    prazoResumoTxt = t.dataEntregaEfetiva ? `Entregue em ${this._formatDataBr(t.dataEntregaEfetiva)}` : 'Turma concluída';
+                } else if (resumo.diasParaEntrega !== null) {
+                    if (resumo.diasParaEntrega > 0) prazoResumoTxt = `Faltam ${resumo.diasParaEntrega} dia${resumo.diasParaEntrega > 1 ? 's' : ''}`;
+                    else if (resumo.diasParaEntrega === 0) prazoResumoTxt = 'Entrega prevista hoje';
+                    else prazoResumoTxt = `Atraso de ${Math.abs(resumo.diasParaEntrega)} dia${Math.abs(resumo.diasParaEntrega) > 1 ? 's' : ''}`;
+                }
+
+                return `
+                    <div class="space-y-5">
+                        <!-- Banner Executivo PÁ! -->
+                        <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-5">
+                            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700">
+                                <div class="space-y-1.5">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="px-2.5 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
+                                            ${esc(t.operacao)}
+                                        </span>
+                                        <span class="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${saudeBadge} flex items-center gap-1">
+                                            <i class="fa-solid ${resumo.saude === 'saudavel' ? 'fa-circle-check' : 'fa-triangle-exclamation'}"></i> ${esc(resumo.saudeLabel)}
+                                        </span>
+                                        <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-extrabold uppercase">
+                                            ${esc(resumo.faseAtualLabel)}
+                                        </span>
+                                    </div>
+                                    <h3 class="text-xl font-black text-slate-800 dark:text-white tracking-tight">
+                                        ${esc(t.numeroTurma)}
+                                    </h3>
+                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                        <span><i class="fa-solid fa-chalkboard-user text-emerald-600 mr-1"></i> ${esc(resumo.isIntegracao ? (t.responsavelIntegracaoNome || '-') : (t.treinadorNome || '-'))}</span>
+                                        <span><i class="fa-regular fa-clock text-emerald-600 mr-1"></i> ${esc(t.horario || '08:00 às 17:00')}</span>
+                                        <span><i class="fa-regular fa-calendar text-emerald-600 mr-1"></i> ${esc(this._formatDataBr(t.dataInicio))} -> ${esc(this._formatDataBr(t.previsaoEntrega))}</span>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarResumoTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                                        <i class="fa-regular fa-copy"></i> Copiar Resumo
+                                    </button>
+                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-folder-open"></i> Entrar na Turma (${resumo.totalDiarios})
+                                    </button>
+                                    ${!resumo.isIntegracao ? `
+                                        <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> PDF Final
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Em poucas palavras -->
+                            <div class="p-4 rounded-2xl border ${saudeClasses} space-y-1.5">
+                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-bolt text-amber-500"></i> Em Poucas Palavras
+                                </div>
+                                <p class="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 leading-relaxed">
+                                    ${esc(resumo.textoExecutivo)}
+                                </p>
+                            </div>
+
+                            <!-- 5 KPIs Rápidos -->
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-bold uppercase text-slate-400">Quadro Atual</div>
+                                    <div class="text-lg font-black text-slate-800 dark:text-white mt-0.5">
+                                        ${resumo.isIntegracao ? `${resumo.presentesIntegracao}/${resumo.totalInicial}` : `${resumo.ativos}/${resumo.totalInicial}`}
+                                    </div>
+                                    <div class="text-[11px] font-bold ${((resumo.isIntegracao ? resumo.pctPresenteismoIntegracao : resumo.pctRetencao) ?? 100) >= 85 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">
+                                        ${resumo.isIntegracao
+                                            ? `${resumo.pctPresenteismoIntegracao !== null ? resumo.pctPresenteismoIntegracao + '% presenteísmo' : 'Sem lista'}`
+                                            : `${resumo.pctRetencao !== null ? resumo.pctRetencao + '% retenção' : 'Sem lista'} (${resumo.toCount} T.O)`}
+                                    </div>
+                                </div>
+
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-bold uppercase text-slate-400">Prazo / Cronograma</div>
+                                    <div class="text-sm font-black text-slate-800 dark:text-white mt-1 leading-tight">${esc(prazoResumoTxt)}</div>
+                                    <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
+                                        <div class="h-full bg-indigo-500 rounded-full" style="width: ${resumo.progressoTempoPct}%"></div>
+                                    </div>
+                                </div>
+
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-bold uppercase text-slate-400">Diários Lançados</div>
+                                    <div class="text-lg font-black text-slate-800 dark:text-white mt-0.5">${resumo.totalDiarios}</div>
+                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.diasSala} Sala • ${resumo.diasAlo} Alô</div>
+                                </div>
+
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[10px] font-bold uppercase text-slate-400">Frequência Média</div>
+                                    <div class="text-lg font-black ${resumo.mediaPresencaPct !== null && resumo.mediaPresencaPct < 80 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'} mt-0.5">
+                                        ${resumo.mediaPresencaPct !== null ? `${resumo.mediaPresencaPct}%` : '--'}
+                                    </div>
+                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.totalAbsOcorrencias} ABS acumulado(s)</div>
+                                </div>
+
+                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700 col-span-2 sm:col-span-1">
+                                    <div class="text-[10px] font-bold uppercase text-slate-400">Último Diário</div>
+                                    <div class="text-sm font-black text-slate-800 dark:text-white mt-1">
+                                        ${resumo.ultimoDiario ? esc(resumo.ultimoDiario.dataBr) : 'Nenhum'}
+                                    </div>
+                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                        ${resumo.ultimoDiario ? `${resumo.ultimoDiario.presentes}/${resumo.ultimoDiario.prev} presentes` : 'Aguardando 1º registro'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Duas Colunas: Pontos de Atenção vs Últimos Diários -->
+                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                            <!-- Pontos de Atenção -->
+                            <div class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                        <i class="fa-solid fa-bullseye text-amber-500"></i> Pontos de Atenção
+                                    </h4>
+                                </div>
+
+                                ${resumo.alertasSaude.length > 0 ? `
+                                    <div class="space-y-1.5">
+                                        ${resumo.alertasSaude.map(al => `
+                                            <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                                                <i class="fa-solid fa-circle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+                                                <span>${esc(al)}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : `
+                                    <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                                        <i class="fa-solid fa-check-circle text-emerald-600"></i> Nenhum ponto crítico detectado até o momento.
+                                    </div>
+                                `}
+
+                                ${resumo.desistentes.length > 0 ? `
+                                    <div class="space-y-1.5">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">Desligamentos / Declínios (${resumo.desistentes.length})</div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            ${resumo.desistentes.map(d => `
+                                                <span class="px-2 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold">
+                                                    ${esc(d.nome)}${d.dataTO ? ` (${esc(d.dataTO)})` : ''}
+                                                </span>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+
+                                ${resumo.alunosAtencao.length > 0 ? `
+                                    <div class="space-y-1.5">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Faltas Recorrentes (2+ ABS)</div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            ${resumo.alunosAtencao.map(a => `
+                                                <span class="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-bold">
+                                                    ${esc(a.nome)} (${a.absCount} faltas)
+                                                </span>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+
+                                ${resumo.csatResumo ? `
+                                    <div class="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 flex items-center justify-between text-xs">
+                                        <span class="font-bold text-amber-800 dark:text-amber-200"><i class="fa-solid fa-star text-amber-500 mr-1"></i> CSAT da Turma</span>
+                                        <span class="font-black text-amber-900 dark:text-amber-100">${resumo.csatResumo.percentualCSAT}% (${resumo.csatResumo.total} aval.)</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <!-- Linha do Tempo Condensada -->
+                            <div class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                        <i class="fa-solid fa-clock-rotate-left text-emerald-600"></i> Últimos Diários com Resumo
+                                    </h4>
+                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                                        Ver todos (${resumo.totalDiarios})
+                                    </button>
+                                </div>
+
+                                ${resumo.diarioResumosDesc.length === 0 ? `
+                                    <div class="p-6 text-center text-xs text-slate-400 italic">
+                                        Nenhum diário registrado para esta turma até o momento.
+                                    </div>
+                                ` : `
+                                    <div class="space-y-2.5">
+                                        ${resumo.diarioResumosDesc.slice(0, 5).map(item => `
+                                            <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/70 hover:border-emerald-300 dark:hover:border-emerald-700 transition space-y-1.5">
+                                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                                    <div class="flex flex-wrap items-center gap-1.5">
+                                                        <span class="px-2 py-0.5 rounded-md bg-slate-800 dark:bg-slate-700 text-white text-[10px] font-black">${item.diaNumero}º Dia</span>
+                                                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">${esc(item.dataBr)}</span>
+                                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${item.fase === 'alo_acompanhado' ? 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300' : 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'}">${esc(item.faseLabel)}</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-2 text-[11px] font-bold">
+                                                        <span class="text-emerald-700 dark:text-emerald-400">${item.presentes}/${item.prev} pres. (${item.taxaPresenca}%)</span>
+                                                        ${item.absCount > 0 ? `<span class="text-amber-600">${item.absCount} ABS</span>` : ''}
+                                                        ${item.deslCount > 0 ? `<span class="text-rose-600">${item.deslCount} T.O</span>` : ''}
+                                                        ${this.canEditDiario(item.raw) ? `
+                                                            <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.editarDiario(this.dataset.did, 'resumo_rapido')" class="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 text-[10px] font-extrabold cursor-pointer">
+                                                                Abrir
+                                                            </button>
+                                                        ` : ''}
+                                                    </div>
+                                                </div>
+                                                <p class="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                                                    ${esc(item.resumoCurto)}
+                                                </p>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            renderSeletoresResumoRapidoHtml() {
+                const esc = (v) => this._escapeDbHtml(v);
+                const turmas = this.getTurmasCadastradas();
+                const q = String(this.resumoRapidoBusca || '').trim().toLowerCase();
+
+                const turmasFiltradas = q
+                    ? turmas.filter(t => {
+                        const hay = `${t.operacao || ''} ${t.numeroTurma || ''} ${t.treinadorNome || ''} ${t.responsavelIntegracaoNome || ''} ${t.status || ''}`.toLowerCase();
+                        return hay.includes(q);
+                    })
+                    : turmas;
+
+                const opsMap = {};
+                turmasFiltradas.forEach(t => {
+                    const opName = t.operacao || 'Sem Operação';
+                    if (!opsMap[opName]) opsMap[opName] = { total: 0, ativas: 0 };
+                    opsMap[opName].total++;
+                    if (t.status !== 'Entregue' && t.status !== 'Integrados') opsMap[opName].ativas++;
+                });
+                const ops = Object.keys(opsMap).sort((a, b) => a.localeCompare(b));
+
+                let opSelecionada = this.resumoRapidoOp || 'TODAS';
+                if (opSelecionada !== 'TODAS' && !ops.includes(opSelecionada)) {
+                    opSelecionada = ops[0] || 'TODAS';
+                }
+
+                const turmasDaOp = (opSelecionada === 'TODAS'
+                    ? turmasFiltradas
+                    : turmasFiltradas.filter(t => (t.operacao || 'Sem Operação') === opSelecionada)
+                ).sort((a, b) => {
+                    const aAtiva = (a.status !== 'Entregue' && a.status !== 'Integrados') ? 0 : 1;
+                    const bAtiva = (b.status !== 'Entregue' && b.status !== 'Integrados') ? 0 : 1;
+                    if (aAtiva !== bAtiva) return aAtiva - bAtiva;
+                    return (b.dataInicio || '').localeCompare(a.dataInicio || '');
+                });
+
+                const ativaId = turmasDaOp.some(t => t.id === this.resumoRapidoTurmaId)
+                    ? this.resumoRapidoTurmaId
+                    : (turmasDaOp[0] ? turmasDaOp[0].id : '');
+
+                return {
+                    ativaId,
+                    html: `
+                        <div class="space-y-4">
+                            <!-- Passo 1: Operação -->
+                            <div class="space-y-1.5">
+                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">1. Escolha a Operação</div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button type="button" data-op="TODAS" onclick="app.diarioBordo.selecionarOpResumoRapido(this.dataset.op)" class="px-3 py-1.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${opSelecionada === 'TODAS' ? 'bg-slate-900 dark:bg-emerald-600 text-white border-slate-900 dark:border-emerald-600 shadow-xs' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                        Todas (${turmasFiltradas.length})
+                                    </button>
+                                    ${ops.map(op => `
+                                        <button type="button" data-op="${esc(op)}" onclick="app.diarioBordo.selecionarOpResumoRapido(this.dataset.op)" class="px-3 py-1.5 rounded-xl text-xs font-extrabold border transition cursor-pointer flex items-center gap-1.5 ${opSelecionada === op ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs' : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                            <span>${esc(op)}</span>
+                                            <span class="px-1.5 py-0.2 rounded-md text-[10px] ${opSelecionada === op ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}">${opsMap[op].total}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Passo 2: Turma -->
+                            <div class="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-700/70">
+                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">2. Escolha a Turma</div>
+                                ${turmasDaOp.length === 0 ? `
+                                    <div class="text-xs text-slate-400 italic py-2">Nenhuma turma encontrada para o filtro informado.</div>
+                                ` : `
+                                    <div class="flex flex-wrap gap-2">
+                                        ${turmasDaOp.map(t => {
+                                            const selected = (t.id === ativaId);
+                                            const qtdDiarios = this.getDiariosDaTurma(t).length;
+                                            const isDone = (t.status === 'Entregue' || t.status === 'Integrados');
+                                            return `
+                                                <button type="button" data-tid="${esc(t.id)}" onclick="app.diarioBordo.selecionarTurmaResumoRapido(this.dataset.tid)" class="px-3.5 py-2 rounded-xl text-left border transition cursor-pointer flex items-center gap-2.5 ${selected ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-300'}">
+                                                    <span class="w-2 h-2 rounded-full shrink-0 ${isDone ? 'bg-teal-400' : 'bg-amber-400'}"></span>
+                                                    <div>
+                                                        <div class="text-xs font-black leading-tight">${esc(t.numeroTurma)}</div>
+                                                        <div class="text-[10px] ${selected ? 'text-indigo-100' : 'text-slate-400'} font-semibold">
+                                                            ${opSelecionada === 'TODAS' ? `${esc(t.operacao)} • ` : ''}${esc(t.status || 'Em Andamento')} • ${qtdDiarios} diário${qtdDiarios !== 1 ? 's' : ''}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    `
+                };
+            },
+
+            filtrarResumoRapidoDOM() {
+                const selectorsEl = document.getElementById('db-resumo-rapido-seletores');
+                const panelEl = document.getElementById('db-resumo-rapido-painel');
+                if (!selectorsEl || !panelEl) return;
+                const { ativaId, html } = this.renderSeletoresResumoRapidoHtml();
+                selectorsEl.innerHTML = html;
+                this.resumoRapidoTurmaId = ativaId;
+                panelEl.innerHTML = this.renderResumoRapidoPanelHtml(ativaId);
             },
 
             novaTurma(tipo = 'treinamento') {
@@ -6522,12 +7583,13 @@ storage: {
                 }
             },
 
-            editarDiario(id) {
+            editarDiario(id, returnViewMode = null) {
                 const item = app.diarioBordoList && app.diarioBordoList[id];
                 if (!item) return app.ui.showAlert("Aviso", "Diário de bordo não localizado.", "error");
                 if (!this.canEditDiario(item)) {
                     return app.ui.showAlert("Acesso Restrito", "Você só pode visualizar e editar os diários de bordo de sua própria autoria.", "warning");
                 }
+                this._returnViewMode = returnViewMode || null;
                 this.diarioEmEdicao = JSON.parse(JSON.stringify(item));
                 if (!Array.isArray(this.diarioEmEdicao.desligamentos)) this.diarioEmEdicao.desligamentos = [];
                 if (!Array.isArray(this.diarioEmEdicao.alteracoesQuadro)) this.diarioEmEdicao.alteracoesQuadro = [];
@@ -6538,7 +7600,9 @@ storage: {
             },
 
             voltarLista() {
-                this.viewMode = 'lista';
+                const targetMode = this._returnViewMode || 'lista';
+                this._returnViewMode = null;
+                this.viewMode = targetMode;
                 this.diarioEmEdicao = null;
                 if (this.chartInstance) {
                     try { this.chartInstance.destroy(); } catch (e) {}
@@ -17727,19 +18791,22 @@ storage: {
                     }
                     const mode = app.diarioBordo.viewMode;
 
-                    // Barra Superior de Navegação (Dashboard vs Turmas Cadastradas vs Diários & Histórico)
+                    // Barra Superior de Navegação (Dashboard vs Turmas Cadastradas vs Resumo Rápido vs Diários & Histórico)
                     const navSubTabsHtml = `
                         <div class="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                             <div class="flex flex-wrap items-center gap-2 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl">
                                 ${canManage ? `
-                                    <button type="button" onclick="app.diarioBordo.viewMode = 'dashboard'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'dashboard' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                    <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'dashboard'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'dashboard' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
                                         <i class="fa-solid fa-chart-pie"></i> Dashboard Geral
                                     </button>
                                 ` : ''}
-                                <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'turmas' || mode === 'turma_form' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'turmas' || mode === 'turma_form' || mode === 'turma_detalhes' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
                                     <i class="fa-solid fa-graduation-cap"></i> Turmas Cadastradas (${turmasCadastradas.length})
                                 </button>
-                                <button type="button" onclick="app.diarioBordo.viewMode = 'lista'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'lista' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.abrirResumoRapido();" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'resumo_rapido' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
+                                    <i class="fa-solid fa-bolt"></i> Resumo Rápido
+                                </button>
+                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'lista'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'lista' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
                                     <i class="fa-solid fa-list-check"></i> ${canManage ? `Diários &amp; Histórico (${allDiarios.length})` : `Meus Diários (${visibleDiarios.length})`}
                                 </button>
                             </div>
@@ -18243,7 +19310,7 @@ storage: {
                                                                         `}
                                                                         ${t.travada ? `<span title="Integração bloqueada contra alteração manual" class="text-slate-400 text-xs"><i class="fa-solid fa-lock"></i></span>` : ''}
                                                                     </div>
-                                                                    <h3 class="text-base font-extrabold text-slate-800 dark:text-white leading-tight">
+                                                                    <h3 data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-extrabold text-slate-800 dark:text-white leading-tight hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer" title="Abrir detalhes desta integração">
                                                                         ${t.numeroTurma || ('Integração ' + t.operacao)}
                                                                     </h3>
                                                                 </div>
@@ -18309,10 +19376,13 @@ storage: {
                                                                         <i class="fa-solid fa-user-check"></i> Finalizar como Integrados
                                                                     </button>
                                                                 ` : `
-                                                                    <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
-                                                                        <i class="fa-solid fa-list-check"></i> Ver Lista de Participantes
+                                                                    <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                                                        <i class="fa-solid fa-list-check"></i> Abrir Integração
                                                                     </button>
                                                                 `}
+                                                                <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Ver Resumo Rápido desta Integração">
+                                                                    <i class="fa-solid fa-bolt"></i> Resumo
+                                                                </button>
                                                                 ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
                                                                     <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="py-2 px-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Visualizar Arquivos Anexados (${app.diarioBordo.getAnexosTurma(t).length})">
                                                                         <i class="fa-solid fa-eye"></i>
@@ -18369,7 +19439,7 @@ storage: {
                                                                     `}
                                                                     ${t.travada ? `<span title="Turma travada contra alteração manual" class="text-slate-400 text-xs"><i class="fa-solid fa-lock"></i></span>` : ''}
                                                                 </div>
-                                                                <h3 class="text-base font-extrabold text-slate-800 dark:text-white leading-tight">
+                                                                <h3 data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-extrabold text-slate-800 dark:text-white leading-tight hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer" title="Entrar na turma e ver lista de diários">
                                                                     ${t.numeroTurma}
                                                                 </h3>
                                                             </div>
@@ -18488,9 +19558,15 @@ storage: {
                                                             </div>
                                                         ` : ''}
 
-                                                        <div class="flex items-center gap-2">
-                                                            <button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${t.id}')" class="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
-                                                                <i class="fa-solid fa-clipboard-check"></i> Lançar Diário do Dia
+                                                        <div class="grid grid-cols-2 gap-2">
+                                                            <button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${t.id}')" class="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
+                                                                <i class="fa-solid fa-clipboard-check"></i> Lançar Diário
+                                                            </button>
+                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95" title="Entrar na turma para visualizar diários com resumos e integrantes">
+                                                                <i class="fa-solid fa-folder-open"></i> Diários (${app.diarioBordo.getDiariosDaTurma(t).length})
+                                                            </button>
+                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-extrabold text-xs border border-amber-200 dark:border-amber-800 transition flex items-center justify-center gap-1.5 cursor-pointer" title="Ver resumo executivo rápido desta turma">
+                                                                <i class="fa-solid fa-bolt text-amber-500"></i> Resumo Rápido
                                                             </button>
                                                             <button type="button" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF('${t.id}')" class="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Gerar Relatório Final Consolidado da Turma (PDF)">
                                                                 <i class="fa-solid fa-file-pdf text-rose-500"></i> Relatório Final
@@ -18981,6 +20057,265 @@ storage: {
                         setTimeout(() => {
                             app.diarioBordo.renderTabelaColaboradoresTurma();
                         }, 50);
+                    } else if (mode === 'turma_detalhes') {
+                        const t = app.diarioBordo.getTurmaById(app.diarioBordo.turmaDetalhesId);
+                        const podeVer = t && (canManage || app.diarioBordo.canEditTurma(t));
+                        if (!podeVer) {
+                            app.diarioBordo.viewMode = 'turmas';
+                            return app.ui.renderTab('diario_bordo', true);
+                        }
+                        const resumo = app.diarioBordo.compilarResumoTurma(t.id);
+                        const esc = (v) => app.diarioBordo._escapeDbHtml(v);
+                        const podeEditar = app.diarioBordo.canEditTurma(t);
+                        const tidEsc = esc(t.id);
+                        const faseFiltro = app.diarioBordo.turmaDetalhesFaseFiltro || 'todas';
+                        const buscaAtual = app.diarioBordo.turmaDetalhesBusca || '';
+                        const colabsAberto = !!app.diarioBordo.turmaDetalhesColabsAberto;
+                        const saudeBadge = resumo.saude === 'critico'
+                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                            : (resumo.saude === 'atencao'
+                                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800');
+
+                        container.innerHTML = `
+                            <div class="w-full max-w-6xl mx-auto p-6 space-y-6 animate-fade-in">
+                                ${navSubTabsHtml}
+
+                                <!-- Cabeçalho da Turma -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-5">
+                                    <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                                        <div class="space-y-2">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
+                                                    <i class="fa-solid fa-arrow-left"></i> Turmas
+                                                </button>
+                                                <span class="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
+                                                    ${esc(t.operacao)}
+                                                </span>
+                                                <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${saudeBadge}">
+                                                    <i class="fa-solid ${resumo.saude === 'saudavel' ? 'fa-circle-check' : 'fa-triangle-exclamation'} mr-1"></i> ${esc(resumo.saudeLabel)}
+                                                </span>
+                                                <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-bold uppercase">
+                                                    ${esc(t.status || 'Em Andamento')}
+                                                </span>
+                                                ${t.travada ? `<span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 text-slate-500 text-[10px] font-bold" title="Turma travada"><i class="fa-solid fa-lock mr-1"></i> Travada</span>` : ''}
+                                            </div>
+                                            <h2 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+                                                ${esc(t.numeroTurma)}
+                                            </h2>
+                                            <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                                <span><i class="fa-solid fa-chalkboard-user text-emerald-600 mr-1"></i> ${esc(resumo.isIntegracao ? (t.responsavelIntegracaoNome || '-') : (t.treinadorNome || '-'))}</span>
+                                                <span><i class="fa-regular fa-clock text-emerald-600 mr-1"></i> ${esc(t.horario || '08:00 às 17:00')}</span>
+                                                <span><i class="fa-regular fa-calendar text-emerald-600 mr-1"></i> Início: ${esc(app.diarioBordo._formatDataBr(t.dataInicio))}</span>
+                                                ${!resumo.isIntegracao ? `<span><i class="fa-solid fa-flag-checkered text-indigo-500 mr-1"></i> Previsão Entrega: ${esc(app.diarioBordo._formatDataBr(t.previsaoEntrega))}</span>` : ''}
+                                            </div>
+                                        </div>
+
+                                        <!-- Ações da Turma -->
+                                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                            ${!resumo.isIntegracao ? `
+                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.novoDiarioComTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                                                    <i class="fa-solid fa-plus"></i> + Lançar Diário
+                                                </button>
+                                            ` : ''}
+                                            <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-extrabold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                <i class="fa-solid fa-bolt text-amber-500"></i> Resumo Rápido
+                                            </button>
+                                            <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarResumoTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                <i class="fa-regular fa-copy text-emerald-600"></i> Copiar Resumo
+                                            </button>
+                                            ${!resumo.isIntegracao ? `
+                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                    <i class="fa-solid fa-file-pdf text-rose-500"></i> PDF Final
+                                                </button>
+                                            ` : ''}
+                                            ${podeEditar && !t.travada ? `
+                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.editarTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                    <i class="fa-solid fa-pen-to-square"></i> Editar Turma
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+
+                                    <!-- Barra de Cronograma + Mini Resumo Executivo -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-700/70 space-y-2.5">
+                                        <p class="text-xs sm:text-sm text-slate-700 dark:text-slate-200 font-medium leading-relaxed">
+                                            ${esc(resumo.textoExecutivo)}
+                                        </p>
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0">${esc(resumo.faseAtualLabel)}</span>
+                                            <div class="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                                <div class="h-full bg-emerald-500 rounded-full" style="width: ${resumo.progressoTempoPct}%"></div>
+                                            </div>
+                                            <span class="text-[10px] font-black text-slate-500 dark:text-slate-400 shrink-0">${resumo.progressoTempoPct}% do prazo</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- 4 KPIs da Turma -->
+                                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                        <div class="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-800/70">
+                                            <div class="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400">Quadro &amp; Retenção</div>
+                                            <div class="text-xl font-black text-emerald-900 dark:text-emerald-200 mt-0.5">
+                                                ${resumo.isIntegracao ? `${resumo.presentesIntegracao}/${resumo.totalInicial}` : `${resumo.ativos}/${resumo.totalInicial}`}
+                                            </div>
+                                            <div class="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                                ${resumo.isIntegracao
+                                                    ? `${resumo.pctPresenteismoIntegracao !== null ? resumo.pctPresenteismoIntegracao + '% presenteísmo' : 'Sem integrantes'}`
+                                                    : `${resumo.pctRetencao !== null ? resumo.pctRetencao + '% retenção' : 'Sem integrantes'} (${resumo.toCount} T.O)`}
+                                            </div>
+                                        </div>
+                                        <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-800/70">
+                                            <div class="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-400">Diários Lançados</div>
+                                            <div class="text-xl font-black text-indigo-900 dark:text-indigo-200 mt-0.5">${resumo.totalDiarios}</div>
+                                            <div class="text-[11px] font-bold text-indigo-700 dark:text-indigo-400">${resumo.diasSala} Sala • ${resumo.diasAlo} Alô Acompanhado</div>
+                                        </div>
+                                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                                            <div class="text-[10px] font-black uppercase text-slate-400">Frequência Média</div>
+                                            <div class="text-xl font-black text-slate-800 dark:text-white mt-0.5">${resumo.mediaPresencaPct !== null ? `${resumo.mediaPresencaPct}%` : '--'}</div>
+                                            <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.totalAbsOcorrencias} ABS • ${resumo.totalAltOcorrencias} Reman.</div>
+                                        </div>
+                                        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                                            <div class="text-[10px] font-black uppercase text-slate-400">Último Registro</div>
+                                            <div class="text-base font-black text-slate-800 dark:text-white mt-1">${resumo.ultimoDiario ? esc(resumo.ultimoDiario.dataBr) : 'Nenhum ainda'}</div>
+                                            <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.ultimoDiario ? `${resumo.ultimoDiario.presentes}/${resumo.ultimoDiario.prev} presentes` : 'Sem registros'}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Integrantes da Turma (Recolhível) -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
+                                    <button type="button" onclick="app.diarioBordo.turmaDetalhesColabsAberto = !app.diarioBordo.turmaDetalhesColabsAberto; app.ui.renderTab('diario_bordo', true);" class="w-full flex items-center justify-between gap-3 cursor-pointer text-left">
+                                        <div class="flex items-center gap-2.5">
+                                            <div class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center">
+                                                <i class="fa-solid fa-users"></i>
+                                            </div>
+                                            <div>
+                                                <h3 class="text-sm font-black text-slate-800 dark:text-white">
+                                                    Integrantes da Turma (${resumo.totalInicial})
+                                                </h3>
+                                                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                                                    ${resumo.ativos} ativos • ${resumo.toCount} desligamentos (T.O/Declínio)
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span class="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5">
+                                            <span>${colabsAberto ? 'Ocultar lista' : 'Ver participantes'}</span>
+                                            <i class="fa-solid ${colabsAberto ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>
+                                        </span>
+                                    </button>
+
+                                    ${colabsAberto ? `
+                                        <div class="pt-3 border-t border-slate-100 dark:border-slate-700 overflow-x-auto">
+                                            ${resumo.colabsResumo.length === 0 ? `
+                                                <p class="text-xs text-slate-400 italic py-2">Nenhum participante cadastrado nesta turma.</p>
+                                            ` : `
+                                                <table class="w-full text-left border-collapse text-xs">
+                                                    <thead>
+                                                        <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                            <th class="p-2.5">Matrícula</th>
+                                                            <th class="p-2.5">Colaborador</th>
+                                                            <th class="p-2.5 text-center">Frequência</th>
+                                                            <th class="p-2.5 text-right">Situação</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                        ${resumo.colabsResumo.map(col => `
+                                                            <tr>
+                                                                <td class="p-2.5 font-bold text-slate-500 dark:text-slate-400">${esc(col.matricula)}</td>
+                                                                <td class="p-2.5 font-bold ${col.isTO ? 'line-through text-rose-500' : 'text-slate-800 dark:text-slate-200'}">${esc(col.nome)}</td>
+                                                                <td class="p-2.5 text-center text-slate-600 dark:text-slate-300 font-semibold">
+                                                                    ${resumo.totalDiarios > 0 ? `${col.presCount}P / ${col.absCount}F (${col.taxaAluno}%)` : '-'}
+                                                                </td>
+                                                                <td class="p-2.5 text-right">
+                                                                    <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold ${col.isTO ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}">
+                                                                        ${esc(col.statusLabel)}${col.dataTO ? ` (${esc(col.dataTO)})` : ''}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        `).join('')}
+                                                    </tbody>
+                                                </table>
+                                            `}
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <!-- Lista de Diários da Turma com Pequenos Resumos -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+                                        <div>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-book-open text-emerald-600"></i> Diários da Turma com Resumo (${resumo.totalDiarios})
+                                            </h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                                Histórico organizado apenas desta turma, mostrando frequência e o que foi trabalhado em cada aula.
+                                            </p>
+                                        </div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                                <button type="button" onclick="app.diarioBordo.turmaDetalhesFaseFiltro = 'todas'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer ${faseFiltro === 'todas' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-xs' : 'text-slate-500'}">
+                                                    Todos (${resumo.totalDiarios})
+                                                </button>
+                                                <button type="button" onclick="app.diarioBordo.turmaDetalhesFaseFiltro = 'sala'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer ${faseFiltro === 'sala' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-xs' : 'text-slate-500'}">
+                                                    Sala (${resumo.diasSala})
+                                                </button>
+                                                <button type="button" onclick="app.diarioBordo.turmaDetalhesFaseFiltro = 'alo_acompanhado'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer ${faseFiltro === 'alo_acompanhado' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-xs' : 'text-slate-500'}">
+                                                    Alô (${resumo.diasAlo})
+                                                </button>
+                                            </div>
+                                            <div class="relative">
+                                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                                <input type="text" id="db-turma-det-busca" value="${esc(buscaAtual)}" oninput="app.diarioBordo.turmaDetalhesBusca = this.value; app.diarioBordo.filtrarDiariosTurmaDetalheDOM();" placeholder="Buscar no relato, data ou aluno..." class="pl-8 pr-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 w-60">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="db-turma-det-lista">
+                                        ${app.diarioBordo.renderDiariosListHtmlDaTurma(resumo)}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (mode === 'resumo_rapido') {
+                        const { ativaId, html: seletoresHtml } = app.diarioBordo.renderSeletoresResumoRapidoHtml();
+                        if (app.diarioBordo.resumoRapidoTurmaId !== ativaId) {
+                            app.diarioBordo.resumoRapidoTurmaId = ativaId;
+                        }
+                        const esc = (v) => app.diarioBordo._escapeDbHtml(v);
+                        const buscaRapida = app.diarioBordo.resumoRapidoBusca || '';
+
+                        container.innerHTML = `
+                            <div class="w-full max-w-6xl mx-auto p-6 space-y-6 animate-fade-in">
+                                ${navSubTabsHtml}
+
+                                <!-- Seletor Instantâneo: Operação -> Turma -> PÁ! -->
+                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
+                                        <div>
+                                            <h2 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-bolt text-amber-500"></i> Resumo Rápido por Operação &amp; Turma
+                                            </h2>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                                Clique na operação e depois na turma para ver na hora como está o andamento completo.
+                                            </p>
+                                        </div>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                            <input type="text" id="db-resumo-rapido-busca" value="${esc(buscaRapida)}" oninput="app.diarioBordo.resumoRapidoBusca = this.value; app.diarioBordo.filtrarResumoRapidoDOM();" placeholder="Buscar operação, turma ou instrutor..." class="pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-72">
+                                        </div>
+                                    </div>
+
+                                    <div id="db-resumo-rapido-seletores">
+                                        ${seletoresHtml}
+                                    </div>
+                                </div>
+
+                                <!-- Painel PÁ! -->
+                                <div id="db-resumo-rapido-painel">
+                                    ${app.diarioBordo.renderResumoRapidoPanelHtml(ativaId)}
+                                </div>
+                            </div>
+                        `;
                     } else if (mode === 'lista') {
                         // Aplicação dos Filtros
                         const filtroOp = app.diarioBordo.filtroOp || 'TODAS';
@@ -19169,6 +20504,14 @@ storage: {
                                                             <button type="button" onclick="app.diarioBordo.editarDiario('${item.id}')" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
                                                                 <i class="fa-solid fa-pen-to-square text-xs text-emerald-600"></i> Visualizar / Editar
                                                             </button>
+                                                            ${(() => {
+                                                                const turmaVinc = app.diarioBordo.findTurmaForDiario(item);
+                                                                return turmaVinc ? `
+                                                                    <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(turmaVinc.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Entrar na turma para ver todos os diários e resumo">
+                                                                        <i class="fa-solid fa-folder-open text-xs"></i> Turma
+                                                                    </button>
+                                                                ` : '';
+                                                            })()}
                                                             <button type="button" onclick="app.diarioBordo.gerarPDF('${item.id}')" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Gerar Relatório PDF Oficial">
                                                                 <i class="fa-solid fa-file-pdf text-xs text-rose-500"></i> PDF
                                                             </button>
