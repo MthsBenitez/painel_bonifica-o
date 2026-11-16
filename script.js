@@ -495,7 +495,7 @@ storage: {
                     }
 
                     // Carga paralela ultra-rápida apenas dos nós leves essenciais (SEM actions de 34MB e SEM shares de 13.6MB no boot!)
-                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes', 'diario_bordo', 'turmas_treinamento'];
+                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes', 'diario_bordo', 'turmas_treinamento', 'biBancoHoras'];
 
                     // Carga única (.once) direta do Firebase no boot (sem cache local que desconecte usuários e sem loops .on)
                     const fetchCoreData = async () => {
@@ -826,6 +826,19 @@ storage: {
                                     if (localF) app.fcrProvas = JSON.parse(localF);
                                     else app.fcrProvas = {};
                                 } catch (e) { app.fcrProvas = {}; }
+                            }
+                            if (data.biBancoHoras && typeof data.biBancoHoras === 'object') {
+                                app.biBancoHorasData = data.biBancoHoras;
+                                try { localStorage.setItem('portal_bi_banco_horas', JSON.stringify(app.biBancoHorasData)); } catch (e) {}
+                            } else {
+                                try {
+                                    const localBh = localStorage.getItem('portal_bi_banco_horas');
+                                    if (localBh) app.biBancoHorasData = JSON.parse(localBh);
+                                    else app.biBancoHorasData = null;
+                                } catch (e) { app.biBancoHorasData = null; }
+                            }
+                            if (app.ui && typeof app.ui._hydrateBiBancoHorasFromCloud === 'function') {
+                                app.ui._hydrateBiBancoHorasFromCloud();
                             }
                             // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
                             // Visão Geral Setorial
@@ -1760,6 +1773,25 @@ storage: {
                         });
                     }
                     return Promise.resolve();
+                },
+                saveBiBancoHoras() {
+                    const payload = app.biBancoHorasData || null;
+                    try {
+                        if (payload) localStorage.setItem('portal_bi_banco_horas', JSON.stringify(payload));
+                        else localStorage.removeItem('portal_bi_banco_horas');
+                    } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        if (!payload) {
+                            return firebase.database().ref('sistema_bonificacao/biBancoHoras').remove().catch(err => {
+                                console.warn("Aviso Firebase remove biBancoHoras:", err);
+                            });
+                        }
+                        const sanitized = this.sanitizeFirebaseObject(payload);
+                        return firebase.database().ref('sistema_bonificacao/biBancoHoras').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveBiBancoHoras:", err);
+                        });
+                    }
+                    return Promise.resolve();
                 }
             },
 
@@ -1814,6 +1846,7 @@ storage: {
             harmonyDeployList: {},
             reportesList: {},
             fcrProvas: {},
+            biBancoHorasData: null,
             csatNpsProvas: {},
             monitoriasData: { ranking: [] },
             utils: {
@@ -6031,6 +6064,9 @@ storage: {
                                                         <span class="text-emerald-700 dark:text-emerald-400">${item.presentes}/${item.prev} pres. (${item.taxaPresenca}%)</span>
                                                         ${item.absCount > 0 ? `<span class="text-amber-600">${item.absCount} ABS</span>` : ''}
                                                         ${item.deslCount > 0 ? `<span class="text-rose-600">${item.deslCount} T.O</span>` : ''}
+                                                        <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.copiarEmailPronto(this.dataset.did)" class="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-[10px] font-extrabold cursor-pointer flex items-center gap-1" title="Copiar E-mail Pronto">
+                                                            <i class="fa-regular fa-envelope"></i> E-mail
+                                                        </button>
                                                         ${this.canEditDiario(item.raw) ? `
                                                             <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.editarDiario(this.dataset.did, 'resumo_rapido')" class="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 text-[10px] font-extrabold cursor-pointer">
                                                                 Abrir
@@ -9587,6 +9623,8 @@ storage: {
 
                 const op = (diario.operacao || 'OPERAÇÃO').toUpperCase();
                 const turma = (diario.turma || '').toUpperCase();
+                const tBase = this.findTurmaForDiario(diario);
+                const isReciclagem = (diario.tipoTurma === 'reciclagem') || (tBase && tBase.tipoTurma === 'reciclagem');
 
                 // Buscar diários da mesma turma ordenados por data até o diário atual (incluindo o rascunho atual em edição)
                 const mergedMap = { ...(app.diarioBordoList || {}) };
@@ -9607,7 +9645,19 @@ storage: {
                     return Number(a.criadoEm || 0) - Number(b.criadoEm || 0);
                 });
 
-                let texto = `Prezados Gestores\nSegue diário de bordo de novos colaboradores ${op} turma ${turma}.\n\n`;
+                let texto = isReciclagem
+                    ? `Prezados Gestores\nSegue diário de bordo da turma de reciclagem ${op} turma ${turma}.\n\n`
+                    : `Prezados Gestores\nSegue diário de bordo de novos colaboradores ${op} turma ${turma}.\n\n`;
+
+                if (isReciclagem) {
+                    const cRec = this.getDiarioContagens(diario);
+                    texto += `Presentes: ${cRec.PR}/${cRec.P} (${cRec.pctPR}%) • ABS: ${cRec.A}\n`;
+                    const temaRec = String(diario.temaReciclagem || (tBase && tBase.temaReciclagem) || '').trim();
+                    const obsRec = String(diario.observacoesReciclagem || (tBase && tBase.observacoesReciclagem) || '').trim();
+                    if (temaRec) texto += `Tema: ${temaRec}\n`;
+                    if (obsRec) texto += `Observações / Eventos Importantes: ${obsRec}\n`;
+                    texto += `\n`;
+                }
 
                 // Histórico de aulas ministradas dia a dia
                 if (diariosTurma.length > 0) {
@@ -9715,9 +9765,29 @@ storage: {
                 return texto.trim();
             },
 
+            _copyTextSilently(texto, textarea = null) {
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    return navigator.clipboard.writeText(texto).catch(() => {
+                        if (textarea) {
+                            textarea.select();
+                            try { document.execCommand('copy'); } catch (e) {}
+                        }
+                    });
+                }
+                if (textarea) {
+                    textarea.select();
+                    try { document.execCommand('copy'); } catch (e) {}
+                }
+                return Promise.resolve();
+            },
+
             copiarEmailPronto(diarioId = null) {
                 const targetDiario = this._resolveDiarioTargetForExport(diarioId);
-                if (targetDiario && !this.canEditDiario(targetDiario)) {
+                if (!targetDiario) {
+                    return app.ui.showAlert("Aviso", "Nenhum diário selecionado para gerar o e-mail.", "warning");
+                }
+                const isEditingTarget = this.diarioEmEdicao && targetDiario === this.diarioEmEdicao;
+                if (!isEditingTarget && !this.canEditDiario(targetDiario)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para acessar o diário de bordo de outro colaborador.", "warning");
                 }
                 const texto = this.gerarTextoEmailFormatado(diarioId);
@@ -9728,26 +9798,32 @@ storage: {
                 const modal = document.getElementById('email-pronto-modal');
                 const textarea = document.getElementById('email-pronto-textarea');
                 if (textarea) textarea.value = texto;
-
-                try {
-                    navigator.clipboard.writeText(texto);
-                    app.ui.showAlert("E-mail Copiado!", "O formato pronto foi copiado para sua área de transferência (Ctrl+V) e aberto para visualização.", "success");
-                } catch(e) {}
-
                 if (modal) modal.classList.remove('hidden');
+
+                this._copyTextSilently(texto, textarea).then(() => {
+                    app.ui.showAlert("E-mail Copiado!", "O formato pronto foi copiado para sua área de transferência (Ctrl+V) e aberto para visualização.", "success");
+                });
+            },
+
+            copiarEmailProntoTurma(turmaId) {
+                const turma = this.getTurmaById(turmaId);
+                if (!turma) {
+                    return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
+                }
+                const diarios = this.getDiariosDaTurma(turma);
+                if (!diarios || diarios.length === 0) {
+                    return app.ui.showAlert("Sem Diário Lançado", "Lance pelo menos um Diário de Bordo nesta turma para gerar o e-mail pronto.", "info");
+                }
+                this.copiarEmailPronto(diarios[0].id);
             },
 
             executarCopiarTextoEmail() {
                 const textarea = document.getElementById('email-pronto-textarea');
                 if (!textarea) return;
                 textarea.select();
-                try {
-                    navigator.clipboard.writeText(textarea.value);
+                this._copyTextSilently(textarea.value, textarea).then(() => {
                     app.ui.showAlert("Copiado com Sucesso!", "Texto pronto copiado para colar no e-mail (Ctrl+V).", "success");
-                } catch(e) {
-                    document.execCommand('copy');
-                    app.ui.showAlert("Copiado!", "Texto pronto copiado.", "success");
-                }
+                });
             },
 
             gerarRelatorioFinalTurmaPDF(turmaId) {
@@ -22698,6 +22774,11 @@ storage: {
                                                                 <i class="fa-solid fa-file-pdf text-rose-500"></i> Relatório Final
                                                             </button>
                                                         </div>
+                                                        ${app.diarioBordo.getDiariosDaTurma(t).length > 0 ? `
+                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.copiarEmailProntoTurma(this.dataset.tid)" class="w-full py-1.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs border border-emerald-200 dark:border-emerald-800 transition flex items-center justify-center gap-1.5 cursor-pointer" title="Copiar E-mail Pronto com base no último Diário desta turma">
+                                                                <i class="fa-solid fa-envelope-open-text"></i> Copiar E-mail Pronto
+                                                            </button>
+                                                        ` : ''}
 
                                                         <div class="flex items-center justify-between gap-2 pt-1">
                                                             ${t.status !== 'Entregue' && t.status !== 'Integrados' ? `
@@ -23428,6 +23509,11 @@ storage: {
                                             <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarResumoTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
                                                 <i class="fa-regular fa-copy text-emerald-600"></i> Copiar Resumo
                                             </button>
+                                            ${resumo.totalDiarios > 0 ? `
+                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarEmailProntoTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-extrabold text-xs transition flex items-center gap-1.5 cursor-pointer" title="Copiar E-mail Pronto para Gestores">
+                                                    <i class="fa-solid fa-envelope-open-text text-indigo-500"></i> Copiar E-mail Pronto
+                                                </button>
+                                            ` : ''}
                                             ${!resumo.isIntegracao ? `
                                                 <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
                                                     <i class="fa-solid fa-file-pdf text-rose-500"></i> PDF Final
@@ -23813,6 +23899,9 @@ storage: {
                                                             })()}
                                                             <button type="button" onclick="app.diarioBordo.gerarPDF('${item.id}')" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Gerar Relatório PDF Oficial">
                                                                 <i class="fa-solid fa-file-pdf text-xs text-rose-500"></i> PDF
+                                                            </button>
+                                                            <button type="button" onclick="app.diarioBordo.copiarEmailPronto('${item.id}')" class="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Copiar E-mail Pronto para Gestores">
+                                                                <i class="fa-solid fa-envelope-open-text text-xs"></i> Copiar E-mail Pronto
                                                             </button>
                                                             ${qtdAnexosItem > 0 ? `
                                                                 <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${item.id}')" class="px-2.5 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Ver Lista de Presença Anexada (${qtdAnexosItem})">
@@ -26597,6 +26686,117 @@ storage: {
                                         
                                     </div>
                                 </div>
+
+                                ${(() => {
+                                    const loginMat = app.currentUser && app.currentUser.matricula ? String(app.currentUser.matricula).trim() : '';
+                                    if (!loginMat || String(u.matricula || '').trim() !== loginMat) return '';
+                                    const esc = app.utils.escapeHtml;
+                                    const infoBh = this.getMeuBancoHoras(loginMat);
+
+                                    if (!infoBh.hasCloudData) {
+                                        return `
+                                            <div class="mt-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center gap-3 text-slate-500 dark:text-slate-400">
+                                                <div class="w-10 h-10 rounded-xl bg-slate-200/70 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                                                    <i class="fa-solid fa-business-time text-slate-500 dark:text-slate-300"></i>
+                                                </div>
+                                                <div>
+                                                    <h3 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Meu Banco de Horas</h3>
+                                                    <p class="text-xs mt-0.5">Nenhum demonstrativo de Banco de Horas foi publicado na nuvem até o momento.</p>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }
+
+                                    if (!infoBh.record) {
+                                        return `
+                                            <div class="mt-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 flex items-center gap-3 text-slate-500 dark:text-slate-400">
+                                                <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                                    <i class="fa-solid fa-business-time"></i>
+                                                </div>
+                                                <div>
+                                                    <h3 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Meu Banco de Horas</h3>
+                                                    <p class="text-xs mt-0.5">Não há registro de Banco de Horas vinculado à matrícula <strong>${esc(loginMat)}</strong> no arquivo atual (${esc(infoBh.refDateLabel || infoBh.fileName)}).</p>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }
+
+                                    const rec = infoBh.record;
+                                    const pendSec = Number(rec.pendenteSec) || 0;
+                                    const isPos = pendSec > 0;
+                                    const isNeg = pendSec < 0;
+                                    const statusBadgeClass = rec.status === 'Credor'
+                                        ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                                        : rec.status === 'Devedor'
+                                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                            : rec.status === 'Quitado'
+                                                ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600';
+                                    const pendTextClass = isPos
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : isNeg
+                                            ? 'text-rose-600 dark:text-rose-400'
+                                            : 'text-slate-800 dark:text-white';
+                                    const pendDesc = isPos
+                                        ? 'Saldo positivo disponível (horas a seu favor)'
+                                        : isNeg
+                                            ? 'Saldo negativo em aberto (horas a compensar)'
+                                            : 'Sem saldo pendente no momento';
+
+                                    return `
+                                        <div class="mt-6 p-6 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/40 dark:from-slate-800 dark:to-slate-800/90 border border-indigo-200/80 dark:border-indigo-800/60 space-y-5 shadow-xs">
+                                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80 dark:border-slate-700">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm shrink-0">
+                                                        <i class="fa-solid fa-business-time"></i>
+                                                    </div>
+                                                    <div>
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <h3 class="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Meu Banco de Horas</h3>
+                                                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${statusBadgeClass}">${esc(rec.status || 'Quitado')}</span>
+                                                        </div>
+                                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            Crachá <strong>${esc(rec.cracha)}</strong> • ${esc(rec.funcionario || u.nome)} • Ref.: ${esc(infoBh.refDateLabel || infoBh.fileName)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div class="text-left sm:text-right">
+                                                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Saldo Pendente</div>
+                                                    <div class="text-2xl font-black tabular-nums ${pendTextClass}">${esc(rec.pendenteStr || '00:00:00')}</div>
+                                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${pendDesc}</div>
+                                                </div>
+                                            </div>
+
+                                            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700">
+                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Crédito Total</div>
+                                                    <div class="text-sm font-black tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">${esc(rec.creditoStr || '00:00:00')}</div>
+                                                </div>
+                                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700">
+                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Débito Total</div>
+                                                    <div class="text-sm font-black tabular-nums text-rose-600 dark:text-rose-400 mt-1">${esc(rec.debitoStr || '00:00:00')}</div>
+                                                </div>
+                                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700">
+                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Saldo Bruto</div>
+                                                    <div class="text-sm font-black tabular-nums text-slate-800 dark:text-white mt-1">${esc(rec.saldoStr || '00:00:00')}</div>
+                                                </div>
+                                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700">
+                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Compensadas</div>
+                                                    <div class="text-sm font-black tabular-nums text-indigo-600 dark:text-indigo-400 mt-1">${esc(rec.compensadoStr || '00:00:00')}</div>
+                                                </div>
+                                                <div class="p-3 rounded-xl bg-white dark:bg-slate-900/70 border border-indigo-200 dark:border-indigo-700 col-span-2 sm:col-span-1">
+                                                    <div class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">Saldo Pendente</div>
+                                                    <div class="text-sm font-black tabular-nums ${pendTextClass} mt-1">${esc(rec.pendenteStr || '00:00:00')}</div>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
+                                                <span><i class="fa-solid fa-lock text-indigo-500 mr-1"></i> Exibição restrita exclusivamente à sua matrícula (${esc(loginMat)}).</span>
+                                                ${infoBh.uploadedAt ? `<span>Atualizado em ${new Date(infoBh.uploadedAt).toLocaleString('pt-BR')}</span>` : ''}
+                                            </div>
+                                        </div>
+                                    `;
+                                })()}
                             </div>
                         </div>
                     `;
@@ -51299,6 +51499,8 @@ Object.assign(app.ui, {
                             this._biBancoHorasState = {
                                 fileName: '',
                                 refDateLabel: '',
+                                uploadedAt: null,
+                                uploadedByNome: '',
                                 rawRecords: [],
                                 activeRecords: [],
                                 filteredRecords: [],
@@ -51314,7 +51516,73 @@ Object.assign(app.ui, {
                                 charts: {}
                             };
                         }
+                        if ((!this._biBancoHorasState.rawRecords || this._biBancoHorasState.rawRecords.length === 0) && app.biBancoHorasData && app.biBancoHorasData.rawRecords) {
+                            this._hydrateBiBancoHorasFromCloud();
+                        }
                         return this._biBancoHorasState;
+                    },
+
+                    _normalizeBiRecordsList(raw) {
+                        if (Array.isArray(raw)) return raw.filter(Boolean);
+                        if (raw && typeof raw === 'object') return Object.values(raw).filter(Boolean);
+                        return [];
+                    },
+
+                    _hydrateBiBancoHorasFromCloud() {
+                        const cloud = app.biBancoHorasData;
+                        if (!cloud || typeof cloud !== 'object') return;
+                        const recs = this._normalizeBiRecordsList(cloud.rawRecords);
+                        if (!this._biBancoHorasState) {
+                            this._biBancoHorasState = {
+                                fileName: '',
+                                refDateLabel: '',
+                                uploadedAt: null,
+                                uploadedByNome: '',
+                                rawRecords: [],
+                                activeRecords: [],
+                                filteredRecords: [],
+                                activeStatus: 'ALL',
+                                hideZeroMovement: false,
+                                searchQuery: '',
+                                sortField: 'pendenteSec',
+                                sortDir: 'desc',
+                                kpis: null,
+                                transitionMatrix: null,
+                                paretoSummary: null,
+                                chartsData: null,
+                                charts: {}
+                            };
+                        }
+                        this._biBancoHorasState.fileName = cloud.fileName || '';
+                        this._biBancoHorasState.refDateLabel = cloud.refDateLabel || '';
+                        this._biBancoHorasState.uploadedAt = cloud.uploadedAt || null;
+                        this._biBancoHorasState.uploadedByNome = cloud.uploadedByNome || '';
+                        this._biBancoHorasState.rawRecords = recs;
+                    },
+
+                    getMeuBancoHoras(matricula) {
+                        const matRaw = String(matricula || '').trim();
+                        if (!matRaw) return { hasCloudData: false, record: null, fileName: '', refDateLabel: '', uploadedAt: null };
+                        const cloud = app.biBancoHorasData;
+                        const st = this._initBiBancoHorasState();
+                        const recs = this._normalizeBiRecordsList((cloud && cloud.rawRecords) || st.rawRecords);
+                        const fileName = (cloud && cloud.fileName) || st.fileName || '';
+                        const refDateLabel = (cloud && cloud.refDateLabel) || st.refDateLabel || '';
+                        const uploadedAt = (cloud && cloud.uploadedAt) || st.uploadedAt || null;
+                        if (recs.length === 0) {
+                            return { hasCloudData: false, record: null, fileName, refDateLabel, uploadedAt };
+                        }
+                        const matClean = matRaw.toUpperCase();
+                        const matNoZeros = matClean.replace(/^0+/, '');
+                        const match = recs.find(r => {
+                            if (!r) return false;
+                            const crClean = String(r.cracha || '').trim().toUpperCase();
+                            if (!crClean) return false;
+                            if (crClean === matClean) return true;
+                            const crNoZeros = crClean.replace(/^0+/, '');
+                            return Boolean(matNoZeros && crNoZeros && crNoZeros === matNoZeros);
+                        }) || null;
+                        return { hasCloudData: true, record: match, fileName, refDateLabel, uploadedAt };
                     },
 
                     _biTimeToSeconds(val) {
@@ -51667,29 +51935,77 @@ Object.assign(app.ui, {
                                 const text = e.target.result;
                                 const parsed = this.processBancoHorasCSV(text, file.name);
                                 const st = this._initBiBancoHorasState();
+                                const uploadedAt = Date.now();
+                                const uploadedByNome = (app.currentUser && app.currentUser.nome) || (app.isAdmin ? 'Administrador' : 'Dev');
                                 st.fileName = parsed.fileName;
                                 st.refDateLabel = parsed.refDateLabel;
+                                st.uploadedAt = uploadedAt;
+                                st.uploadedByNome = uploadedByNome;
                                 st.rawRecords = parsed.records;
                                 st.activeStatus = 'ALL';
                                 st.searchQuery = '';
                                 st.sortField = 'pendenteSec';
                                 st.sortDir = 'desc';
-                                if (document.getElementById('bi-kpis')) {
-                                    this.biBancoHorasRefreshDashboard();
+
+                                app.biBancoHorasData = {
+                                    fileName: parsed.fileName,
+                                    refDateLabel: parsed.refDateLabel,
+                                    uploadedAt,
+                                    uploadedByNome,
+                                    uploadedByMat: (app.currentUser && app.currentUser.matricula) || 'admin',
+                                    rawRecords: parsed.records
+                                };
+
+                                const refreshView = () => {
+                                    if (document.getElementById('bi-banco-horas-dashboard')) {
+                                        this.renderTab('bi_banco_horas', true);
+                                    }
+                                };
+
+                                if (app.storage && typeof app.storage.saveBiBancoHoras === 'function') {
+                                    app.storage.saveBiBancoHoras().then(() => {
+                                        refreshView();
+                                        this.showAlert(
+                                            "CSV Processado e Salvo na Nuvem",
+                                            `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}". Cada usuário já pode visualizar seu saldo individual no Perfil.`,
+                                            "success"
+                                        );
+                                    });
                                 } else {
-                                    this.renderTab('bi_banco_horas', true);
+                                    refreshView();
+                                    this.showAlert(
+                                        "CSV Processado",
+                                        `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}".`,
+                                        "success"
+                                    );
                                 }
-                                this.showAlert(
-                                    "CSV Processado",
-                                    `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}".`,
-                                    "success"
-                                );
                             } catch (err) {
                                 console.error('Erro ao processar CSV de Banco de Horas:', err);
                                 this.showAlert("Erro na Leitura do CSV", err.message || String(err), "error");
                             }
                         };
                         reader.readAsText(file, 'UTF-8');
+                    },
+
+                    biBancoHorasClearCloud() {
+                        const st = this._initBiBancoHorasState();
+                        st.fileName = '';
+                        st.refDateLabel = '';
+                        st.uploadedAt = null;
+                        st.uploadedByNome = '';
+                        st.rawRecords = [];
+                        st.activeRecords = [];
+                        st.filteredRecords = [];
+                        this._biDestroyCharts();
+                        app.biBancoHorasData = null;
+                        if (app.storage && typeof app.storage.saveBiBancoHoras === 'function') {
+                            app.storage.saveBiBancoHoras().then(() => {
+                                this.renderTab('bi_banco_horas', true);
+                                this.showAlert("Snapshot Removido", "O arquivo de Banco de Horas foi removido da nuvem.", "info");
+                            });
+                        } else {
+                            this.renderTab('bi_banco_horas', true);
+                        }
                     },
 
                     biBancoHorasSetFilter(field, val) {
@@ -52351,7 +52667,7 @@ Object.assign(app.ui, {
                                             </div>
                                             <h2 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight">BI de Banco de Horas</h2>
                                             <p class="text-xs text-slate-500 dark:text-slate-400">
-                                                ${hasData ? `Snapshot carregado: <strong>${esc(st.fileName)}</strong> • Referência: ${esc(st.refDateLabel)}` : 'Suba o arquivo CSV de Banco de Horas (Crachá, Funcionário, Crédito, Débito, Saldo, Compensadas, Pendente).'}
+                                                ${hasData ? `Snapshot na nuvem: <strong>${esc(st.fileName)}</strong> • Referência: ${esc(st.refDateLabel)}${st.uploadedAt ? ` • Enviado em ${new Date(st.uploadedAt).toLocaleString('pt-BR')}${st.uploadedByNome ? ` por ${esc(st.uploadedByNome)}` : ''}` : ''}` : 'Suba o arquivo CSV de Banco de Horas (Crachá, Funcionário, Crédito, Débito, Saldo, Compensadas, Pendente). O arquivo fica salvo na nuvem.'}
                                             </p>
                                         </div>
                                     </div>
@@ -52362,6 +52678,9 @@ Object.assign(app.ui, {
                                                 <input type="checkbox" ${st.hideZeroMovement ? 'checked' : ''} onchange="app.ui.biBancoHorasSetFilter('hideZeroMovement', this.checked)" class="w-4 h-4 accent-indigo-600 cursor-pointer">
                                                 <span>Ocultar colaboradores sem movimentação</span>
                                             </label>
+                                            <button type="button" onclick="app.ui.showConfirm('Limpar Banco de Horas na Nuvem', 'Deseja remover o snapshot atual de Banco de Horas da nuvem?', 'app.ui.biBancoHorasClearCloud()', true)" class="px-3.5 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-black transition flex items-center gap-1.5 cursor-pointer" title="Remover snapshot salvo na nuvem">
+                                                <i class="fa-solid fa-trash-can"></i> Limpar Nuvem
+                                            </button>
                                         ` : ''}
                                         <label class="cursor-pointer px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-2 active:scale-95">
                                             <i class="fa-solid fa-file-arrow-up"></i>
