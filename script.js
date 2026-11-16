@@ -5877,11 +5877,11 @@ storage: {
                 }
 
                 return `
-                    <div class="space-y-5">
-                        <!-- Banner Executivo PÁ! -->
+                    <div class="space-y-4">
+                        <!-- 1. BATER O OLHO (RESUMO EM 5 SEGUNDOS) -->
                         <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-5">
                             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-700">
-                                <div class="space-y-1.5">
+                                <div class="space-y-1">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <span class="px-2.5 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
                                             ${esc(t.operacao)}
@@ -5889,199 +5889,139 @@ storage: {
                                         <span class="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${saudeBadge} flex items-center gap-1">
                                             <i class="fa-solid ${resumo.saude === 'saudavel' ? 'fa-circle-check' : 'fa-triangle-exclamation'}"></i> ${esc(resumo.saudeLabel)}
                                         </span>
-                                        <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-extrabold uppercase">
-                                            ${esc(resumo.faseAtualLabel)}
-                                        </span>
+                                        <span class="text-xs font-bold text-slate-400">${esc(prazoResumoTxt)}</span>
                                     </div>
-                                    <h3 class="text-xl font-black text-slate-800 dark:text-white tracking-tight">
-                                        ${esc(t.numeroTurma)}
-                                    </h3>
-                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                                        <span><i class="fa-solid fa-chalkboard-user text-emerald-600 mr-1"></i> ${esc(resumo.isIntegracao ? (t.responsavelIntegracaoNome || '-') : (t.treinadorNome || '-'))}</span>
-                                        <span><i class="fa-regular fa-clock text-emerald-600 mr-1"></i> ${esc(t.horario || '08:00 às 17:00')}</span>
-                                        <span><i class="fa-regular fa-calendar text-emerald-600 mr-1"></i> ${esc(this._formatDataBr(t.dataInicio))} -> ${esc(this._formatDataBr(t.previsaoEntrega))}</span>
-                                    </div>
+                                    <h3 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight">${esc(t.numeroTurma)}</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                        ${esc(resumo.isIntegracao ? (t.responsavelIntegracaoNome || '-') : (t.treinadorNome || '-'))} • ${esc(t.horario || '08:00 às 17:00')} • ${esc(this._formatDataBr(t.dataInicio))} até ${esc(this._formatDataBr(t.previsaoEntrega))}
+                                    </p>
                                 </div>
 
                                 <div class="flex flex-wrap items-center gap-2 shrink-0">
                                     <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarResumoTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
                                         <i class="fa-regular fa-copy"></i> Copiar Resumo
                                     </button>
-                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
-                                        <i class="fa-solid fa-folder-open"></i> Entrar na Turma (${resumo.totalDiarios})
-                                    </button>
-                                    ${!resumo.isIntegracao ? `
-                                        <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
-                                            <i class="fa-solid fa-file-pdf text-rose-500"></i> PDF Final
+                                    ${resumo.totalDiarios > 0 ? `
+                                        <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.copiarEmailProntoTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-extrabold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fa-solid fa-envelope-open-text"></i> E-mail Pronto
                                         </button>
                                     ` : ''}
-                                </div>
-                            </div>
-
-                            <!-- Em poucas palavras -->
-                            <div class="p-4 rounded-2xl border ${saudeClasses} space-y-1.5">
-                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                                    <i class="fa-solid fa-bolt text-amber-500"></i> Em Poucas Palavras
-                                </div>
-                                <p class="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 leading-relaxed">
-                                    ${esc(resumo.textoExecutivo)}
-                                </p>
-                            </div>
-
-                            <!-- 5 KPIs Rápidos -->
-                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-bold uppercase text-slate-400">Quadro Atual</div>
-                                    <div class="text-lg font-black text-slate-800 dark:text-white mt-0.5">
-                                        ${resumo.isIntegracao ? `${resumo.presentesIntegracao}/${resumo.totalInicial}` : `${resumo.ativos}/${resumo.totalInicial}`}
-                                    </div>
-                                    <div class="text-[11px] font-bold ${((resumo.isIntegracao ? resumo.pctPresenteismoIntegracao : resumo.pctRetencao) ?? 100) >= 85 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">
-                                        ${resumo.isIntegracao
-                                            ? `${resumo.pctPresenteismoIntegracao !== null ? resumo.pctPresenteismoIntegracao + '% presenteísmo' : 'Sem lista'}`
-                                            : `${resumo.pctRetencao !== null ? resumo.pctRetencao + '% retenção' : 'Sem lista'} (${resumo.toCount} T.O)`}
-                                    </div>
-                                </div>
-
-                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-bold uppercase text-slate-400">Prazo / Cronograma</div>
-                                    <div class="text-sm font-black text-slate-800 dark:text-white mt-1 leading-tight">${esc(prazoResumoTxt)}</div>
-                                    <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
-                                        <div class="h-full bg-indigo-500 rounded-full" style="width: ${resumo.progressoTempoPct}%"></div>
-                                    </div>
-                                </div>
-
-                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-bold uppercase text-slate-400">Diários Lançados</div>
-                                    <div class="text-lg font-black text-slate-800 dark:text-white mt-0.5">${resumo.totalDiarios}</div>
-                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.diasSala} Sala • ${resumo.diasAlo} Alô</div>
-                                </div>
-
-                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
-                                    <div class="text-[10px] font-bold uppercase text-slate-400">Frequência Média</div>
-                                    <div class="text-lg font-black ${resumo.mediaPresencaPct !== null && resumo.mediaPresencaPct < 80 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'} mt-0.5">
-                                        ${resumo.mediaPresencaPct !== null ? `${resumo.mediaPresencaPct}%` : '--'}
-                                    </div>
-                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${resumo.totalAbsOcorrencias} ABS acumulado(s)</div>
-                                </div>
-
-                                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700 col-span-2 sm:col-span-1">
-                                    <div class="text-[10px] font-bold uppercase text-slate-400">Último Diário</div>
-                                    <div class="text-sm font-black text-slate-800 dark:text-white mt-1">
-                                        ${resumo.ultimoDiario ? esc(resumo.ultimoDiario.dataBr) : 'Nenhum'}
-                                    </div>
-                                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                        ${resumo.ultimoDiario ? `${resumo.ultimoDiario.presentes}/${resumo.ultimoDiario.prev} presentes` : 'Aguardando 1º registro'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Duas Colunas: Pontos de Atenção vs Últimos Diários -->
-                        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                            <!-- Pontos de Atenção -->
-                            <div class="lg:col-span-5 bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
-                                <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
-                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                        <i class="fa-solid fa-bullseye text-amber-500"></i> Pontos de Atenção
-                                    </h4>
-                                </div>
-
-                                ${resumo.alertasSaude.length > 0 ? `
-                                    <div class="space-y-1.5">
-                                        ${resumo.alertasSaude.map(al => `
-                                            <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800 text-xs font-bold text-amber-900 dark:text-amber-200 flex items-start gap-2">
-                                                <i class="fa-solid fa-circle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
-                                                <span>${esc(al)}</span>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                ` : `
-                                    <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                                        <i class="fa-solid fa-check-circle text-emerald-600"></i> Nenhum ponto crítico detectado até o momento.
-                                    </div>
-                                `}
-
-                                ${resumo.desistentes.length > 0 ? `
-                                    <div class="space-y-1.5">
-                                        <div class="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">Desligamentos / Declínios (${resumo.desistentes.length})</div>
-                                        <div class="flex flex-wrap gap-1.5">
-                                            ${resumo.desistentes.map(d => `
-                                                <span class="px-2 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold">
-                                                    ${esc(d.nome)}${d.dataTO ? ` (${esc(d.dataTO)})` : ''}
-                                                </span>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                ` : ''}
-
-                                ${resumo.alunosAtencao.length > 0 ? `
-                                    <div class="space-y-1.5">
-                                        <div class="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Faltas Recorrentes (2+ ABS)</div>
-                                        <div class="flex flex-wrap gap-1.5">
-                                            ${resumo.alunosAtencao.map(a => `
-                                                <span class="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-bold">
-                                                    ${esc(a.nome)} (${a.absCount} faltas)
-                                                </span>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                ` : ''}
-
-                                ${resumo.csatResumo ? `
-                                    <div class="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 flex items-center justify-between text-xs">
-                                        <span class="font-bold text-amber-800 dark:text-amber-200"><i class="fa-solid fa-star text-amber-500 mr-1"></i> CSAT da Turma</span>
-                                        <span class="font-black text-amber-900 dark:text-amber-100">${resumo.csatResumo.percentualCSAT}% (${resumo.csatResumo.total} aval.)</span>
-                                    </div>
-                                ` : ''}
-                            </div>
-
-                            <!-- Linha do Tempo Condensada -->
-                            <div class="lg:col-span-7 bg-white dark:bg-slate-800 rounded-3xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
-                                <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
-                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                        <i class="fa-solid fa-clock-rotate-left text-emerald-600"></i> Últimos Diários com Resumo
-                                    </h4>
-                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
-                                        Ver todos (${resumo.totalDiarios})
+                                    <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-folder-open text-indigo-500"></i> Abrir Turma
                                     </button>
                                 </div>
+                            </div>
 
-                                ${resumo.diarioResumosDesc.length === 0 ? `
-                                    <div class="p-6 text-center text-xs text-slate-400 italic">
-                                        Nenhum diário registrado para esta turma até o momento.
+                            <!-- 4 Números Principais (Leitura Imediata) -->
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quadro Ativo</div>
+                                    <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums mt-1">
+                                        ${resumo.isIntegracao ? `${resumo.presentesIntegracao} / ${resumo.totalInicial}` : `${resumo.ativos} / ${resumo.totalInicial}`}
                                     </div>
-                                ` : `
-                                    <div class="space-y-2.5">
-                                        ${resumo.diarioResumosDesc.slice(0, 5).map(item => `
-                                            <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/70 hover:border-emerald-300 dark:hover:border-emerald-700 transition space-y-1.5">
-                                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                                    <div class="flex flex-wrap items-center gap-1.5">
-                                                        <span class="px-2 py-0.5 rounded-md bg-slate-800 dark:bg-slate-700 text-white text-[10px] font-black">${item.diaNumero}º Dia</span>
-                                                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">${esc(item.dataBr)}</span>
-                                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${item.fase === 'alo_acompanhado' ? 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300' : 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'}">${esc(item.faseLabel)}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2 text-[11px] font-bold">
-                                                        <span class="text-emerald-700 dark:text-emerald-400">${item.presentes}/${item.prev} pres. (${item.taxaPresenca}%)</span>
-                                                        ${item.absCount > 0 ? `<span class="text-amber-600">${item.absCount} ABS</span>` : ''}
-                                                        ${item.deslCount > 0 ? `<span class="text-rose-600">${item.deslCount} T.O</span>` : ''}
-                                                        <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.copiarEmailPronto(this.dataset.did)" class="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-[10px] font-extrabold cursor-pointer flex items-center gap-1" title="Copiar E-mail Pronto">
-                                                            <i class="fa-regular fa-envelope"></i> E-mail
-                                                        </button>
-                                                        ${this.canEditDiario(item.raw) ? `
-                                                            <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.editarDiario(this.dataset.did, 'resumo_rapido')" class="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 text-[10px] font-extrabold cursor-pointer">
-                                                                Abrir
-                                                            </button>
-                                                        ` : ''}
-                                                    </div>
+                                    <div class="text-xs font-bold mt-0.5 ${((resumo.isIntegracao ? resumo.pctPresenteismoIntegracao : resumo.pctRetencao) ?? 100) >= 85 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">
+                                        ${resumo.isIntegracao
+                                            ? `${resumo.pctPresenteismoIntegracao !== null ? resumo.pctPresenteismoIntegracao + '% presenteísmo' : 'Sem lista'}`
+                                            : `${resumo.pctRetencao !== null ? resumo.pctRetencao + '% retenção' : 'Sem lista'}`}
+                                    </div>
+                                </div>
+
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Presença Média</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 ${resumo.mediaPresencaPct !== null && resumo.mediaPresencaPct < 80 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}">
+                                        ${resumo.mediaPresencaPct !== null ? `${resumo.mediaPresencaPct}%` : '--'}
+                                    </div>
+                                    <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">${resumo.totalAbsOcorrencias} falta(s) no período</div>
+                                </div>
+
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Desligamentos (T.O)</div>
+                                    <div class="text-2xl font-black tabular-nums mt-1 ${resumo.toCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-white'}">${resumo.toCount}</div>
+                                    <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">${resumo.desistentes.length > 0 ? resumo.desistentes.slice(0, 2).map(x => esc(x.nome.split(' ')[0])).join(', ') + (resumo.desistentes.length > 2 ? ' +' + (resumo.desistentes.length - 2) : '') : 'Nenhum desligamento'}</div>
+                                </div>
+
+                                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700">
+                                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Fase &amp; Progresso</div>
+                                    <div class="text-lg font-black text-indigo-700 dark:text-indigo-300 mt-1 truncate">${esc(resumo.faseAtualLabel)}</div>
+                                    <div class="flex items-center gap-2 mt-1.5">
+                                        <div class="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div class="h-full bg-indigo-500 rounded-full" style="width: ${resumo.progressoTempoPct}%"></div>
+                                        </div>
+                                        <span class="text-[11px] font-black text-slate-500 tabular-nums">${resumo.progressoTempoPct}%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. O QUE VOCÊ PRECISA SABER AGORA (3 TÓPICOS DIRETOS) -->
+                            <div class="p-4 rounded-2xl border ${saudeClasses} space-y-2">
+                                <div class="text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-bolt text-amber-500"></i> Síntese Direta
+                                </div>
+                                <ul class="space-y-1.5 text-xs sm:text-sm text-slate-800 dark:text-slate-100">
+                                    <li class="flex items-start gap-2">
+                                        <span class="font-black text-emerald-600 shrink-0">• Último registro:</span>
+                                        <span>${resumo.ultimoDiario ? `<strong>${esc(resumo.ultimoDiario.dataBr)}</strong> (${resumo.ultimoDiario.presentes}/${resumo.ultimoDiario.prev} pres.) — ${esc(resumo.ultimoDiario.resumoCurto)}` : 'Nenhum diário lançado ainda para esta turma.'}</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="font-black text-amber-600 shrink-0">• Pontos de atenção:</span>
+                                        <span>${resumo.alertasSaude.length > 0 ? esc(resumo.alertasSaude.slice(0, 2).join(' | ')) : 'Turma sem alertas críticos até o momento.'}</span>
+                                    </li>
+                                    ${resumo.csatResumo ? `
+                                        <li class="flex items-start gap-2">
+                                            <span class="font-black text-indigo-600 shrink-0">• CSAT:</span>
+                                            <span><strong>${resumo.csatResumo.percentualCSAT}%</strong> satisfeitos (${resumo.csatResumo.total} avaliações)</span>
+                                        </li>
+                                    ` : ''}
+                                </ul>
+                            </div>
+
+                            <!-- 3. DETALHES COMPLEMENTARES (RECOLHIDO POR PADRÃO) -->
+                            <details class="group rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40">
+                                <summary class="px-4 py-3 cursor-pointer list-none flex items-center justify-between text-xs font-extrabold text-slate-700 dark:text-slate-200 select-none">
+                                    <span class="flex items-center gap-2">
+                                        <i class="fa-solid fa-list-ul text-indigo-500"></i> Ver detalhes completos (${resumo.totalDiarios} diário${resumo.totalDiarios === 1 ? '' : 's'}${resumo.desistentes.length > 0 ? `, ${resumo.desistentes.length} T.O` : ''}${resumo.alunosAtencao.length > 0 ? `, ${resumo.alunosAtencao.length} recorrente(s)` : ''})
+                                    </span>
+                                    <i class="fa-solid fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
+                                </summary>
+                                <div class="px-4 pb-4 pt-2 border-t border-slate-200/70 dark:border-slate-700 space-y-4">
+                                    ${resumo.desistentes.length > 0 ? `
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 mb-1.5">Desligamentos / Declínios (${resumo.desistentes.length})</div>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                ${resumo.desistentes.map(d => `<span class="px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-bold">${esc(d.nome)}${d.dataTO ? ` (${esc(d.dataTO)})` : ''}</span>`).join('')}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    ${resumo.alunosAtencao.length > 0 ? `
+                                        <div>
+                                            <div class="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1.5">Faltas Recorrentes (2+ ABS)</div>
+                                            <div class="flex flex-wrap gap-1.5">
+                                                ${resumo.alunosAtencao.map(a => `<span class="px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-bold">${esc(a.nome)} (${a.absCount} faltas)</span>`).join('')}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    <div class="space-y-2">
+                                        <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Últimos Diários</div>
+                                        ${resumo.diarioResumosDesc.length === 0 ? `
+                                            <p class="text-xs text-slate-400 italic">Nenhum diário registrado até o momento.</p>
+                                        ` : resumo.diarioResumosDesc.slice(0, 5).map(item => `
+                                            <div class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                <div class="min-w-0 flex-1">
+                                                    <span class="font-black text-slate-800 dark:text-white">${item.diaNumero}º Dia (${esc(item.dataBr)})</span>
+                                                    <span class="text-emerald-600 dark:text-emerald-400 font-bold ml-2">${item.presentes}/${item.prev} (${item.taxaPresenca}%)</span>
+                                                    <span class="text-slate-500 dark:text-slate-400 ml-2">${esc(item.resumoCurto)}</span>
                                                 </div>
-                                                <p class="text-xs text-slate-600 dark:text-slate-300 leading-snug">
-                                                    ${esc(item.resumoCurto)}
-                                                </p>
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    <button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.copiarEmailPronto(this.dataset.did)" class="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold cursor-pointer">E-mail</button>
+                                                    ${this.canEditDiario(item.raw) ? `<button type="button" data-did="${esc(item.raw.id)}" onclick="app.diarioBordo.editarDiario(this.dataset.did, 'resumo_rapido')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-extrabold cursor-pointer">Abrir</button>` : ''}
+                                                </div>
                                             </div>
                                         `).join('')}
                                     </div>
-                                `}
-                            </div>
+                                </div>
+                            </details>
                         </div>
                     </div>
                 `;
@@ -6615,14 +6555,19 @@ storage: {
                     return;
                 }
 
-                // Cálculo detalhado por pergunta
-                const titulosPerguntas = [
-                    "Domínio do Conteúdo e Segurança Técnica",
-                    "Didática, Clareza e Ritmo das Aulas",
-                    "Suporte e Esclarecimento de Dúvidas",
-                    "Materiais, Recursos e Exercícios Práticos",
-                    "Satisfação Geral e Preparo para a Operação"
-                ];
+                // Cálculo detalhado por pergunta (compatível com 5 ou 8 perguntas)
+                const titulosPerguntas = (app.pesquisaTreinamento && Array.isArray(app.pesquisaTreinamento.perguntas))
+                    ? app.pesquisaTreinamento.perguntas.map(p => p.titulo)
+                    : [
+                        "Domínio do Conteúdo e Segurança Técnica",
+                        "Didática, Clareza e Ritmo das Aulas",
+                        "Suporte e Esclarecimento de Dúvidas",
+                        "Materiais, Recursos e Exercícios Práticos",
+                        "Satisfação Geral e Preparo para a Operação",
+                        "Cordialidade no Atendimento e Relacionamento",
+                        "Pontualidade e Aderência ao Cronograma Estipulado",
+                        "Infraestrutura e Limpeza da Sala"
+                    ];
 
                 const metricasPerguntas = titulosPerguntas.map((titulo, idx) => {
                     const notas = respostas.map(r => (Array.isArray(r.notas) && r.notas[idx] !== undefined) ? Number(r.notas[idx]) : 0).filter(n => n > 0);
@@ -8534,7 +8479,7 @@ storage: {
                             </td>
 
                             <td class="p-3">
-                                <input type="text" value="${item.perfil || ''}" oninput="app.diarioBordo.atualizarPerfilColaborador('${item.matricula}', this.value)" placeholder="Descreva postura, desempenho, dúvidas ou perfil no dia..." class="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                <input type="text" data-chamada-perfil="${item.matricula || ''}" value="${this._escapeDbHtml(item.perfil || '')}" oninput="app.diarioBordo.atualizarPerfilColaborador('${item.matricula}', this.value); this.classList.remove('ring-2','ring-rose-500','border-rose-500'); const hasTxt = this.value.trim().length > 0; this.classList.toggle('border-emerald-300', hasTxt); this.classList.toggle('dark:border-emerald-700', hasTxt); this.classList.toggle('border-amber-300', !hasTxt); this.classList.toggle('dark:border-amber-700', !hasTxt);" placeholder="${isTO && item.riscado ? 'Desligado em dia anterior (opcional)' : 'Obrigatório: descreva postura, desempenho ou ocorrência no dia...'}" class="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border ${item.riscado ? 'border-slate-200 dark:border-slate-700' : (String(item.perfil || '').trim() ? 'border-emerald-300 dark:border-emerald-700' : 'border-amber-300 dark:border-amber-700')} text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                             </td>
 
                             <td class="p-3 w-28 text-center">
@@ -8647,13 +8592,69 @@ storage: {
                 if (!d.data) return app.ui.showAlert("Atenção", "Informe a data do diário de bordo.", "warning");
                 if (d.previstosSala <= 0) return app.ui.showAlert("Atenção", "Informe a quantidade de colaboradores previstos em sala.", "warning");
 
-                // Sincroniza lista de presença anexada do diário com a turma de reciclagem vinculada
+                // Validação obrigatória: Perfil do Colaborador no Dia para turmas com chamada nominal
+                const tVinculadaForm = (d.turmaBaseId && app.turmasTreinamentoList) ? app.turmasTreinamentoList[d.turmaBaseId] : null;
+                const isReciclagemSave = (d.tipoTurma === 'reciclagem') || (tVinculadaForm && tVinculadaForm.tipoTurma === 'reciclagem');
+                if (!isReciclagemSave && Array.isArray(d.chamada) && d.chamada.length > 0) {
+                    document.querySelectorAll('[data-chamada-perfil]').forEach(inp => {
+                        const mat = String(inp.getAttribute('data-chamada-perfil') || '').trim();
+                        const row = d.chamada.find(c => String(c.matricula || '').trim() === mat);
+                        if (row) row.perfil = inp.value;
+                    });
+                    const semPerfil = d.chamada.filter(c => !c.riscado && !String(c.perfil || '').trim());
+                    if (semPerfil.length > 0) {
+                        const firstMat = String(semPerfil[0].matricula || '').trim();
+                        let firstEl = null;
+                        document.querySelectorAll('[data-chamada-perfil]').forEach(inp => {
+                            const mat = String(inp.getAttribute('data-chamada-perfil') || '').trim();
+                            const row = d.chamada.find(c => String(c.matricula || '').trim() === mat);
+                            if (row && !row.riscado && !String(row.perfil || '').trim()) {
+                                inp.classList.add('ring-2', 'ring-rose-500', 'border-rose-500');
+                                if (!firstEl && mat === firstMat) firstEl = inp;
+                            }
+                        });
+                        if (firstEl) {
+                            firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => { try { firstEl.focus(); } catch (e) {} }, 200);
+                        }
+                        return app.ui.showAlert(
+                            "Perfil do Colaborador Obrigatório",
+                            `Preencha o "Perfil do Colaborador no Dia" para todos os alunos da chamada (${semPerfil.length} pendente${semPerfil.length > 1 ? 's' : ''}, ex.: ${semPerfil[0].nome || semPerfil[0].matricula}).`,
+                            "warning"
+                        );
+                    }
+                }
+
+                // Sincroniza campos objetivos específicos da Reciclagem
+                if (isReciclagemSave) {
+                    const recTemaEl = document.getElementById('db-input-rec-tema');
+                    const recDinEl = document.getElementById('db-input-rec-dinamica');
+                    const recObsEl = document.getElementById('db-input-rec-obs');
+                    if (recTemaEl) d.temaReciclagem = recTemaEl.value.trim();
+                    if (recDinEl) {
+                        d.dinamicaAtividade = recDinEl.value.trim();
+                        d.relatoGeral = d.dinamicaAtividade;
+                    }
+                    if (recObsEl) d.observacoesReciclagem = recObsEl.value.trim();
+                    d.absQtd = 0;
+                    d.deslQtd = 0;
+                    if (!d.temaReciclagem) return app.ui.showAlert("Tema Obrigatório", "Informe o Tema abordado na reciclagem.", "warning");
+                    if (!d.dinamicaAtividade) return app.ui.showAlert("Dinâmica / Atividade Obrigatória", "Descreva a Dinâmica ou Atividade realizada na reciclagem.", "warning");
+                }
+
+                // Sincroniza lista de presença e anexos do diário com a turma vinculada
                 if (d.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[d.turmaBaseId]) {
                     const tVinc = app.turmasTreinamentoList[d.turmaBaseId];
                     const anexosDiario = this.getAnexosTurma(d);
                     if (anexosDiario.length > 0) {
                         tVinc.anexosListaPresenca = JSON.parse(JSON.stringify(anexosDiario));
                         tVinc.anexoListaPresenca = tVinc.anexosListaPresenca[0] || null;
+                        tVinc.atualizadoEm = Date.now();
+                    }
+                    if (isReciclagemSave) {
+                        if (d.temaReciclagem) tVinc.temaReciclagem = d.temaReciclagem;
+                        if (d.observacoesReciclagem !== undefined) tVinc.observacoesReciclagem = d.observacoesReciclagem;
+                        if (Array.isArray(d.fotosReciclagem)) tVinc.fotosReciclagem = JSON.parse(JSON.stringify(d.fotosReciclagem));
                         tVinc.atualizadoEm = Date.now();
                     }
                 }
@@ -9029,6 +9030,84 @@ storage: {
                 reader.readAsDataURL(file);
             },
 
+            carregarFotosReciclagem(event) {
+                const files = event.target && event.target.files ? Array.from(event.target.files) : [];
+                if (!files.length || !this.diarioEmEdicao) return;
+                if (!Array.isArray(this.diarioEmEdicao.fotosReciclagem)) this.diarioEmEdicao.fotosReciclagem = [];
+
+                const processOne = (file) => new Promise((resolve) => {
+                    if (!file.type || !file.type.startsWith('image/')) {
+                        app.ui.showAlert("Formato Inválido", `"${file.name}" não é uma imagem válida (use JPG, PNG ou WEBP).`, "warning");
+                        return resolve(null);
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const rawUrl = ev.target.result;
+                        const img = new Image();
+                        img.onload = () => {
+                            try {
+                                const maxSide = 1100;
+                                let w = img.width, h = img.height;
+                                if (w > maxSide || h > maxSide) {
+                                    if (w >= h) { h = Math.round(h * (maxSide / w)); w = maxSide; }
+                                    else { w = Math.round(w * (maxSide / h)); h = maxSide; }
+                                }
+                                const canvas = document.createElement('canvas');
+                                canvas.width = w;
+                                canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0, w, h);
+                                const compressed = canvas.toDataURL('image/jpeg', 0.82);
+                                resolve({ name: file.name, data: compressed, uploadedAt: Date.now() });
+                            } catch (e) {
+                                resolve({ name: file.name, data: rawUrl, uploadedAt: Date.now() });
+                            }
+                        };
+                        img.onerror = () => resolve({ name: file.name, data: rawUrl, uploadedAt: Date.now() });
+                        img.src = rawUrl;
+                    };
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(file);
+                });
+
+                Promise.all(files.map(processOne)).then(res => {
+                    res.filter(Boolean).forEach(f => this.diarioEmEdicao.fotosReciclagem.push(f));
+                    const wrap = document.getElementById('db-rec-fotos-wrap');
+                    if (wrap) wrap.innerHTML = this.renderFotosReciclagemHtml(this.diarioEmEdicao);
+                    if (event.target) event.target.value = '';
+                });
+            },
+
+            removerFotoReciclagem(idx) {
+                if (!this.diarioEmEdicao || !Array.isArray(this.diarioEmEdicao.fotosReciclagem)) return;
+                this.diarioEmEdicao.fotosReciclagem.splice(idx, 1);
+                const wrap = document.getElementById('db-rec-fotos-wrap');
+                if (wrap) wrap.innerHTML = this.renderFotosReciclagemHtml(this.diarioEmEdicao);
+            },
+
+            renderFotosReciclagemHtml(obj) {
+                const fotos = (obj && Array.isArray(obj.fotosReciclagem)) ? obj.fotosReciclagem.filter(f => f && f.data) : [];
+                if (fotos.length === 0) {
+                    return `<p class="text-xs text-slate-400 italic">Nenhuma foto anexada ainda. Clique em "Adicionar Fotos" para registrar a realização da atividade.</p>`;
+                }
+                const esc = (v) => this._escapeDbHtml(v);
+                return `
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        ${fotos.map((f, idx) => `
+                            <div class="relative rounded-2xl overflow-hidden border border-violet-200 dark:border-violet-800 bg-slate-100 dark:bg-slate-900 group shadow-xs">
+                                <img src="${f.data}" alt="${esc(f.name || 'Foto ' + (idx + 1))}" class="w-full h-32 object-cover">
+                                <div class="px-2.5 py-1.5 bg-white/95 dark:bg-slate-900/95 flex items-center justify-between gap-2 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                    <span class="truncate">${esc(f.name || 'Foto ' + (idx + 1))}</span>
+                                    <button type="button" onclick="app.diarioBordo.removerFotoReciclagem(${idx})" class="text-rose-500 hover:text-rose-700 shrink-0 cursor-pointer" title="Remover Foto">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            },
+
             atualizarSecoesFormulario() {
                 const d = this.diarioEmEdicao;
                 if (!d) return;
@@ -9258,13 +9337,34 @@ storage: {
                 return { page: doc.internal.getNumberOfPages(), finalY: y };
             },
 
+            _fitPdfText(doc, text, maxWidth) {
+                const raw = String(text || '').trim();
+                if (!raw || !maxWidth || doc.getTextWidth(raw) <= maxWidth) return raw;
+                let cut = raw;
+                while (cut.length > 3 && doc.getTextWidth(cut + '...') > maxWidth) {
+                    cut = cut.slice(0, -1);
+                }
+                return cut.trim() + '...';
+            },
+
             _resolveDiarioTargetForExport(diarioId = null) {
                 const isEditingTarget = this.diarioEmEdicao && (!diarioId || this.diarioEmEdicao.id === diarioId);
                 if (isEditingTarget) {
                     const relatoEl = document.getElementById('db-input-relato');
                     const dataEl = document.getElementById('db-input-data');
+                    const recTemaEl = document.getElementById('db-input-rec-tema');
+                    const recDinEl = document.getElementById('db-input-rec-dinamica');
+                    const recObsEl = document.getElementById('db-input-rec-obs');
+                    const prevVisEl = document.getElementById('db-input-previstos-vis');
                     if (relatoEl) this.diarioEmEdicao.relatoGeral = relatoEl.value;
                     if (dataEl && dataEl.value) this.diarioEmEdicao.data = dataEl.value;
+                    if (recTemaEl) this.diarioEmEdicao.temaReciclagem = recTemaEl.value.trim();
+                    if (recDinEl) {
+                        this.diarioEmEdicao.dinamicaAtividade = recDinEl.value.trim();
+                        this.diarioEmEdicao.relatoGeral = this.diarioEmEdicao.dinamicaAtividade;
+                    }
+                    if (recObsEl) this.diarioEmEdicao.observacoesReciclagem = recObsEl.value.trim();
+                    if (prevVisEl) this.diarioEmEdicao.previstosSala = Math.max(0, parseInt(prevVisEl.value, 10) || 0);
                     return this.diarioEmEdicao;
                 }
                 return diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
@@ -9288,16 +9388,18 @@ storage: {
                 const marginX = 14;
                 const contentWidth = pageWidth - (marginX * 2); // 269mm
 
+                const tBasePdf = this.findTurmaForDiario(diario);
+                const isReciclagemPdf = (diario.tipoTurma === 'reciclagem') || (tBasePdf && tBasePdf.tipoTurma === 'reciclagem');
                 const { P, A, D, PR, pctPR, pctA, pctD } = this.getDiarioContagens(diario);
                 const dataFormatada = diario.data ? diario.data.split('-').reverse().join('/') : '--/--/----';
 
                 // ==========================================
-                // CABEÇALHO EXECUTIVO SÓBRIO COM FOTO DO TREINADOR
+                // CABEÇALHO EXECUTIVO SÓBRIO SEM SOBREPOSIÇÃO DE TEXTO
                 // ==========================================
                 doc.setFillColor(15, 23, 42); // Slate 900
-                doc.rect(marginX, 10, contentWidth, 20, 'F');
-                doc.setFillColor(16, 185, 129); // Accent Emerald
-                doc.rect(marginX, 30, contentWidth, 1.2, 'F');
+                doc.rect(marginX, 10, contentWidth, 21, 'F');
+                doc.setFillColor(isReciclagemPdf ? 124 : 16, isReciclagemPdf ? 58 : 185, isReciclagemPdf ? 237 : 129);
+                doc.rect(marginX, 31, contentWidth, 1.2, 'F');
 
                 // Exibição da foto do instrutor se houver
                 const fotoTreinador = diario.treinadorFoto || (app.currentUser && String(app.currentUser.matricula).trim() === String(diario.treinadorMatricula).trim() ? app.currentUser.foto : null);
@@ -9305,7 +9407,7 @@ storage: {
                 if (fotoTreinador && typeof fotoTreinador === 'string' && fotoTreinador.startsWith('data:image')) {
                     try {
                         const fotoX = marginX + contentWidth - 20;
-                        const fotoY = 11.5;
+                        const fotoY = 12;
                         const fotoW = 17;
                         const fotoH = 17;
                         doc.setFillColor(30, 41, 59);
@@ -9321,28 +9423,209 @@ storage: {
                     }
                 }
 
-                doc.setTextColor(255, 255, 255);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(13);
-                doc.text("SOFTMARKETING  |  DIÁRIO DE BORDO DO TREINAMENTO", marginX + 6, 18);
-
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(8);
-                doc.setTextColor(203, 213, 225); // Slate 300
-                doc.text("GESTÃO DE QUALIDADE & CAPACITAÇÃO OPERACIONAL  •  RELATÓRIO DIÁRIO DE FORMAÇÃO", marginX + 6, 25);
-
-                // Badges no Cabeçalho (Direita)
+                const leftX = marginX + 6;
                 const rightX = temFoto ? (marginX + contentWidth - 23) : (marginX + contentWidth - 6);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(10);
+                const leftMaxW = Math.min(118, (rightX - leftX) * 0.48);
+                const rightMaxW = Math.max(60, rightX - leftX - leftMaxW - 8);
+
                 doc.setTextColor(255, 255, 255);
-                doc.text(`OPERAÇÃO: ${String(diario.operacao || 'N/A').toUpperCase()}   |   TURMA: ${String(diario.turma || 'TURMA').toUpperCase()}`, rightX, 18, { align: 'right' });
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(11.5);
+                const tituloEsquerda = isReciclagemPdf
+                    ? "SOFTMARKETING  |  DIÁRIO DE BORDO — RECICLAGEM"
+                    : "SOFTMARKETING  |  DIÁRIO DE BORDO";
+                doc.text(this._fitPdfText(doc, tituloEsquerda, leftMaxW), leftX, 18);
 
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(8);
+                doc.setFontSize(7.5);
+                doc.setTextColor(203, 213, 225);
+                const subEsquerda = isReciclagemPdf
+                    ? "TREINAMENTO DE RECICLAGEM  •  ATIVIDADES & EVIDÊNCIAS"
+                    : "CAPACITAÇÃO OPERACIONAL  •  RELATÓRIO DIÁRIO";
+                doc.text(this._fitPdfText(doc, subEsquerda, leftMaxW), leftX, 25.5);
+
+                // Badges no Cabeçalho (Direita — largura restrita para jamais sobrepor o título)
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5);
+                doc.setTextColor(255, 255, 255);
+                const rightTopStr = `OPERAÇÃO: ${String(diario.operacao || 'N/A').toUpperCase()}  |  TURMA: ${String(diario.turma || 'TURMA').toUpperCase()}`;
+                doc.text(this._fitPdfText(doc, rightTopStr, rightMaxW), rightX, 18, { align: 'right' });
+
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(7.5);
                 doc.setTextColor(148, 163, 184);
-                const faseTexto = diario.faseDoDia === 'alo_acompanhado' ? ' (Alô Acompanhado)' : ' (Treinamento em Sala)';
-                doc.text(`Data: ${dataFormatada}${faseTexto}  •  Instrutor(a): ${diario.treinadorNome || 'Treinador'} (${diario.treinadorMatricula || '-'})`, rightX, 25, { align: 'right' });
+                const faseTexto = isReciclagemPdf ? ' (Reciclagem)' : (diario.faseDoDia === 'alo_acompanhado' ? ' (Alô Acompanhado)' : ' (Treinamento em Sala)');
+                const rightSubStr = `Data: ${dataFormatada}${faseTexto}  •  Instrutor(a): ${diario.treinadorNome || 'Treinador'} (${diario.treinadorMatricula || '-'})`;
+                doc.text(this._fitPdfText(doc, rightSubStr, rightMaxW), rightX, 25.5, { align: 'right' });
+
+                // ==========================================
+                // FLUXO DEDICADO PARA RECICLAGEM (OBJETIVO, SEM ABS / T.O / REMANEJAMENTO)
+                // ==========================================
+                if (isReciclagemPdf) {
+                    const temaRec = String(diario.temaReciclagem || (tBasePdf && tBasePdf.temaReciclagem) || '').trim() || 'Não informado';
+                    const dinamicaRec = String(diario.dinamicaAtividade || diario.relatoGeral || '').trim() || 'Não informado';
+                    const obsRec = String(diario.observacoesReciclagem || (tBasePdf && tBasePdf.observacoesReciclagem) || '').trim();
+                    const qtdPart = P || parseInt(diario.quantidadeParticipantes, 10) || (tBasePdf && parseInt(tBasePdf.quantidadeAlunos, 10)) || 0;
+                    const fotosRec = Array.isArray(diario.fotosReciclagem)
+                        ? diario.fotosReciclagem.filter(f => f && f.data)
+                        : ((tBasePdf && Array.isArray(tBasePdf.fotosReciclagem)) ? tBasePdf.fotosReciclagem.filter(f => f && f.data) : []);
+                    const anexosEv = this.getAnexosTurma(diario).length > 0
+                        ? this.getAnexosTurma(diario)
+                        : (tBasePdf ? this.getAnexosTurma(tBasePdf) : []);
+
+                    // 3 Cards Objetivos
+                    const rCardY = 35;
+                    const rCardH = 16;
+                    const rCardW = (contentWidth - 6) / 3;
+                    const drawRecCard = (x, label, val, sub, bgR, bgG, bgB, bdrR, bdrG, bdrB, txtR, txtG, txtB) => {
+                        doc.setFillColor(bgR, bgG, bgB);
+                        doc.setDrawColor(bdrR, bdrG, bdrB);
+                        doc.setLineWidth(0.25);
+                        doc.roundedRect(x, rCardY, rCardW, rCardH, 1.5, 1.5, 'FD');
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(7.5);
+                        doc.setTextColor(txtR, txtG, txtB);
+                        doc.text(label, x + 4, rCardY + 5);
+                        doc.setFontSize(11);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text(this._fitPdfText(doc, String(val), rCardW - 8), x + 4, rCardY + 10.8);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(7);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(this._fitPdfText(doc, String(sub), rCardW - 8), x + 4, rCardY + 14.5);
+                    };
+
+                    drawRecCard(marginX, "PARTICIPANTES PRESENTES", `${qtdPart} colaborador${qtdPart === 1 ? '' : 'es'}`, "Público participante na reciclagem", 245, 243, 255, 221, 214, 254, 109, 40, 217);
+                    drawRecCard(marginX + rCardW + 3, "FOTOS DA ATIVIDADE", `${fotosRec.length} registro${fotosRec.length === 1 ? '' : 's'} fotográfico${fotosRec.length === 1 ? '' : 's'}`, "Evidências visuais da execução", 240, 253, 244, 187, 247, 208, 22, 101, 52);
+                    drawRecCard(marginX + (rCardW + 3) * 2, "ANEXOS & EVIDÊNCIAS", `${anexosEv.length} arquivo${anexosEv.length === 1 ? '' : 's'} anexado${anexosEv.length === 1 ? '' : 's'}`, "Materiais, atividades e listas", 239, 246, 255, 191, 219, 254, 29, 78, 216);
+
+                    let curY = rCardY + rCardH + 5;
+                    const boxTema = this._drawPdfTextBoxPaginated(doc, {
+                        title: "TEMA ABORDADO NA RECICLAGEM",
+                        text: temaRec,
+                        startY: curY,
+                        marginX,
+                        contentWidth,
+                        pageHeight,
+                        footerReserve: 16,
+                        fontSize: 8.5,
+                        lineHeight: 4.2
+                    });
+                    curY = boxTema.finalY + 4;
+
+                    const boxDin = this._drawPdfTextBoxPaginated(doc, {
+                        title: "DINÂMICA / ATIVIDADE METODOLÓGICA REALIZADA",
+                        text: dinamicaRec,
+                        startY: curY,
+                        marginX,
+                        contentWidth,
+                        pageHeight,
+                        footerReserve: 16,
+                        fontSize: 8,
+                        lineHeight: 4.0
+                    });
+                    curY = boxDin.finalY + 4;
+
+                    if (obsRec) {
+                        const boxObs = this._drawPdfTextBoxPaginated(doc, {
+                            title: "OBSERVAÇÕES / EVENTOS IMPORTANTES",
+                            text: obsRec,
+                            startY: curY,
+                            marginX,
+                            contentWidth,
+                            pageHeight,
+                            footerReserve: 16,
+                            fontSize: 7.8,
+                            lineHeight: 3.9
+                        });
+                        curY = boxObs.finalY + 4;
+                    }
+
+                    // Tabela de Anexos & Evidências (se houver anexos ou para registro formal)
+                    const anexosRows = anexosEv.map((ax, i) => [
+                        String(i + 1),
+                        ax.name || `Evidência ${i + 1}`,
+                        ax.type || 'Documento / Evidência',
+                        ax.size ? `${Math.max(1, Math.round(ax.size / 1024))} KB` : 'Anexado'
+                    ]);
+                    if (curY + 25 > pageHeight - 16) {
+                        doc.addPage();
+                        curY = 14;
+                    }
+                    doc.autoTable({
+                        startY: curY,
+                        margin: { top: 14, bottom: 16, left: marginX, right: marginX },
+                        tableWidth: contentWidth,
+                        rowPageBreak: 'avoid',
+                        showHead: 'everyPage',
+                        head: [[`ANEXOS E EVIDÊNCIAS DE EXECUÇÃO (${anexosRows.length})`, 'Nome do Arquivo / Material', 'Tipo', 'Tamanho / Status']],
+                        body: anexosRows.length > 0 ? anexosRows : [['-', 'Nenhum arquivo complementar anexado neste registro.', '-', '-']],
+                        theme: 'striped',
+                        headStyles: { fillColor: [91, 33, 182], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
+                        bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                        columnStyles: { 0: { cellWidth: 16, halign: 'center' }, 1: { cellWidth: contentWidth - 96 }, 2: { cellWidth: 50 }, 3: { cellWidth: 30, halign: 'center' } }
+                    });
+                    curY = doc.lastAutoTable.finalY + 6;
+
+                    // Galeria de Fotos da Reciclagem
+                    if (fotosRec.length > 0) {
+                        if (curY + 62 > pageHeight - 16) {
+                            doc.addPage();
+                            curY = 14;
+                        }
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(8.5);
+                        doc.setTextColor(91, 33, 182);
+                        doc.text(`REGISTROS FOTOGRÁFICOS DA ATIVIDADE (${fotosRec.length})`, marginX, curY);
+                        curY += 3;
+
+                        const photoW = (contentWidth - 8) / 2;
+                        const photoH = 62;
+                        for (let i = 0; i < fotosRec.length; i += 2) {
+                            if (curY + photoH + 10 > pageHeight - 16) {
+                                doc.addPage();
+                                curY = 14;
+                            }
+                            for (let c = 0; c < 2 && (i + c) < fotosRec.length; c++) {
+                                const fotoObj = fotosRec[i + c];
+                                const px = marginX + c * (photoW + 8);
+                                doc.setDrawColor(203, 213, 225);
+                                doc.setLineWidth(0.25);
+                                doc.roundedRect(px, curY, photoW, photoH + 6, 1.5, 1.5, 'D');
+                                try {
+                                    const fStr = String(fotoObj.data || '');
+                                    const fFmt = (fStr.indexOf('image/png') !== -1 || fStr.indexOf('image/PNG') !== -1) ? 'PNG' : 'JPEG';
+                                    doc.addImage(fStr, fFmt, px + 2, curY + 2, photoW - 4, photoH - 2);
+                                } catch (err) {}
+                                doc.setFont("helvetica", "normal");
+                                doc.setFontSize(7);
+                                doc.setTextColor(71, 85, 105);
+                                doc.text(this._fitPdfText(doc, `Foto ${i + c + 1}: ${fotoObj.name || 'Registro da atividade'}`, photoW - 6), px + 3, curY + photoH + 4);
+                            }
+                            curY += photoH + 10;
+                        }
+                    }
+
+                    const totalPagesRec = doc.internal.getNumberOfPages();
+                    for (let i = 1; i <= totalPagesRec; i++) {
+                        doc.setPage(i);
+                        doc.setDrawColor(226, 232, 240);
+                        doc.setLineWidth(0.2);
+                        doc.line(marginX, pageHeight - 8, marginX + contentWidth, pageHeight - 8);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(7);
+                        doc.setTextColor(148, 163, 184);
+                        doc.text(`Softmarketing Soluções em Comunicação  •  Diário de Bordo Reciclagem  •  Emitido em ${new Date().toLocaleString('pt-BR')}`, marginX, pageHeight - 4.5);
+                        doc.text(`Página ${i} de ${totalPagesRec}`, marginX + contentWidth, pageHeight - 4.5, { align: 'right' });
+                    }
+
+                    const safeOpRec = (diario.operacao || 'Operacao').replace(/[^a-zA-Z0-9]/g, '_');
+                    const safeTurmaRec = (diario.turma || 'Reciclagem').replace(/[^a-zA-Z0-9]/g, '_');
+                    const filenameRec = `Diario_Reciclagem_${safeOpRec}_${safeTurmaRec}_${diario.data || 'data'}.pdf`;
+                    doc.save(filenameRec);
+                    app.ui.showAlert("PDF de Reciclagem Gerado!", `O arquivo "${filenameRec}" foi baixado sem indicadores alheios à reciclagem.`, "success");
+                    return;
+                }
 
                 // ==========================================
                 // CARDS DE INDICADORES (4 COLUNAS EM PAINEL SÓBRIO)
@@ -9551,7 +9834,8 @@ storage: {
                         doc.setFont("helvetica", "normal");
                         doc.setFontSize(7.5);
                         doc.setTextColor(148, 163, 184);
-                        doc.text(`Operação: ${String(diario.operacao || '').toUpperCase()}  |  Turma: ${String(diario.turma || '').toUpperCase()}  |  Data: ${dataFormatada}`, pageWidth - marginX, 12, { align: 'right' });
+                        const bannerRightMaxW = pageWidth - marginX - 118;
+                        doc.text(this._fitPdfText(doc, `Operação: ${String(diario.operacao || '').toUpperCase()}  |  Turma: ${String(diario.turma || '').toUpperCase()}  |  Data: ${dataFormatada}`, bannerRightMaxW), pageWidth - marginX, 12, { align: 'right' });
                     };
 
                     doc.addPage();
@@ -9865,25 +10149,26 @@ storage: {
 
                 doc.setTextColor(255, 255, 255);
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(13);
-                doc.text("SOFTMARKETING  |  RELATÓRIO FINAL CONSOLIDADO DE TREINAMENTO", marginX + 6, 18);
+                doc.setFontSize(11.5);
+                doc.text(this._fitPdfText(doc, "SOFTMARKETING  |  RELATÓRIO FINAL DE TREINAMENTO", 118), marginX + 6, 18);
 
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(8);
+                doc.setFontSize(7.5);
                 doc.setTextColor(203, 213, 225);
-                doc.text("PARECER OFICIAL DE CONCLUSÃO E ENTREGA DE TURMA À OPERAÇÃO  •  CAPACITAÇÃO & QUALIDADE", marginX + 6, 26);
+                doc.text(this._fitPdfText(doc, "PARECER OFICIAL DE CONCLUSÃO E ENTREGA À OPERAÇÃO", 118), marginX + 6, 26);
 
                 const rightX = marginX + contentWidth - 6;
+                const finalRightMaxW = contentWidth - 134;
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(10);
+                doc.setFontSize(9.5);
                 doc.setTextColor(255, 255, 255);
-                doc.text(`OPERAÇÃO: ${String(t.operacao || 'N/A').toUpperCase()}   |   TURMA: ${String(t.numeroTurma || 'TURMA').toUpperCase()}`, rightX, 18, { align: 'right' });
+                doc.text(this._fitPdfText(doc, `OPERAÇÃO: ${String(t.operacao || 'N/A').toUpperCase()}  |  TURMA: ${String(t.numeroTurma || 'TURMA').toUpperCase()}`, finalRightMaxW), rightX, 18, { align: 'right' });
 
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(8);
+                doc.setFontSize(7.5);
                 doc.setTextColor(148, 163, 184);
                 const dtEntregue = t.dataEntregaEfetiva ? t.dataEntregaEfetiva.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR');
-                doc.text(`Data de Entrega: ${dtEntregue}  •  Instrutor(a): ${t.treinadorNome || 'Treinador'} (${t.treinadorMatricula || '-'})`, rightX, 26, { align: 'right' });
+                doc.text(this._fitPdfText(doc, `Entrega: ${dtEntregue}  •  Instrutor(a): ${t.treinadorNome || 'Treinador'} (${t.treinadorMatricula || '-'})`, finalRightMaxW), rightX, 26, { align: 'right' });
 
                 // ==========================================
                 // CARDS DE KPI GLOBAIS DA FORMAÇÃO
@@ -11585,6 +11870,12 @@ storage: {
                         return; // Trava o fluxo ate ele mudar a senha
                     }
                     
+                    // Operadores na pesquisa CSAT não precisam aceitar nenhum termo jurídico — vão direto ao portal/pesquisa com aviso de anonimato e sinceridade
+                    if (u.tipoAcesso === 'Operador' || u.cargo === 'Operador em Treinamento') {
+                        app.ui.showApp();
+                        return;
+                    }
+
                     if (!u.aceiteTermos) {
                         document.getElementById("terms-modal").classList.remove("hidden");
                     } else if (!u.aceiteDiretrizes && u.loginCount >= 2) {
@@ -11789,10 +12080,11 @@ storage: {
                     if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
                     if (!Array.isArray(t.respostasCSAT)) t.respostasCSAT = [];
                     const v = parseInt(notaValor) || 5;
+                    const qtdP = Array.isArray(this.perguntas) ? this.perguntas.length : 8;
                     t.respostasCSAT.push({
                         data: new Date().toLocaleDateString('pt-BR'),
                         timestamp: Date.now(),
-                        notas: [v, v, v, v, v],
+                        notas: new Array(qtdP).fill(v),
                         media: v,
                         comentario: `Voto de teste rápido DEV (Nota ${v}.0)`
                     });
@@ -11803,7 +12095,7 @@ storage: {
                         app.ui.renderTab('pesquisa_treinamento', true);
                     });
                 },
-                respostas: [null, null, null, null, null],
+                respostas: [null, null, null, null, null, null, null, null],
                 turmaAtivaId: null,
 
                 perguntas: [
@@ -11837,6 +12129,27 @@ storage: {
                     },
                     {
                         num: 5,
+                        titulo: "Cordialidade",
+                        categoria: "Relacionamento & Postura",
+                        icone: "fa-handshake",
+                        descricao: "O instrutor e a equipe de apoio trataram você e a turma com cordialidade, educação, respeito e empatia ao longo de todo o treinamento?"
+                    },
+                    {
+                        num: 6,
+                        titulo: "Pontualidade e Aderência ao Cronograma",
+                        categoria: "Cronograma Estipulado",
+                        icone: "fa-clock",
+                        descricao: "Os horários de início, intervalos, encerramento e o cronograma estipulado para o treinamento foram cumpridos com pontualidade e organização?"
+                    },
+                    {
+                        num: 7,
+                        titulo: "Infraestrutura e Limpeza da Sala",
+                        categoria: "Espaço Físico & Mobiliário",
+                        icone: "fa-building",
+                        descricao: "Como você avalia a infraestrutura da sala de treinamento em relação ao espaço físico, limpeza, temperatura/climatização e conforto do mobiliário?"
+                    },
+                    {
+                        num: 8,
                         titulo: "Satisfação Geral e Preparo para a Operação",
                         categoria: "Avaliação Global",
                         icone: "fa-star",
@@ -11855,18 +12168,19 @@ storage: {
                 iniciarPesquisa(turmaId) {
                     this.turmaAtivaId = turmaId;
                     this.currentStep = 0;
-                    this.respostas = [null, null, null, null, null];
+                    this.respostas = new Array(this.perguntas.length).fill(null);
                     this.renderStep();
                 },
 
                 definirNota(nota) {
                     this.respostas[this.currentStep] = parseInt(nota);
+                    const totalQ = this.perguntas.length;
                     // Avanço suave para a próxima tela
-                    if (this.currentStep < 4) {
+                    if (this.currentStep < totalQ - 1) {
                         this.currentStep++;
                         this.renderStep();
                     } else {
-                        this.currentStep = 5; // Revisão e comentário
+                        this.currentStep = totalQ; // Revisão e comentário
                         this.renderStep();
                     }
                 },
@@ -11879,7 +12193,8 @@ storage: {
                 },
 
                 irParaPasso(idx) {
-                    if (idx >= 0 && idx <= 5) {
+                    const totalQ = this.perguntas.length;
+                    if (idx >= 0 && idx <= totalQ) {
                         this.currentStep = idx;
                         this.renderStep();
                     }
@@ -11895,19 +12210,29 @@ storage: {
                     const t = app.turmasTreinamentoList && app.turmasTreinamentoList[this.turmaAtivaId];
                     if (!t) return `<div class="p-6 text-center text-slate-500">Turma não localizada.</div>`;
 
-                    // Tela 0 a 4: Pergunta Individual
-                    if (this.currentStep >= 0 && this.currentStep <= 4) {
+                    const totalQ = this.perguntas.length;
+
+                    // Tela 0 a totalQ-1: Pergunta Individual
+                    if (this.currentStep >= 0 && this.currentStep < totalQ) {
                         const q = this.perguntas[this.currentStep];
                         const notaEscolhida = this.respostas[this.currentStep];
-                        const progressoPct = Math.round(((this.currentStep + 1) / 5) * 100);
+                        const progressoPct = Math.round(((this.currentStep + 1) / totalQ) * 100);
 
                         return `
                             <div class="space-y-6 animate-fade-in max-w-2xl mx-auto">
+                                <!-- ORIENTAÇÃO DE ANONIMATO E SINCERIDADE (SEM ACEITE DE TERMOS) -->
+                                <div class="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70 flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200">
+                                    <i class="fa-solid fa-user-shield text-emerald-600 dark:text-emerald-400 text-base shrink-0 mt-0.5"></i>
+                                    <div>
+                                        <strong>Pesquisa 100% Anônima:</strong> Você não precisa assinar ou aceitar nenhum termo. Pedimos apenas que responda com total sinceridade — o único intuito desta avaliação é nos fornecer visão real para melhoria contínua do treinamento e da estrutura.
+                                    </div>
+                                </div>
+
                                 <!-- BARRA DE PROGRESSO COM PASSOS -->
                                 <div class="space-y-2">
                                     <div class="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
                                         <span class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                                            <i class="fa-solid fa-list-ol"></i> Pergunta ${this.currentStep + 1} de 5
+                                            <i class="fa-solid fa-list-ol"></i> Pergunta ${this.currentStep + 1} de ${totalQ}
                                         </span>
                                         <span>${progressoPct}% Concluído</span>
                                     </div>
@@ -11920,7 +12245,7 @@ storage: {
                                                 ${idx + 1} ${this.respostas[idx] ? '<i class="fa-solid fa-check text-[9px] text-emerald-500"></i>' : ''}
                                             </span>
                                         `).join('')}
-                                        <span class="cursor-pointer hover:text-emerald-500 transition ${this.currentStep === 5 ? 'text-emerald-600 font-extrabold' : ''}" onclick="app.pesquisaTreinamento.irParaPasso(5)">
+                                        <span class="cursor-pointer hover:text-emerald-500 transition ${this.currentStep === totalQ ? 'text-emerald-600 font-extrabold' : ''}" onclick="app.pesquisaTreinamento.irParaPasso(${totalQ})">
                                             Fim
                                         </span>
                                     </div>
@@ -11977,8 +12302,9 @@ storage: {
                         `;
                     }
 
-                    // Tela 5: Revisão, Comentário Opcional e Envio
-                    const mediaCalculada = (this.respostas.filter(n => n !== null).reduce((a, b) => a + b, 0) / 5).toFixed(1);
+                    // Tela final: Revisão, Comentário Opcional e Envio
+                    const validNotas = this.respostas.filter(n => n !== null);
+                    const mediaCalculada = validNotas.length > 0 ? (validNotas.reduce((a, b) => a + b, 0) / validNotas.length).toFixed(1) : '0.0';
                     return `
                         <div class="space-y-6 animate-fade-in max-w-2xl mx-auto">
                             <!-- CARD DE REVISÃO E ENVIO -->
@@ -12047,11 +12373,12 @@ storage: {
                     const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                     if (!t) return app.ui.showAlert("Aviso", "Turma não encontrada.", "warning");
 
-                    if (this.respostas.some(r => r === null || r === undefined)) {
-                        return app.ui.showAlert("Atenção", "Por favor, responda a todas as 5 perguntas antes de enviar sua avaliação.", "warning");
+                    const totalQ = this.perguntas.length;
+                    if (this.respostas.slice(0, totalQ).some(r => r === null || r === undefined)) {
+                        return app.ui.showAlert("Atenção", `Por favor, responda a todas as ${totalQ} perguntas antes de enviar sua avaliação.`, "warning");
                     }
 
-                    const media = Number((this.respostas.reduce((a, b) => a + b, 0) / 5).toFixed(2));
+                    const media = Number((this.respostas.slice(0, totalQ).reduce((a, b) => a + b, 0) / totalQ).toFixed(2));
                     const comentarioEl = document.getElementById('pesquisa-csat-comentario');
                     const comentario = comentarioEl ? comentarioEl.value.trim() : '';
 
@@ -13131,12 +13458,10 @@ storage: {
                 },
 
                 GTD_CONTEXTS: [
-                    { id: '', label: 'Sem contexto', icon: 'fa-tag' },
-                    { id: '@pc', label: '@Computador', icon: 'fa-laptop' },
-                    { id: '@reuniao', label: '@Reunião', icon: 'fa-users' },
-                    { id: '@ligacao', label: '@Ligação', icon: 'fa-phone' },
-                    { id: '@equipe', label: '@Equipe', icon: 'fa-people-group' },
-                    { id: '@pessoal', label: '@Foco Solo', icon: 'fa-headphones' }
+                    { id: '', label: 'Sem objetivo', icon: 'fa-bullseye' },
+                    { id: 'aumentar_faturamento', label: 'Aumentar Faturamento', icon: 'fa-chart-line' },
+                    { id: 'fidelizar', label: 'Fidelizar', icon: 'fa-heart' },
+                    { id: 'diminuir_custos', label: 'Diminuir Custos', icon: 'fa-piggy-bank' }
                 ],
 
                 POSTIT_THEMES: {
@@ -15510,7 +15835,7 @@ storage: {
                                         <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-black">2</div>
                                         <div>
                                             <div class="font-black text-slate-800 dark:text-white">Controles Diretos em Cada Bloco</div>
-                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Clique no círculo para concluir, troque o estágio (Entrada, Fazer, Aguardando...), defina <strong>@Contexto</strong>, prazo, cor ou arraste para reordenar.</p>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Clique no círculo para concluir, troque o estágio (Entrada, Fazer, Aguardando...), defina o <strong>Objetivo</strong> (Aumentar Faturamento, Fidelizar ou Diminuir Custos), prazo, cor ou arraste para reordenar.</p>
                                         </div>
                                     </div>
                                     <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
@@ -21899,53 +22224,69 @@ storage: {
 
                         const operacoesCadastradas = app.diarioBordo.getOperacoesDisponiveis();
                         const opsMap = {};
+                        const initOpBucket = (opNome) => ({
+                            nome: opNome,
+                            turmas: [],
+                            turmasMap: {},
+                            turmasDistintas: 0,
+                            diariosCount: 0,
+                            previstos: 0,
+                            presentes: 0,
+                            abs: 0,
+                            desligamentos: 0,
+                            alteracoes: 0,
+                            treinadores: new Set(),
+                            ultimaData: ''
+                        });
                         operacoesCadastradas.forEach(op => {
-                            opsMap[op] = {
-                                nome: op,
-                                turmas: [],
-                                previstos: 0,
-                                presentes: 0,
-                                abs: 0,
-                                desligamentos: 0,
-                                alteracoes: 0,
-                                treinadores: new Set(),
-                                ultimaData: ''
-                            };
+                            opsMap[op] = initOpBucket(op);
                         });
 
-                        diariosPeriodo.forEach(d => {
+                        // Agrupa por turma distinta (para NÃO somar previstos de vários dias da mesma turma!)
+                        const diariosOrdenadosDash = [...diariosPeriodo].sort((a, b) => {
+                            const da = String(a.data || '');
+                            const db = String(b.data || '');
+                            if (da !== db) return da.localeCompare(db);
+                            return (Number(a.atualizadoEm || a.criadoEm || 0)) - (Number(b.atualizadoEm || b.criadoEm || 0));
+                        });
+
+                        diariosOrdenadosDash.forEach(d => {
                             const op = d.operacao || 'Geral';
-                            if (!opsMap[op]) {
-                                opsMap[op] = {
-                                    nome: op,
-                                    turmas: [],
-                                    previstos: 0,
-                                    presentes: 0,
-                                    abs: 0,
-                                    desligamentos: 0,
-                                    alteracoes: 0,
-                                    treinadores: new Set(),
-                                    ultimaData: ''
-                                };
-                            }
-                            const { P, A, D, PR } = app.diarioBordo.getDiarioContagens(d);
+                            if (!opsMap[op]) opsMap[op] = initOpBucket(op);
+
                             const AQ = Array.isArray(d.alteracoesQuadro) ? d.alteracoesQuadro.length : 0;
+                            const turmaKey = d.turmaBaseId || `${String(op).trim().toLowerCase()}____${String(d.turma || d.id).trim().toLowerCase()}`;
 
                             opsMap[op].turmas.push(d);
-                            opsMap[op].previstos += P;
-                            opsMap[op].presentes += PR;
-                            opsMap[op].abs += A;
-                            opsMap[op].desligamentos += D;
+                            opsMap[op].diariosCount += 1;
                             opsMap[op].alteracoes += AQ;
+                            opsMap[op].turmasMap[turmaKey] = d; // último snapshot da turma no período
                             if (d.treinadorNome) opsMap[op].treinadores.add(d.treinadorNome);
-                            if (!opsMap[op].ultimaData || d.data > opsMap[op].ultimaData) opsMap[op].ultimaData = d.data;
+                            if (!opsMap[op].ultimaData || String(d.data || '') > opsMap[op].ultimaData) opsMap[op].ultimaData = d.data;
                         });
 
-                        let globPrev = 0, globPres = 0, globAbs = 0, globDesl = 0, globAlt = 0;
+                        let globPrev = 0, globPres = 0, globAbs = 0, globDesl = 0, globAlt = 0, globTurmasDistintas = 0;
                         const opsList = Object.values(opsMap);
-                        const opsComTurmas = opsList.filter(o => o.turmas.length > 0);
+                        opsList.forEach(o => {
+                            const turmasSnapshots = Object.values(o.turmasMap);
+                            o.turmasDistintas = turmasSnapshots.length;
+                            o.previstos = 0;
+                            o.presentes = 0;
+                            o.abs = 0;
+                            o.desligamentos = 0;
+                            turmasSnapshots.forEach(snapDiario => {
+                                const c = app.diarioBordo.getDiarioContagens(snapDiario);
+                                o.previstos += c.P;
+                                o.presentes += c.PR;
+                                o.abs += c.A;
+                                o.desligamentos += c.D;
+                            });
+                        });
+
+                        const opsComTurmas = opsList.filter(o => o.turmasDistintas > 0);
 
                         opsComTurmas.forEach(o => {
+                            globTurmasDistintas += o.turmasDistintas;
                             globPrev += o.previstos;
                             globPres += o.presentes;
                             globAbs += o.abs;
@@ -21959,7 +22300,7 @@ storage: {
 
                         // Ordena: Operações com turmas primeiro (por maior previstos), depois as demais
                         opsList.sort((a, b) => {
-                            if (b.turmas.length !== a.turmas.length) return b.turmas.length - a.turmas.length;
+                            if (b.turmasDistintas !== a.turmasDistintas) return b.turmasDistintas - a.turmasDistintas;
                             return b.previstos - a.previstos;
                         });
 
@@ -22015,8 +22356,8 @@ storage: {
                                         <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                                             <span>Turmas</span> <i class="fa-solid fa-chalkboard text-slate-400"></i>
                                         </div>
-                                        <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${diariosPeriodo.length}</div>
-                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Diários registrados</div>
+                                        <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${globTurmasDistintas}</div>
+                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">${diariosPeriodo.length} diário${diariosPeriodo.length === 1 ? '' : 's'} lançado${diariosPeriodo.length === 1 ? '' : 's'}</div>
                                     </div>
 
                                     <div class="bg-white dark:bg-slate-800 px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
@@ -22024,7 +22365,7 @@ storage: {
                                             <span>Previstos</span> <i class="fa-solid fa-users text-slate-400"></i>
                                         </div>
                                         <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${globPrev}</div>
-                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Headcount previsto</div>
+                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Headcount único em turma</div>
                                     </div>
 
                                     <!-- Críticos de Performance (Taxa % em destaque máximo) -->
@@ -22103,7 +22444,7 @@ storage: {
                                                                     ${op.nome}
                                                                 </h4>
                                                                 <div class="text-xs font-semibold text-slate-400 mt-0.5">
-                                                                    ${op.turmas.length} turma${op.turmas.length === 1 ? '' : 's'} no período
+                                                                    ${op.turmasDistintas} turma${op.turmasDistintas === 1 ? '' : 's'} • ${op.diariosCount} diário${op.diariosCount === 1 ? '' : 's'}
                                                                 </div>
                                                             </div>
                                                             <div class="shrink-0">
@@ -22157,7 +22498,7 @@ storage: {
                                                     <div class="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
                                                         ${hasTurmas ? `
                                                             <button type="button" onclick="app.diarioBordo.filtrarPorOperacao('${op.nome}')" class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer">
-                                                                <i class="fa-solid fa-arrow-right text-emerald-600 text-xs"></i> Ver ${op.turmas.length} Turma${op.turmas.length === 1 ? '' : 's'}
+                                                                <i class="fa-solid fa-arrow-right text-emerald-600 text-xs"></i> Ver ${op.turmasDistintas} Turma${op.turmasDistintas === 1 ? '' : 's'}
                                                             </button>
                                                             <span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">${op.alteracoes > 0 ? op.alteracoes + ' remanejamento(s)' : ''}</span>
                                                         ` : `
@@ -22216,7 +22557,7 @@ storage: {
                                                     return `
                                                         <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition">
                                                             <td class="py-3 px-3 font-bold text-slate-800 dark:text-white">${op.nome}</td>
-                                                            <td class="py-3 px-3 text-center font-bold">${op.turmas.length}</td>
+                                                            <td class="py-3 px-3 text-center font-bold">${op.turmasDistintas} <span class="text-[10px] font-normal text-slate-400">(${op.diariosCount}d)</span></td>
                                                             <td class="py-3 px-3 text-center">${op.previstos}</td>
                                                             <td class="py-3 px-3 text-center text-emerald-600 font-bold">${op.presentes}</td>
                                                             <td class="py-3 px-3 text-center font-black ${parseFloat(pctPres) >= 90 ? 'text-emerald-600' : (parseFloat(pctPres) >= 80 ? 'text-blue-600' : 'text-rose-600')}">${hasTurmas ? pctPres + '%' : '-'}</td>
@@ -22244,575 +22585,289 @@ storage: {
                         `;
                     } else if (mode === 'turmas') {
                         // ==========================================
-                        // TELA: TURMAS CADASTRADAS (GESTÃO DE TURMAS)
+                        // TELA: TURMAS CADASTRADAS (ORGANIZADA E LIMPA)
                         // ==========================================
                         const filtroOp = app.diarioBordo.filtroTurmaOp || 'TODAS';
                         const filtroBusca = String(app.diarioBordo.filtroTurmaBusca || '').toLowerCase().trim();
-
                         const filtroTipo = app.diarioBordo.filtroTurmaTipo || 'TODAS';
+                        const filtroStatus = app.diarioBordo.filtroTurmaStatus || 'ativas';
+                        const viewLayout = app.diarioBordo.turmasViewLayout || 'cards';
+                        const esc = (v) => app.diarioBordo._escapeDbHtml(v);
+
+                        const isConcluida = (t) => t.status === 'Entregue' || t.status === 'Integrados';
+                        const totalAtivas = turmasCadastradas.filter(t => !isConcluida(t)).length;
+                        const totalConcluidas = turmasCadastradas.length - totalAtivas;
+
                         const turmasFiltradas = turmasCadastradas.filter(t => {
+                            if (filtroStatus === 'ativas' && isConcluida(t)) return false;
+                            if (filtroStatus === 'concluidas' && !isConcluida(t)) return false;
                             if (filtroOp !== 'TODAS' && t.operacao !== filtroOp) return false;
                             if (filtroTipo === 'treinamento' && (t.tipoTurma === 'integracao' || t.tipoTurma === 'reciclagem')) return false;
                             if (filtroTipo === 'integracao' && t.tipoTurma !== 'integracao') return false;
                             if (filtroTipo === 'reciclagem' && t.tipoTurma !== 'reciclagem') return false;
                             if (filtroBusca) {
-                                const numMatch = String(t.numeroTurma || '').toLowerCase().includes(filtroBusca);
-                                const opMatch = String(t.operacao || '').toLowerCase().includes(filtroBusca);
-                                const instrMatch = String(t.treinadorNome || '').toLowerCase().includes(filtroBusca);
-                                const respIntMatch = String(t.responsavelIntegracaoNome || '').toLowerCase().includes(filtroBusca);
-                                const colabMatch = Array.isArray(t.colaboradores) && t.colaboradores.some(c => 
-                                    String(c.nome || '').toLowerCase().includes(filtroBusca) || 
+                                const hay = `${t.numeroTurma || ''} ${t.operacao || ''} ${t.treinadorNome || ''} ${t.responsavelIntegracaoNome || ''}`.toLowerCase();
+                                const colabMatch = Array.isArray(t.colaboradores) && t.colaboradores.some(c =>
+                                    String(c.nome || '').toLowerCase().includes(filtroBusca) ||
                                     String(c.matricula || '').toLowerCase().includes(filtroBusca)
                                 );
-                                if (!numMatch && !opMatch && !instrMatch && !respIntMatch && !colabMatch) return false;
+                                if (!hay.includes(filtroBusca) && !colabMatch) return false;
                             }
                             return true;
                         }).sort((a, b) => String(b.dataInicio || '').localeCompare(String(a.dataInicio || '')));
 
                         const operacoes = app.diarioBordo.getOperacoesDisponiveis();
+                        const calcDadosTurma = (t) => {
+                            const isInt = t.tipoTurma === 'integracao';
+                            const isRec = t.tipoTurma === 'reciclagem';
+                            const totalColabs = Array.isArray(t.colaboradores) ? t.colaboradores.length : 0;
+                            const ativos = Array.isArray(t.colaboradores) ? t.colaboradores.filter(c => c.statusGeral !== 'T.O' && c.statusGeral !== 'Declínio').length : 0;
+                            const presentesInt = isInt && Array.isArray(t.colaboradores)
+                                ? t.colaboradores.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length
+                                : 0;
+                            const diarios = app.diarioBordo.getDiariosDaTurma(t);
+                            const anexos = app.diarioBordo.getAnexosTurma(t);
+                            const dtIniFmt = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '--/--/----';
+                            const dtFimFmt = t.previsaoEntrega ? t.previsaoEntrega.split('-').reverse().join('/') : '--/--/----';
+                            const concluida = isConcluida(t);
+
+                            return {
+                                isInt,
+                                isRec,
+                                tipoLabel: isInt ? 'Integração' : (isRec ? 'Reciclagem' : 'Treinamento'),
+                                tipoClasses: isInt
+                                    ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                    : (isRec
+                                        ? 'bg-violet-100 dark:bg-violet-950/60 text-violet-800 dark:text-violet-300 border-violet-200 dark:border-violet-800'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600'),
+                                statusLabel: concluida ? (t.status || 'Concluída') : 'Em Andamento',
+                                statusClasses: concluida
+                                    ? 'bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+                                    : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                                responsavel: isInt ? (t.responsavelIntegracaoNome || 'Sem responsável') : (t.treinadorNome || 'Instrutor'),
+                                quadroTxt: isRec
+                                    ? `${parseInt(t.quantidadeAlunos, 10) || 0} colab.`
+                                    : (isInt ? `${presentesInt}/${totalColabs} pres.` : `${ativos}/${totalColabs} ativos`),
+                                dtIniFmt,
+                                dtFimFmt,
+                                diarios,
+                                anexos,
+                                concluida,
+                                podeEditar: app.diarioBordo.canEditTurma(t)
+                            };
+                        };
 
                         container.innerHTML = `
-                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-4 animate-fade-in">
                                 ${navSubTabsHtml}
 
-                                <!-- Banner Header Turmas -->
-                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                                    <div class="relative z-10">
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
-                                            <i class="fa-solid fa-graduation-cap"></i> Gestão de Turmas em Sala
+                                <!-- Cabeçalho Compacto & Abas de Status -->
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+                                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                                        <div>
+                                            <h2 class="text-lg sm:text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-graduation-cap text-emerald-600"></i> Turmas Cadastradas
+                                            </h2>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                                Selecione uma turma para lançar o diário do dia, acompanhar alunos ou gerar relatório.
+                                            </p>
                                         </div>
-                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Turmas de Treinamento & Integração</h2>
-                                        <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
-                                            Cadastre turmas de capacitação com horário, cronograma e acompanhamento operacional, ou registre integrações de novos colaboradores com cálculo instantâneo de presenteísmo e lista assinada.
-                                        </p>
+
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <!-- Abas Status -->
+                                            <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                                <button type="button" onclick="app.diarioBordo.filtroTurmaStatus = 'ativas'; app.ui.renderTab('diario_bordo', true);" class="px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer transition ${filtroStatus === 'ativas' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}">
+                                                    Em Andamento (${totalAtivas})
+                                                </button>
+                                                <button type="button" onclick="app.diarioBordo.filtroTurmaStatus = 'concluidas'; app.ui.renderTab('diario_bordo', true);" class="px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer transition ${filtroStatus === 'concluidas' ? 'bg-white dark:bg-slate-800 text-teal-600 shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}">
+                                                    Concluídas (${totalConcluidas})
+                                                </button>
+                                                <button type="button" onclick="app.diarioBordo.filtroTurmaStatus = 'todas'; app.ui.renderTab('diario_bordo', true);" class="px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer transition ${filtroStatus === 'todas' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}">
+                                                    Todas (${turmasCadastradas.length})
+                                                </button>
+                                            </div>
+
+                                            <!-- Alternar Cards / Lista -->
+                                            <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                                <button type="button" onclick="app.diarioBordo.turmasViewLayout = 'cards'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${viewLayout === 'cards' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs' : 'text-slate-400'}" title="Visualização em Cards">
+                                                    <i class="fa-solid fa-grip"></i>
+                                                </button>
+                                                <button type="button" onclick="app.diarioBordo.turmasViewLayout = 'tabela'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${viewLayout === 'tabela' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs' : 'text-slate-400'}" title="Visualização em Lista">
+                                                    <i class="fa-solid fa-table-list"></i>
+                                                </button>
+                                            </div>
+
+                                            <button type="button" onclick="app.diarioBordo.novaIntegracao()" class="px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/50 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
+                                                <i class="fa-solid fa-handshake"></i> + Integração
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="relative z-10 flex flex-wrap items-center gap-3">
-                                        <button type="button" onclick="app.diarioBordo.novaTurma('treinamento')" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-graduation-cap text-emerald-600"></i> Cadastrar Turma
-                                        </button>
-                                        <button type="button" onclick="app.diarioBordo.novaReciclagem()" class="px-5 py-3 rounded-2xl bg-violet-500 hover:bg-violet-400 text-white font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-rotate"></i> Nova Reciclagem
-                                        </button>
-                                        <button type="button" onclick="app.diarioBordo.novaIntegracao()" class="px-5 py-3 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-handshake"></i> Nova Integração
-                                        </button>
-                                    </div>
-                                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
-                                        <i class="fa-solid fa-graduation-cap"></i>
+
+                                    <!-- Barra de Filtros Compacta -->
+                                    <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                        <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-[260px]">
+                                            <div class="relative flex-1 min-w-[200px] max-w-sm">
+                                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                                <input type="text" value="${esc(app.diarioBordo.filtroTurmaBusca || '')}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar turma, instrutor ou aluno..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                            </div>
+                                            <select onchange="app.diarioBordo.filtroTurmaTipo = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                                <option value="TODAS" ${filtroTipo === 'TODAS' ? 'selected' : ''}>Todos os Tipos</option>
+                                                <option value="treinamento" ${filtroTipo === 'treinamento' ? 'selected' : ''}>Treinamento Regular</option>
+                                                <option value="reciclagem" ${filtroTipo === 'reciclagem' ? 'selected' : ''}>Reciclagem</option>
+                                                <option value="integracao" ${filtroTipo === 'integracao' ? 'selected' : ''}>Integração</option>
+                                            </select>
+                                            <select onchange="app.diarioBordo.filtroTurmaOp = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                                <option value="TODAS" ${filtroOp === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
+                                                ${operacoes.map(o => `<option value="${esc(o)}" ${filtroOp === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+                                            </select>
+                                        </div>
+                                        <span class="text-xs font-bold text-slate-400">Exibindo ${turmasFiltradas.length} turma${turmasFiltradas.length === 1 ? '' : 's'}</span>
                                     </div>
                                 </div>
 
-                                <!-- Filtros de Turmas -->
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-4">
-                                    <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-                                        <div class="relative flex-1 max-w-md">
-                                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                            <input type="text" value="${app.diarioBordo.filtroTurmaBusca || ''}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar por turma, instrutor ou aluno..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo:</label>
-                                            <select onchange="app.diarioBordo.filtroTurmaTipo = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500">
-                                                <option value="TODAS" ${(app.diarioBordo.filtroTurmaTipo || 'TODAS') === 'TODAS' ? 'selected' : ''}>Todos os Tipos</option>
-                                                <option value="treinamento" ${app.diarioBordo.filtroTurmaTipo === 'treinamento' ? 'selected' : ''}>Treinamento Regular</option>
-                                                <option value="reciclagem" ${app.diarioBordo.filtroTurmaTipo === 'reciclagem' ? 'selected' : ''}>Turmas de Reciclagem</option>
-                                                <option value="integracao" ${app.diarioBordo.filtroTurmaTipo === 'integracao' ? 'selected' : ''}>Turmas de Integração</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Operação:</label>
-                                            <select onchange="app.diarioBordo.filtroTurmaOp = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500">
-                                                <option value="TODAS" ${filtroOp === 'TODAS' ? 'selected' : ''}>Todas as Operações</option>
-                                                ${operacoes.map(o => `<option value="${o}" ${filtroOp === o ? 'selected' : ''}>${o}</option>`).join('')}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="text-xs font-extrabold text-slate-500 dark:text-slate-400">
-                                        Exibindo ${turmasFiltradas.length} de ${turmasCadastradas.length} turmas
-                                    </div>
-                                </div>
-
-                                <!-- Grid de Cards de Turmas -->
                                 ${turmasFiltradas.length === 0 ? `
-                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-                                        <div class="w-16 h-16 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-2xl mx-auto shadow-inner">
+                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+                                        <div class="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-2xl mx-auto">
                                             <i class="fa-solid fa-graduation-cap"></i>
                                         </div>
-                                        <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">Nenhuma turma cadastrada encontrada</h3>
+                                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">Nenhuma turma encontrada neste filtro</h3>
                                         <p class="text-xs text-slate-500 max-w-md mx-auto">
-                                            Crie uma nova turma de treinamento informando a operação, número da turma, datas e alunos matriculados para agilizar seus lançamentos diários.
+                                            Troque o filtro de status acima ou cadastre uma nova turma pelos botões no topo.
                                         </p>
-                                        <button type="button" onclick="app.diarioBordo.novaTurma()" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition inline-flex items-center gap-2 cursor-pointer">
-                                            <i class="fa-solid fa-plus"></i> Cadastrar Primeira Turma
-                                        </button>
+                                    </div>
+                                ` : viewLayout === 'tabela' ? `
+                                    <!-- Visualização em Lista Organizada -->
+                                    <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-left border-collapse text-xs">
+                                                <thead>
+                                                    <tr class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                        <th class="p-3.5">Operação</th>
+                                                        <th class="p-3.5">Tipo</th>
+                                                        <th class="p-3.5">Turma</th>
+                                                        <th class="p-3.5">Instrutor / Resp.</th>
+                                                        <th class="p-3.5">Período</th>
+                                                        <th class="p-3.5 text-center">Quadro</th>
+                                                        <th class="p-3.5 text-center">Diários</th>
+                                                        <th class="p-3.5 text-center">Status</th>
+                                                        <th class="p-3.5 text-right">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                    ${turmasFiltradas.map(t => {
+                                                        const d = calcDadosTurma(t);
+                                                        const tidEsc = esc(t.id);
+                                                        return `
+                                                            <tr class="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition">
+                                                                <td class="p-3.5 font-extrabold text-emerald-700 dark:text-emerald-300">${esc(t.operacao)}</td>
+                                                                <td class="p-3.5"><span class="px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase ${d.tipoClasses}">${esc(d.tipoLabel)}</span></td>
+                                                                <td class="p-3.5 font-black text-slate-800 dark:text-white cursor-pointer hover:text-emerald-600" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)">${esc(t.numeroTurma)}</td>
+                                                                <td class="p-3.5 text-slate-600 dark:text-slate-300">${esc(d.responsavel)}</td>
+                                                                <td class="p-3.5 text-slate-500 tabular-nums">${esc(d.dtIniFmt)} a ${esc(d.dtFimFmt)}</td>
+                                                                <td class="p-3.5 text-center font-bold tabular-nums">${esc(d.quadroTxt)}</td>
+                                                                <td class="p-3.5 text-center font-bold tabular-nums">${d.diarios.length}</td>
+                                                                <td class="p-3.5 text-center"><span class="px-2 py-0.5 rounded-md border text-[10px] font-black uppercase ${d.statusClasses}">${esc(d.statusLabel)}</span></td>
+                                                                <td class="p-3.5 text-right">
+                                                                    <div class="inline-flex items-center gap-1.5">
+                                                                        ${!d.isInt ? `<button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${tidEsc}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer">+ Diário</button>` : ''}
+                                                                        <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] cursor-pointer">Abrir</button>
+                                                                        <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center cursor-pointer" title="Resumo Rápido"><i class="fa-solid fa-bolt text-[11px]"></i></button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        `;
+                                                    }).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 ` : `
-                                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                    <!-- Grid Uniforme de Turmas -->
+                                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                                         ${turmasFiltradas.map(t => {
-                                            const totalColabs = Array.isArray(t.colaboradores) ? t.colaboradores.length : 0;
-                                            const ativos = Array.isArray(t.colaboradores) ? t.colaboradores.filter(c => c.statusGeral !== 'T.O' && c.statusGeral !== 'Declínio').length : 0;
-                                            const desligados = totalColabs - ativos;
-                                            const dtIniFmt = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '--/--/----';
-                                            const dtFimFmt = t.previsaoEntrega ? t.previsaoEntrega.split('-').reverse().join('/') : '--/--/----';
-                                            const podeEditar = app.diarioBordo.canEditTurma(t);
-
-                                            if (t.tipoTurma === 'integracao') {
-                                                const presentes = Array.isArray(t.colaboradores) ? t.colaboradores.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length : 0;
-                                                const faltas = totalColabs - presentes;
-                                                const taxa = totalColabs > 0 ? Math.round((presentes / totalColabs) * 100) : 0;
-
-                                                return `
-                                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-sky-200/80 dark:border-sky-800/60 flex flex-col justify-between hover:shadow-md transition group">
-                                                        <div class="space-y-4">
-                                                            <!-- Header Card Integração -->
-                                                            <div class="flex items-start justify-between gap-3">
-                                                                <div>
-                                                                    <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                                                        <span class="inline-block px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
-                                                                            ${t.operacao}
-                                                                        </span>
-                                                                        <span class="inline-block px-2 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800 text-[10px] font-bold uppercase tracking-wider border">
-                                                                            <i class="fa-solid fa-handshake mr-1"></i> Integração
-                                                                        </span>
-                                                                        ${t.status === 'Integrados' ? `
-                                                                            <span class="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 text-[10px] font-black uppercase border border-teal-200 dark:border-teal-800">
-                                                                                <i class="fa-solid fa-user-check mr-1"></i> Integrados
-                                                                            </span>
-                                                                        ` : `
-                                                                            <span class="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border border-amber-200 dark:border-amber-800">
-                                                                                <i class="fa-solid fa-clock-rotate-left mr-1"></i> Em Andamento
-                                                                            </span>
-                                                                        `}
-                                                                        ${t.travada ? `<span title="Integração bloqueada contra alteração manual" class="text-slate-400 text-xs"><i class="fa-solid fa-lock"></i></span>` : ''}
-                                                                    </div>
-                                                                    <h3 data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-extrabold text-slate-800 dark:text-white leading-tight hover:text-sky-600 dark:hover:text-sky-400 transition cursor-pointer" title="Abrir detalhes desta integração">
-                                                                        ${t.numeroTurma || ('Integração ' + t.operacao)}
-                                                                    </h3>
-                                                                </div>
-                                                                <span class="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-[10px] font-bold shrink-0 flex items-center gap-1 border border-sky-200 dark:border-sky-800/60">
-                                                                    <i class="fa-solid fa-calendar-check text-sky-600"></i> ${dtIniFmt}
-                                                                </span>
-                                                            </div>
-
-                                                            <!-- Detalhes da Integração -->
-                                                            <div class="p-3.5 rounded-2xl bg-sky-50/40 dark:bg-slate-900/40 border border-sky-100 dark:border-slate-700/60 text-xs space-y-2.5">
-                                                                <div class="flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-id-badge text-sky-500"></i> Responsável:
-                                                                    </span>
-                                                                    <span class="font-extrabold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">
-                                                                        ${t.responsavelIntegracaoNome || '-'} ${t.responsavelIntegracaoMatricula ? `(#${t.responsavelIntegracaoMatricula})` : ''}
-                                                                    </span>
-                                                                </div>
-
-                                                                <!-- Métrica de Presenteísmo -->
-                                                                <div class="pt-2 border-t border-sky-100 dark:border-slate-800 space-y-1.5">
-                                                                    <div class="flex items-center justify-between">
-                                                                        <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Presenteísmo:</span>
-                                                                        <span class="text-xs font-black ${taxa >= 90 ? 'text-emerald-600 dark:text-emerald-400' : (taxa >= 75 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')}">
-                                                                            ${taxa}% (${presentes}/${totalColabs} presentes)
-                                                                        </span>
-                                                                    </div>
-                                                                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                                                                        <div class="h-full ${taxa >= 90 ? 'bg-emerald-500' : (taxa >= 75 ? 'bg-amber-500' : 'bg-rose-500')} rounded-full" style="width: ${taxa}%"></div>
-                                                                    </div>
-                                                                </div>
-
-                                                                <!-- Anexos da Integração -->
-                                                                <div class="pt-2 border-t border-sky-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-paperclip text-sky-500"></i> Anexos:
-                                                                    </span>
-                                                                    ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
-                                                                        <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="text-emerald-700 dark:text-emerald-400 font-extrabold hover:underline flex items-center gap-1 cursor-pointer">
-                                                                            <i class="fa-solid fa-folder-open"></i> Ver Anexos (${app.diarioBordo.getAnexosTurma(t).length})
-                                                                        </button>
-                                                                    ` : `
-                                                                        <span class="text-slate-400 italic">Sem anexo</span>
-                                                                    `}
-                                                                </div>
-                                                            </div>
-
-                                                            <div class="flex items-center justify-between text-xs pt-1">
-                                                                <span class="text-slate-400 font-bold text-[11px]">
-                                                                    <i class="fa-solid fa-users text-sky-500 mr-1"></i> ${totalColabs} participante${totalColabs !== 1 ? 's' : ''}
-                                                                </span>
-                                                                <span class="text-[11px] font-extrabold text-slate-600 dark:text-slate-300">
-                                                                    ${faltas > 0 ? `<span class="text-rose-500 mr-1">${faltas} falta${faltas !== 1 ? 's' : ''}</span>` : '<span class="text-emerald-600 mr-1">100% Presença</span>'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <!-- Rodapé de Ações do Card de Integração -->
-                                                        <div class="pt-4 border-t border-slate-100 dark:border-slate-700/80 space-y-2 mt-4">
-                                                            <div class="flex items-center gap-2">
-                                                                ${t.status !== 'Integrados' ? `
-                                                                    <button type="button" onclick="app.diarioBordo.finalizarComoIntegrados('${t.id}')" class="flex-1 py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
-                                                                        <i class="fa-solid fa-user-check"></i> Finalizar como Integrados
-                                                                    </button>
-                                                                ` : `
-                                                                    <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
-                                                                        <i class="fa-solid fa-list-check"></i> Abrir Integração
-                                                                    </button>
-                                                                `}
-                                                                <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Ver Resumo Rápido desta Integração">
-                                                                    <i class="fa-solid fa-bolt"></i> Resumo
-                                                                </button>
-                                                                ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
-                                                                    <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="py-2 px-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Visualizar Arquivos Anexados (${app.diarioBordo.getAnexosTurma(t).length})">
-                                                                        <i class="fa-solid fa-eye"></i>
-                                                                    </button>
-                                                                ` : ''}
-                                                            </div>
-
-                                                            <div class="flex items-center justify-end gap-1 pt-1">
-                                                                ${podeEditar && !t.travada ? `
-                                                                    <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Editar Integração">
-                                                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
-                                                                    </button>
-                                                                ` : t.travada ? `
-                                                                    <span class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700/60 text-slate-400 flex items-center justify-center text-xs" title="Integração Travada">
-                                                                        <i class="fa-solid fa-lock"></i>
-                                                                    </span>
-                                                                ` : ''}
-                                                                ${podeEditar ? `
-                                                                    <button type="button" onclick="app.diarioBordo.excluirTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition flex items-center justify-center cursor-pointer" title="Excluir Integração">
-                                                                        <i class="fa-solid fa-trash-can text-xs"></i>
-                                                                    </button>
-                                                                ` : ''}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                `;
-                                            }
-
-                                            if (t.tipoTurma === 'reciclagem') {
-                                                const qtdPrevista = parseInt(t.quantidadeAlunos, 10) || 0;
-                                                const diariosRec = app.diarioBordo.getDiariosDaTurma(t);
-                                                const qtdAnexosRec = app.diarioBordo.getAnexosTurma(t).length;
-
-                                                return `
-                                                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-violet-200/80 dark:border-violet-800/60 flex flex-col justify-between hover:shadow-md transition group">
-                                                        <div class="space-y-4">
-                                                            <div class="flex items-start justify-between gap-3">
-                                                                <div>
-                                                                    <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                                                        <span class="inline-block px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
-                                                                            ${t.operacao}
-                                                                        </span>
-                                                                        <span class="inline-block px-2 py-0.5 rounded-lg bg-violet-100 dark:bg-violet-950/60 text-violet-800 dark:text-violet-300 border-violet-200 dark:border-violet-800 text-[10px] font-bold uppercase tracking-wider border">
-                                                                            <i class="fa-solid fa-rotate mr-1"></i> Reciclagem
-                                                                        </span>
-                                                                        ${t.status === 'Entregue' ? `
-                                                                            <span class="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 text-[10px] font-black uppercase border border-teal-200 dark:border-teal-800">
-                                                                                <i class="fa-solid fa-flag-checkered mr-1"></i> Concluída
-                                                                            </span>
-                                                                        ` : `
-                                                                            <span class="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border border-amber-200 dark:border-amber-800">
-                                                                                <i class="fa-solid fa-clock-rotate-left mr-1"></i> Em Andamento
-                                                                            </span>
-                                                                        `}
-                                                                    </div>
-                                                                    <h3 data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-extrabold text-slate-800 dark:text-white leading-tight hover:text-violet-600 dark:hover:text-violet-400 transition cursor-pointer" title="Abrir detalhes desta reciclagem">
-                                                                        ${t.numeroTurma || ('Reciclagem ' + t.operacao)}
-                                                                    </h3>
-                                                                </div>
-                                                                <span class="px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 text-[10px] font-bold shrink-0 flex items-center gap-1 border border-violet-200 dark:border-violet-800/60">
-                                                                    <i class="fa-regular fa-clock text-violet-600"></i> ${t.horario || '08:00 às 17:00'}
-                                                                </span>
-                                                            </div>
-
-                                                            <div class="p-3.5 rounded-2xl bg-violet-50/40 dark:bg-slate-900/40 border border-violet-100 dark:border-slate-700/60 text-xs space-y-2.5">
-                                                                <div class="grid grid-cols-2 gap-2">
-                                                                    <div>
-                                                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Início / Data:</span>
-                                                                        <span class="font-extrabold text-slate-700 dark:text-slate-200">${dtIniFmt}</span>
-                                                                    </div>
-                                                                    <div>
-                                                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Previsão Término:</span>
-                                                                        <span class="font-extrabold text-violet-700 dark:text-violet-400">${dtFimFmt}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="pt-2 border-t border-violet-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-users text-violet-500"></i> Quantidade (sem lista nominal):
-                                                                    </span>
-                                                                    <span class="font-black text-violet-700 dark:text-violet-300 tabular-nums">${qtdPrevista} colaborador${qtdPrevista !== 1 ? 'es' : ''}</span>
-                                                                </div>
-                                                                ${t.temaReciclagem ? `
-                                                                    <div class="pt-1 text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2">
-                                                                        <strong>Tema:</strong> ${app.diarioBordo._escapeDbHtml(t.temaReciclagem)}
-                                                                    </div>
-                                                                ` : ''}
-                                                                ${t.observacoesReciclagem ? `
-                                                                    <div class="pt-1 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 rounded-xl px-2.5 py-1.5 line-clamp-2" title="${app.diarioBordo._escapeDbHtml(t.observacoesReciclagem)}">
-                                                                        <strong><i class="fa-solid fa-triangle-exclamation mr-1"></i>Obs.:</strong> ${app.diarioBordo._escapeDbHtml(t.observacoesReciclagem)}
-                                                                    </div>
-                                                                ` : ''}
-                                                                <div class="pt-2 border-t border-violet-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-paperclip text-violet-500"></i> Lista de Presença:
-                                                                    </span>
-                                                                    ${qtdAnexosRec > 0 ? `
-                                                                        <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="text-emerald-700 dark:text-emerald-400 font-extrabold hover:underline flex items-center gap-1 cursor-pointer">
-                                                                            <i class="fa-solid fa-folder-open"></i> Ver Anexos (${qtdAnexosRec})
-                                                                        </button>
-                                                                    ` : `
-                                                                        <span class="text-slate-400 italic">Sem anexo</span>
-                                                                    `}
-                                                                </div>
-                                                            </div>
-
-                                                            <div class="flex items-center justify-between text-xs pt-1">
-                                                                <span class="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[160px]" title="${t.treinadorNome || 'Instrutor'}">
-                                                                    <i class="fa-solid fa-chalkboard-user text-violet-500 mr-1"></i> ${t.treinadorNome || 'Instrutor'}
-                                                                </span>
-                                                                <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                                                    ${diariosRec.length} diário${diariosRec.length !== 1 ? 's' : ''}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                                                            <div class="grid grid-cols-2 gap-2">
-                                                                <button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${t.id}')" class="py-2 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
-                                                                    <i class="fa-solid fa-clipboard-check"></i> Lançar Diário
-                                                                </button>
-                                                                <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
-                                                                    <i class="fa-solid fa-folder-open"></i> Diários (${diariosRec.length})
-                                                                </button>
-                                                            </div>
-                                                            <div class="flex items-center justify-between gap-2 pt-1">
-                                                                ${t.status !== 'Entregue' ? `
-                                                                    <button type="button" onclick="app.diarioBordo.abrirModalFinalizarTurma('${t.id}')" class="flex-1 py-1.5 px-2 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/40 dark:hover:bg-teal-900/60 text-teal-800 dark:text-teal-300 font-extrabold text-[11px] transition flex items-center justify-center gap-1 border border-teal-200 dark:border-teal-800 cursor-pointer">
-                                                                        <i class="fa-solid fa-flag-checkered text-teal-600"></i> Concluir Reciclagem
-                                                                    </button>
-                                                                ` : `
-                                                                    <span class="text-[11px] font-bold text-slate-400 italic">
-                                                                        <i class="fa-solid fa-check-double mr-1 text-teal-500"></i> Reciclagem concluída
-                                                                    </span>
-                                                                `}
-                                                                <div class="flex items-center gap-1 shrink-0">
-                                                                    ${qtdAnexosRec > 0 ? `
-                                                                        <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="w-8 h-8 rounded-xl bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 transition flex items-center justify-center cursor-pointer" title="Ver Lista de Presença Anexada">
-                                                                            <i class="fa-solid fa-paperclip text-xs"></i>
-                                                                        </button>
-                                                                    ` : ''}
-                                                                    ${podeEditar && !t.travada ? `
-                                                                        <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Editar Turma de Reciclagem">
-                                                                            <i class="fa-solid fa-pen-to-square text-xs"></i>
-                                                                        </button>
-                                                                    ` : ''}
-                                                                    ${podeEditar ? `
-                                                                        <button type="button" onclick="app.diarioBordo.excluirTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition flex items-center justify-center cursor-pointer" title="Excluir Turma">
-                                                                            <i class="fa-solid fa-trash-can text-xs"></i>
-                                                                        </button>
-                                                                    ` : ''}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                `;
-                                            }
-
+                                            const d = calcDadosTurma(t);
+                                            const tidEsc = esc(t.id);
                                             return `
-                                                    <div class="space-y-4">
-                                                        <!-- Header do Card -->
-                                                        <div class="flex items-start justify-between gap-3">
-                                                            <div>
-                                                                <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                                                    <span class="inline-block px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
-                                                                        ${t.operacao}
-                                                                    </span>
-                                                                    <span class="inline-block px-2 py-0.5 rounded-lg ${t.tipoTurma === 'integracao' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'} text-[10px] font-bold uppercase tracking-wider border">
-                                                                        ${t.tipoTurma === 'integracao' ? '<i class="fa-solid fa-handshake mr-1"></i> Integração' : '<i class="fa-solid fa-graduation-cap mr-1"></i> Treinamento'}
-                                                                    </span>
-                                                                    ${t.status === 'Entregue' ? `
-                                                                        <span class="px-2 py-0.5 rounded-lg bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 text-[10px] font-black uppercase border border-teal-200 dark:border-teal-800">
-                                                                            <i class="fa-solid fa-flag-checkered mr-1"></i> Entregue
-                                                                        </span>
-                                                                    ` : t.status === 'Integrados' ? `
-                                                                        <span class="px-2 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 text-[10px] font-black uppercase border border-sky-200 dark:border-sky-800">
-                                                                            <i class="fa-solid fa-user-check mr-1"></i> Integrados
-                                                                        </span>
-                                                                    ` : `
-                                                                        <span class="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border border-amber-200 dark:border-amber-800">
-                                                                            <i class="fa-solid fa-clock-rotate-left mr-1"></i> Em Andamento
-                                                                        </span>
-                                                                    `}
-                                                                    ${t.travada ? `<span title="Turma travada contra alteração manual" class="text-slate-400 text-xs"><i class="fa-solid fa-lock"></i></span>` : ''}
-                                                                </div>
-                                                                <h3 data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-extrabold text-slate-800 dark:text-white leading-tight hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer" title="Entrar na turma e ver lista de diários">
-                                                                    ${t.numeroTurma}
-                                                                </h3>
+                                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-4 hover:shadow-md transition">
+                                                    <div class="space-y-3">
+                                                        <!-- Linha 1: Operação + Tipo + Status -->
+                                                        <div class="flex flex-wrap items-center justify-between gap-1.5">
+                                                            <div class="flex flex-wrap items-center gap-1.5">
+                                                                <span class="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-black uppercase border border-emerald-200 dark:border-emerald-800">
+                                                                    ${esc(t.operacao)}
+                                                                </span>
+                                                                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border ${d.tipoClasses}">
+                                                                    ${esc(d.tipoLabel)}
+                                                                </span>
                                                             </div>
-                                                            <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold shrink-0 flex items-center gap-1">
-                                                                <i class="fa-regular fa-clock text-[10px] text-emerald-600"></i> ${t.horario || '08:00 às 17:00'}
+                                                            <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase border ${d.statusClasses}">
+                                                                ${esc(d.statusLabel)}
                                                             </span>
                                                         </div>
 
-                                                        <!-- Datas e Período com Alô Acompanhado -->
-                                                        <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700/60 text-xs space-y-2">
-                                                            <div class="grid grid-cols-2 gap-2">
-                                                                <div>
-                                                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Início:</span>
-                                                                    <span class="font-extrabold text-slate-700 dark:text-slate-200">${dtIniFmt}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Previsão Entrega:</span>
-                                                                    <span class="font-extrabold text-emerald-700 dark:text-emerald-400">${dtFimFmt}</span>
-                                                                </div>
-                                                            </div>
-                                                            ${t.dataInicioOperacao ? `
-                                                                <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-headset text-indigo-500"></i> Entrada Operação:
-                                                                    </span>
-                                                                    <span class="font-extrabold text-indigo-700 dark:text-indigo-400">
-                                                                        ${t.dataInicioOperacao.split('-').reverse().join('/')} (${t.diasAloAcompanhado || 4}d Alô Acompanhado)
-                                                                    </span>
-                                                                </div>
-                                                            ` : ''}
-                                                            ${t.tipoTurma === 'integracao' && (t.responsavelIntegracaoNome || t.responsavelIntegracaoMatricula) ? `
-                                                                <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-[11px]">
-                                                                    <span class="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1">
-                                                                        <i class="fa-solid fa-id-badge text-sky-500"></i> Resp. Integração:
-                                                                    </span>
-                                                                    <span class="font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
-                                                                        ${t.responsavelIntegracaoNome || ''} ${t.responsavelIntegracaoMatricula ? `(${t.responsavelIntegracaoMatricula})` : ''}
-                                                                    </span>
-                                                                </div>
-                                                            ` : ''}
+                                                        <!-- Linha 2: Título & Instrutor -->
+                                                        <div>
+                                                            <h3 data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="text-base font-black text-slate-800 dark:text-white leading-snug hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer truncate" title="${esc(t.numeroTurma)}">
+                                                                ${esc(t.numeroTurma)}
+                                                            </h3>
+                                                            <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                                <i class="fa-solid fa-chalkboard-user text-emerald-600 mr-1"></i> ${esc(d.responsavel)} • ${esc(t.horario || '08:00 às 17:00')}
+                                                            </p>
                                                         </div>
 
-                                                        <!-- Treinador e Métricas de Alunos -->
-                                                        <div class="flex items-center justify-between text-xs pt-1">
-                                                            <div class="flex items-center gap-2">
-                                                                <div class="w-7 h-7 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center font-bold text-xs">
-                                                                    <i class="fa-solid fa-chalkboard-user"></i>
-                                                                </div>
-                                                                <span class="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[130px]" title="${t.treinadorNome || 'Instrutor'}">
-                                                                    ${t.treinadorNome || 'Instrutor'}
-                                                                </span>
+                                                        <!-- Linha 3: 3 Dados Limpos -->
+                                                        <div class="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/70 text-center">
+                                                            <div>
+                                                                <div class="text-[10px] font-bold text-slate-400 uppercase">Período</div>
+                                                                <div class="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">${esc(d.dtIniFmt.slice(0, 5))} - ${esc(d.dtFimFmt.slice(0, 5))}</div>
                                                             </div>
-                                                            <div class="flex items-center gap-2 font-bold">
-                                                                <span class="text-slate-700 dark:text-slate-200" title="Alunos Ativos">
-                                                                    <strong class="text-emerald-600">${ativos}</strong> ativos
-                                                                </span>
-                                                                ${desligados > 0 ? `
-                                                                    <span class="text-rose-500" title="Alunos Desligados / T.O">
-                                                                        (<strong class="line-through">${desligados}</strong> T.O)
-                                                                    </span>
-                                                                ` : ''}
+                                                            <div>
+                                                                <div class="text-[10px] font-bold text-slate-400 uppercase">Quadro</div>
+                                                                <div class="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">${esc(d.quadroTxt)}</div>
                                                             </div>
-                                                        </div>
-
-                                                        <!-- Anexos da Integração (Se houver) -->
-                                                        ${app.diarioBordo.getAnexosTurma(t).length > 0 ? `
-                                                            <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${t.id}')" class="w-full py-1.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-sky-200 dark:border-sky-800 cursor-pointer">
-                                                                <i class="fa-solid fa-paperclip text-sky-600"></i> Ver Anexos (${app.diarioBordo.getAnexosTurma(t).length})
-                                                            </button>
-                                                        ` : ''}
-
-                                                        <!-- Prévia de Alunos -->
-                                                        <div class="pt-2 border-t border-slate-100 dark:border-slate-700">
-                                                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                                <span>Integrantes da Turma (${totalColabs})</span>
-                                                            </div>
-                                                            <div class="flex flex-wrap gap-1.5">
-                                                                ${(t.colaboradores || []).slice(0, 4).map(c => `
-                                                                    <span class="text-[10px] px-2 py-0.5 rounded-md ${c.statusGeral === 'T.O' || c.statusGeral === 'Declínio' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 line-through' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium'} truncate max-w-[140px]">
-                                                                        ${c.nome.split(' ')[0]} ${c.nome.split(' ')[1] || ''}
-                                                                    </span>
-                                                                `).join('')}
-                                                                ${totalColabs > 4 ? `
-                                                                    <span class="text-[10px] px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-bold">
-                                                                        +${totalColabs - 4} alunos
-                                                                    </span>
-                                                                ` : ''}
+                                                            <div>
+                                                                <div class="text-[10px] font-bold text-slate-400 uppercase">Registros</div>
+                                                                <div class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums mt-0.5">${d.diarios.length} diário${d.diarios.length === 1 ? '' : 's'}</div>
                                                             </div>
                                                         </div>
                                                     </div>
 
-                                                    <!-- Ações do Card -->
-                                                    <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                                                        ${Array.isArray(t.respostasCSAT) && t.respostasCSAT.length > 0 ? (() => {
-                                                            const csatT = app.diarioBordo.calcularCSATVerdadeiro(t);
-                                                            return `
-                                                            <div class="mb-2 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-2">
-                                                                <div class="flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
-                                                                    <i class="fa-solid fa-star text-amber-500"></i>
-                                                                    <span>CSAT: <strong>${csatT.percentualCSAT}%</strong> Satisfeitos</span>
-                                                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 font-normal">(Média ${csatT.mediaGeral} | ${csatT.total} ${csatT.total === 1 ? 'avaliação' : 'avaliações'})</span>
-                                                                </div>
-                                                                <button type="button" onclick="app.diarioBordo.abrirModalCSATConsolidado('${t.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[10px] shadow-xs transition flex items-center gap-1 cursor-pointer">
-                                                                    <i class="fa-solid fa-chart-column"></i> Ver CSAT
+                                                    <!-- Linha 4: Ações Limpas -->
+                                                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                                        <div class="flex items-center gap-2 flex-1">
+                                                            ${d.isInt && !d.concluida ? `
+                                                                <button type="button" onclick="app.diarioBordo.finalizarComoIntegrados('${tidEsc}')" class="flex-1 py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                                                    <i class="fa-solid fa-user-check"></i> Finalizar
                                                                 </button>
-                                                            </div>
-                                                            `;
-                                                        })() : (t.status === 'Entregue' || t.status === 'Integrados') ? `
-                                                            <div class="mb-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/60 flex items-center justify-between gap-2 text-slate-500 text-[11px]">
-                                                                <span class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
-                                                                    <i class="fa-solid fa-hourglass-half text-amber-500"></i> Aguardando CSAT dos alunos
-                                                                </span>
-                                                                <button type="button" onclick="app.diarioBordo.abrirModalCSATConsolidado('${t.id}')" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[10px] transition cursor-pointer">
-                                                                    Ver Status
+                                                            ` : !d.isInt ? `
+                                                                <button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${tidEsc}')" class="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                                                    <i class="fa-solid fa-plus"></i> Lançar Diário
                                                                 </button>
-                                                            </div>
-                                                        ` : ''}
-
-                                                        <div class="grid grid-cols-2 gap-2">
-                                                            <button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${t.id}')" class="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95">
-                                                                <i class="fa-solid fa-clipboard-check"></i> Lançar Diário
-                                                            </button>
-                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95" title="Entrar na turma para visualizar diários com resumos e integrantes">
-                                                                <i class="fa-solid fa-folder-open"></i> Diários (${app.diarioBordo.getDiariosDaTurma(t).length})
-                                                            </button>
-                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="py-2 px-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-extrabold text-xs border border-amber-200 dark:border-amber-800 transition flex items-center justify-center gap-1.5 cursor-pointer" title="Ver resumo executivo rápido desta turma">
-                                                                <i class="fa-solid fa-bolt text-amber-500"></i> Resumo Rápido
-                                                            </button>
-                                                            <button type="button" onclick="app.diarioBordo.gerarRelatorioFinalTurmaPDF('${t.id}')" class="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer" title="Gerar Relatório Final Consolidado da Turma (PDF)">
-                                                                <i class="fa-solid fa-file-pdf text-rose-500"></i> Relatório Final
+                                                            ` : ''}
+                                                            <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="flex-1 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-extrabold text-xs border border-indigo-200 dark:border-indigo-800 transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                                                <i class="fa-solid fa-folder-open"></i> Abrir Turma
                                                             </button>
                                                         </div>
-                                                        ${app.diarioBordo.getDiariosDaTurma(t).length > 0 ? `
-                                                            <button type="button" data-tid="${app.diarioBordo._escapeDbHtml(t.id)}" onclick="app.diarioBordo.copiarEmailProntoTurma(this.dataset.tid)" class="w-full py-1.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs border border-emerald-200 dark:border-emerald-800 transition flex items-center justify-center gap-1.5 cursor-pointer" title="Copiar E-mail Pronto com base no último Diário desta turma">
-                                                                <i class="fa-solid fa-envelope-open-text"></i> Copiar E-mail Pronto
+
+                                                        <div class="flex items-center gap-1 shrink-0">
+                                                            <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="w-8 h-8 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center cursor-pointer transition" title="Resumo Rápido">
+                                                                <i class="fa-solid fa-bolt text-xs"></i>
                                                             </button>
-                                                        ` : ''}
-
-                                                        <div class="flex items-center justify-between gap-2 pt-1">
-                                                            ${t.status !== 'Entregue' && t.status !== 'Integrados' ? `
-                                                                ${t.tipoTurma === 'integracao' ? `
-                                                                    <button type="button" onclick="app.diarioBordo.finalizarComoIntegrados('${t.id}')" class="flex-1 py-1.5 px-2 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-extrabold text-[11px] transition flex items-center justify-center gap-1 border border-sky-200 dark:border-sky-800 cursor-pointer">
-                                                                        <i class="fa-solid fa-user-check text-sky-600"></i> Finalizar Integrados
-                                                                    </button>
-                                                                ` : `
-                                                                    <button type="button" onclick="app.diarioBordo.abrirModalFinalizarTurma('${t.id}')" class="flex-1 py-1.5 px-2 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/40 dark:hover:bg-teal-900/60 text-teal-800 dark:text-teal-300 font-extrabold text-[11px] transition flex items-center justify-center gap-1 border border-teal-200 dark:border-teal-800 cursor-pointer">
-                                                                        <i class="fa-solid fa-flag-checkered text-teal-600"></i> Finalizar Turma
-                                                                    </button>
-                                                                `}
-                                                            ` : `
-                                                                <span class="text-[11px] font-bold text-slate-400 italic">
-                                                                    <i class="fa-solid fa-check-double mr-1 text-teal-500"></i> Turma concluída (${t.status})
-                                                                </span>
-                                                            `}
-
-                                                            <div class="flex items-center gap-1 shrink-0">
-                                                                ${podeEditar && !t.travada ? `
-                                                                    <button type="button" onclick="app.diarioBordo.editarTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition flex items-center justify-center cursor-pointer" title="Editar Turma">
-                                                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
-                                                                    </button>
-                                                                ` : t.travada ? `
-                                                                    <span class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700/60 text-slate-400 flex items-center justify-center text-xs" title="Turma Travada">
-                                                                        <i class="fa-solid fa-lock"></i>
-                                                                    </span>
-                                                                ` : ''}
-                                                                ${podeEditar ? `
-                                                                    <button type="button" onclick="app.diarioBordo.excluirTurma('${t.id}')" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition flex items-center justify-center cursor-pointer" title="Excluir Turma">
-                                                                        <i class="fa-solid fa-trash-can text-xs"></i>
-                                                                    </button>
-                                                                ` : ''}
-                                                            </div>
+                                                            ${d.anexos.length > 0 ? `
+                                                                <button type="button" onclick="app.diarioBordo.visualizarAnexoLista('${tidEsc}')" class="w-8 h-8 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 text-sky-600 flex items-center justify-center cursor-pointer transition" title="Ver Anexos (${d.anexos.length})">
+                                                                    <i class="fa-solid fa-paperclip text-xs"></i>
+                                                                </button>
+                                                            ` : ''}
+                                                            ${d.podeEditar && !t.travada ? `
+                                                                <button type="button" onclick="app.diarioBordo.editarTurma('${tidEsc}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 flex items-center justify-center cursor-pointer transition" title="Editar Turma">
+                                                                    <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                                                </button>
+                                                            ` : ''}
+                                                            ${d.podeEditar ? `
+                                                                <button type="button" onclick="app.diarioBordo.excluirTurma('${tidEsc}')" class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center cursor-pointer transition" title="Excluir Turma">
+                                                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                                                </button>
+                                                            ` : ''}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -23675,23 +23730,23 @@ storage: {
                         const buscaRapida = app.diarioBordo.resumoRapidoBusca || '';
 
                         container.innerHTML = `
-                            <div class="w-full max-w-6xl mx-auto p-6 space-y-6 animate-fade-in">
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-4 animate-fade-in">
                                 ${navSubTabsHtml}
 
                                 <!-- Seletor Instantâneo: Operação -> Turma -> PÁ! -->
-                                <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
                                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
                                         <div>
-                                            <h2 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                            <h2 class="text-lg sm:text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
                                                 <i class="fa-solid fa-bolt text-amber-500"></i> Resumo Rápido por Operação &amp; Turma
                                             </h2>
                                             <p class="text-xs text-slate-500 dark:text-slate-400">
-                                                Clique na operação e depois na turma para ver na hora como está o andamento completo.
+                                                Selecione a operação e a turma para visualizar o resumo direto em 5 segundos.
                                             </p>
                                         </div>
                                         <div class="relative">
                                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                            <input type="text" id="db-resumo-rapido-busca" value="${esc(buscaRapida)}" oninput="app.diarioBordo.resumoRapidoBusca = this.value; app.diarioBordo.filtrarResumoRapidoDOM();" placeholder="Buscar operação, turma ou instrutor..." class="pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-72">
+                                            <input type="text" id="db-resumo-rapido-busca" value="${esc(buscaRapida)}" oninput="app.diarioBordo.resumoRapidoBusca = this.value; app.diarioBordo.filtrarResumoRapidoDOM();" placeholder="Buscar operação, turma ou instrutor..." class="pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-full sm:w-72">
                                         </div>
                                     </div>
 
@@ -24051,7 +24106,8 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- Resumo Executivo & Gráfico em Tempo Real -->
+                                ${!isReciclagemForm ? `
+                                <!-- Resumo Executivo & Gráfico em Tempo Real (Exclusivo Turmas Regulares) -->
                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
                                     <div class="flex flex-col lg:flex-row items-center justify-between gap-6">
                                         <!-- 4 KPI Cards -->
@@ -24088,8 +24144,9 @@ storage: {
                                         </div>
                                     </div>
                                 </div>
+                                ` : ''}
 
-                                <!-- SEÇÃO DE PRESENÇA: RECICLAGEM POR QUANTIDADE + ANEXO OU CHAMADA NOMINAL -->
+                                <!-- SEÇÃO DE PRESENÇA: RECICLAGEM OBJETIVA OU CHAMADA NOMINAL -->
                                 ${isReciclagemForm ? `
                                     <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-violet-200 dark:border-violet-800/60 space-y-5">
                                         <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
@@ -24097,45 +24154,72 @@ storage: {
                                                 <i class="fa-solid fa-rotate text-violet-600 text-lg"></i>
                                                 <div>
                                                     <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                                                        Presença por Quantidade (Turma de Reciclagem)
-                                                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300">Sem cadastro de alunos</span>
+                                                        Diário de Bordo — Reciclagem
+                                                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300">Preenchimento Objetivo</span>
                                                     </h3>
                                                     <p class="text-[11px] text-slate-400">
-                                                        Informe apenas as quantidades do dia e anexe a lista de presença assinada (assim como na Integração).
+                                                        Registre o tema abordado, a dinâmica/metodologia aplicada, quantidade de participantes presentes, fotos e anexos/evidências.
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div class="px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-extrabold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                                                Presentes hoje: <span id="db-rec-presentes-live">${contForm.PR}</span>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                            <div class="md:col-span-3">
+                                                <label class="block text-[11px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider mb-1.5">
+                                                    <i class="fa-solid fa-book-open mr-1"></i> * Tema (Assunto abordado na reciclagem):
+                                                </label>
+                                                <input type="text" id="db-input-rec-tema" value="${app.diarioBordo._escapeDbHtml(d.temaReciclagem || (turmaSelecionada && turmaSelecionada.temaReciclagem) || '')}" oninput="if(app.diarioBordo.diarioEmEdicao) app.diarioBordo.diarioEmEdicao.temaReciclagem = this.value;" placeholder="Ex: Atualização de procedimento de retenção, postura em linha, novo fluxo sistêmico..." class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider mb-1.5">
+                                                    <i class="fa-solid fa-users mr-1"></i> * Quantidade de Participantes:
+                                                </label>
+                                                <input type="number" min="1" max="999" id="db-input-previstos-vis" value="${contForm.P || (turmaSelecionada && parseInt(turmaSelecionada.quantidadeAlunos, 10)) || 1}" oninput="app.diarioBordo.atualizarSecoesFormulario()" class="w-full px-4 py-2.5 rounded-xl bg-violet-50/70 dark:bg-slate-900 border-2 border-violet-300 dark:border-violet-700 text-sm font-black tabular-nums text-violet-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
                                             </div>
                                         </div>
 
-                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Quantidade Prevista (Em Sala):</label>
-                                                <input type="number" min="1" max="999" id="db-input-previstos-vis" value="${contForm.P || 1}" oninput="app.diarioBordo.atualizarSecoesFormulario()" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-black tabular-nums text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1.5">Faltas / ABS (Quantidade):</label>
-                                                <input type="number" min="0" max="999" id="db-input-rec-abs" value="${parseInt(d.absQtd, 10) || 0}" oninput="app.diarioBordo.atualizarSecoesFormulario()" class="w-full px-4 py-2.5 rounded-xl bg-amber-50/70 dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-sm font-black tabular-nums text-amber-800 dark:text-amber-300 outline-none focus:ring-2 focus:ring-amber-500">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1.5">Desligamentos / T.O (Opcional):</label>
-                                                <input type="number" min="0" max="999" id="db-input-rec-desl" value="${parseInt(d.deslQtd, 10) || 0}" oninput="app.diarioBordo.atualizarSecoesFormulario()" class="w-full px-4 py-2.5 rounded-xl bg-rose-50/70 dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-sm font-black tabular-nums text-rose-800 dark:text-rose-300 outline-none focus:ring-2 focus:ring-rose-500">
-                                            </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                                                <i class="fa-solid fa-chalkboard text-violet-600 mr-1"></i> * Dinâmica / Atividade (Metodologia utilizada):
+                                            </label>
+                                            <textarea id="db-input-rec-dinamica" autocomplete="off" rows="4" oninput="if(app.diarioBordo.diarioEmEdicao) { app.diarioBordo.diarioEmEdicao.dinamicaAtividade = this.value; app.diarioBordo.diarioEmEdicao.relatoGeral = this.value; }" placeholder="Descreva a dinâmica ou metodologia utilizada na reciclagem, exercícios práticos, escutas ou role-play realizado..." class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500 leading-relaxed">${app.diarioBordo._escapeDbHtml(d.dinamicaAtividade || d.relatoGeral || '')}</textarea>
                                         </div>
 
-                                        <!-- Anexo da Lista de Presença (igual Integração) -->
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                                <i class="fa-solid fa-clipboard-list text-amber-500 mr-1"></i> Observações / Eventos Importantes (Opcional):
+                                            </label>
+                                            <textarea id="db-input-rec-obs" autocomplete="off" rows="2" oninput="if(app.diarioBordo.diarioEmEdicao) app.diarioBordo.diarioEmEdicao.observacoesReciclagem = this.value;" placeholder="Eventos importantes acontecidos durante a reciclagem, intercorrências de sistema, alinhamentos..." class="w-full p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">${app.diarioBordo._escapeDbHtml(d.observacoesReciclagem || (turmaSelecionada && turmaSelecionada.observacoesReciclagem) || '')}</textarea>
+                                        </div>
+
+                                        <!-- FOTOS DA REALIZAÇÃO DA ATIVIDADE -->
                                         <div class="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-3">
-                                            <div class="flex items-center justify-between gap-2">
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
                                                 <div class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                                    <i class="fa-solid fa-paperclip text-violet-600"></i> Anexar Lista de Presença
+                                                    <i class="fa-solid fa-camera text-emerald-600"></i> Fotos (Registros fotográficos da realização)
                                                 </div>
-                                                <span class="text-[11px] font-bold text-violet-600 dark:text-violet-400">Fotos, PDF, DOC ou Planilha (até 12MB)</span>
+                                                <label class="cursor-pointer px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 text-xs font-extrabold transition flex items-center gap-2 shadow-xs">
+                                                    <i class="fa-solid fa-images"></i> Adicionar Fotos
+                                                    <input type="file" accept="image/*" multiple onchange="app.diarioBordo.carregarFotosReciclagem(event)" class="hidden">
+                                                </label>
+                                            </div>
+                                            <div id="db-rec-fotos-wrap">
+                                                ${app.diarioBordo.renderFotosReciclagemHtml(d)}
+                                            </div>
+                                        </div>
+
+                                        <!-- ANEXOS / EVIDÊNCIAS (MATERIAIS, ATIVIDADES, LISTA DE PRESENÇA) -->
+                                        <div class="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-3">
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                                <div class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                                    <i class="fa-solid fa-paperclip text-violet-600"></i> Anexos / Evidências (Materiais, atividades e lista de presença)
+                                                </div>
+                                                <span class="text-[11px] font-bold text-violet-600 dark:text-violet-400">PDF, PPTX, DOC, XLSX, Imagens (até 12MB)</span>
                                             </div>
                                             <div class="flex flex-wrap items-center gap-3">
                                                 <label class="cursor-pointer px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-dashed border-violet-300 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-slate-800 text-violet-800 dark:text-violet-200 text-xs font-bold transition flex items-center gap-2.5 shadow-xs">
-                                                    <i class="fa-solid fa-cloud-arrow-up text-violet-600 text-base"></i> Anexar Lista de Presença
+                                                    <i class="fa-solid fa-cloud-arrow-up text-violet-600 text-base"></i> Anexar Evidências / Materiais
                                                     <input type="file" multiple onchange="app.diarioBordo.carregarAnexoListaPresenca(event, 'diario')" class="hidden">
                                                 </label>
                                             </div>
@@ -24171,7 +24255,7 @@ storage: {
                                                     <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
                                                         <th class="p-3">Colaborador / Aluno</th>
                                                         <th class="p-3 w-56">Presença / Ocorrência no Dia</th>
-                                                        <th class="p-3">Perfil do Colaborador no Dia</th>
+                                                        <th class="p-3">Perfil do Colaborador no Dia <span class="text-rose-500">*</span> <span class="normal-case font-semibold text-amber-600 dark:text-amber-400">(obrigatório)</span></th>
                                                         <th class="p-3 w-28 text-center">Status</th>
                                                     </tr>
                                                 </thead>
@@ -24183,6 +24267,7 @@ storage: {
                                     </div>
                                 `}
 
+                                ${!isReciclagemForm ? `
                                 <!-- REMANEJAMENTO DE QUADRO (OPCIONAL) -->
                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
                                     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
@@ -24264,7 +24349,7 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- DESCRITIVO DE COMO FOI A AULA (LÁ NO FINAL) -->
+                                <!-- DESCRITIVO DE COMO FOI A AULA (LÁ NO FINAL - SOMENTE TURMAS REGULARES) -->
                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
                                     <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700">
                                         <i class="fa-solid fa-comment-dots text-emerald-600"></i>
@@ -24275,6 +24360,7 @@ storage: {
                                     </p>
                                     <textarea id="db-input-relato" autocomplete="off" rows="5" oninput="if(app.diarioBordo.diarioEmEdicao) app.diarioBordo.diarioEmEdicao.relatoGeral = this.value;" placeholder="Ex: Apresentação de sistemas, técnicas de atendimento cordial e seguro, escutas operacionais, simulação prática..." class="w-full p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed">${app.diarioBordo._escapeDbHtml(d.relatoGeral || '')}</textarea>
                                 </div>
+                                ` : ''}
 
                                 <!-- Rodapé de Ações Finais -->
                                 <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -26670,7 +26756,6 @@ storage: {
                                         <h2 class="text-3xl font-black text-slate-800 dark:text-white">${u.nome}</h2>
                                         <p class="text-slate-500 font-bold mb-6">Matrícula: ${u.matricula}</p>
                                     </div>
-                                    <button onclick="app.admin.openEditUser('${u.matricula}')" class="px-5 py-2.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-bold rounded-xl text-sm shadow-sm hover:bg-blue-100 transition"><i class="fa-solid fa-pen-to-square mr-2"></i> Editar Perfil</button>
                                 </div>
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -30335,18 +30420,32 @@ storage: {
                             columnStyles: { 0: { fontStyle: 'bold', width: 62, fillColor: [248, 250, 252] }, 1: { width: 120 } }
                         });
 
+                        // Ficha Técnica (sem Headcount, Diário de Bordo da Equipe ou Planos de Ação Cadastrados) e com Área Responsável
+                        const areasSet = new Set();
+                        if (plano.areaResponsavel) areasSet.add(cleanText(plano.areaResponsavel));
+                        etapas.forEach(e => {
+                            const tp = String(e.responsavelTipo || '').trim();
+                            if (tp === 'Monitor') areasSet.add('Qualidade (Monitoria)');
+                            else if (tp === 'Treinador') areasSet.add('Treinamento & Capacitação');
+                            else if (tp === 'Ambos') {
+                                areasSet.add('Qualidade (Monitoria)');
+                                areasSet.add('Treinamento & Capacitação');
+                            } else if (tp) {
+                                areasSet.add(cleanText(tp));
+                            }
+                        });
+                        const areaResponsavelTexto = areasSet.size > 0 ? Array.from(areasSet).join(' / ') : 'Qualidade & Treinamento';
+
                         // 2. FICHA TÉCNICA DA OPERAÇÃO
                         doc.autoTable({
                             startY: doc.lastAutoTable.finalY + 4,
                             head: [['2. FICHA TÉCNICA DA OPERAÇÃO', 'INFORMAÇÕES']],
                             body: [
                                 ['Operação / Projeto', opNome],
-                                ['Headcount Operacional', `${hc} operadores`],
+                                ['Área Responsável', areaResponsavelTexto],
                                 ['Monitor de Qualidade Responsável', `${cleanText(plano.monitorNome || 'Não definido')} ${plano.monitorMatricula ? `(Mat: #${plano.monitorMatricula})` : ''}`],
                                 ['Treinador Responsável (Capacitação)', `${cleanText(plano.treinadorNome || 'Não definido')} ${plano.treinadorMatricula ? `(Mat: #${plano.treinadorMatricula})` : ''}`],
                                 ['Período Geral Estimado', `${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis de trabalho)`],
-                                ['Diário de Bordo da Equipe', `${totalAtts} atualização(ões) registrada(s)`],
-                                ['Planos de Ação Cadastrados', `${todosPA.length} ação(ões) mapeada(s) (${paConcluidos} resolvida(s), ${paPendentes} pendente(s))`],
                                 ['Relatório Emitido Por', `${emissorNome} (${emissorCargo})`]
                             ],
                             theme: 'grid',
@@ -30356,6 +30455,12 @@ storage: {
                         });
 
                         // 3. SÍNTESE DO CRONOGRAMA GANTT
+                        const mapAreaEtapa = (tp) => {
+                            if (tp === 'Monitor') return 'Qualidade';
+                            if (tp === 'Treinador') return 'Treinamento';
+                            if (tp === 'Ambos') return 'Qualidade & Treinamento';
+                            return cleanText(tp || 'Qualidade');
+                        };
                         const etapasTableBody = etapas.map((e, idx) => {
                             const dtIni = e.dataInicio ? this._formatarDataBR(e.dataInicio) : 'A definir';
                             const dtFim = e.semPrevisao ? 'Sem Previsão' : (e.dataFim ? this._formatarDataBR(e.dataFim) : 'A definir');
@@ -30363,10 +30468,12 @@ storage: {
                             const st = e.concluido
                                 ? `Concluído (${e.dataConclusao ? this._formatarDataBR(e.dataConclusao) : 'OK'})`
                                 : 'Pendente';
+                            const areaEtp = cleanText(e.areaResponsavel || mapAreaEtapa(e.responsavelTipo));
+                            const respEtp = cleanText(e.responsavelNome || e.responsavelTipo || 'Monitor');
                             return [
                                 `${idx + 1}. ${cleanText(e.nome)}`,
                                 `${dtIni} a ${dtFim}\n${duracaoTexto}`,
-                                cleanText(e.responsavelNome || e.responsavelTipo || 'Monitor'),
+                                `${areaEtp}\n(${respEtp})`,
                                 cleanText(e.qtdEstimada || '-'),
                                 st
                             ];
@@ -30374,7 +30481,7 @@ storage: {
 
                         doc.autoTable({
                             startY: doc.lastAutoTable.finalY + 5,
-                            head: [['3. SÍNTESE DO CRONOGRAMA GANTT', 'PERÍODO', 'RESPONSÁVEL', 'META / QTD', 'STATUS']],
+                            head: [['3. SÍNTESE DO CRONOGRAMA GANTT', 'PERÍODO', 'ÁREA / RESPONSÁVEL', 'META / QTD', 'STATUS']],
                             body: etapasTableBody.length > 0 ? etapasTableBody : [['-', '-', '-', '-', 'Nenhuma etapa cadastrada']],
                             theme: 'grid',
                             headStyles: { ...baseHeadStyles, fillColor: [30, 41, 59] },
@@ -30421,7 +30528,7 @@ storage: {
                                 head: [[`Etapa ${idx + 1}: ${cleanText(etp.nome)}`, `Status: ${st}`]],
                                 body: [
                                     ['Período & Duração', `${dtIni} até ${dtFim} ${duracaoDet} | Meta: ${cleanText(etp.qtdEstimada || 'Não informada')}`],
-                                    ['Responsável Designado', `${cleanText(etp.responsavelNome || etp.responsavelTipo || 'Monitor')} (${cleanText(etp.responsavelTipo || 'Monitor')})`],
+                                    ['Área & Responsável Designado', `${cleanText(etp.areaResponsavel || mapAreaEtapa(etp.responsavelTipo))} — ${cleanText(etp.responsavelNome || etp.responsavelTipo || 'Monitor')}`],
                                     ['O que é feito / Entregáveis', cleanText(etp.descricao || 'Atividades padrão de homologação e implantação da ferramenta.')],
                                     ['Diário de Bordo & Atualizações', attsStr],
                                     ['Planos de Ação Desta Etapa', paStr]
@@ -30681,7 +30788,7 @@ storage: {
                                     <div class="section-title">2. Ficha Técnica da Operação</div>
                                     <table>
                                         <tr><td style="width:30%; font-weight:bold;">Operação / Projeto</td><td>${esc(opNome)}</td></tr>
-                                        <tr><td style="font-weight:bold;">Headcount Operacional</td><td>${hc} operadores</td></tr>
+                                        <tr><td style="font-weight:bold;">Área Responsável</td><td>${esc(plano.areaResponsavel || 'Qualidade (Monitoria) / Treinamento & Capacitação')}</td></tr>
                                         <tr><td style="font-weight:bold;">Monitor Responsável</td><td>${esc(plano.monitorNome || 'Não definido')} ${plano.monitorMatricula ? `(Mat: #${esc(plano.monitorMatricula)})` : ''}</td></tr>
                                         <tr><td style="font-weight:bold;">Treinador Responsável</td><td>${esc(plano.treinadorNome || 'Não definido')} ${plano.treinadorMatricula ? `(Mat: #${esc(plano.treinadorMatricula)})` : ''}</td></tr>
                                         <tr><td style="font-weight:bold;">Período Geral Estimado</td><td>${dtInicioFmt} até ${dtFimFmt} (${totalDiasUteis} dias úteis)</td></tr>
@@ -30696,7 +30803,7 @@ storage: {
                                             <tr>
                                                 <th># Etapa</th>
                                                 <th>Período (Dias Úteis)</th>
-                                                <th>Responsável</th>
+                                                <th>Área / Responsável</th>
                                                 <th>Meta / Qtd</th>
                                                 <th>Status</th>
                                             </tr>
@@ -30706,7 +30813,7 @@ storage: {
                                                 <tr>
                                                     <td><strong>${idx + 1}. ${esc(e.nome)}</strong></td>
                                                     <td>${e.dataInicio ? this._formatarDataBR(e.dataInicio) : 'A definir'} até ${e.semPrevisao ? 'Sem Previsão' : (e.dataFim ? this._formatarDataBR(e.dataFim) : 'A definir')} ${e.semPrevisao ? '(Sem prazo fixo)' : `(${e.diasEstimados || 1} dias úteis)`}</td>
-                                                    <td>${esc(e.responsavelNome || e.responsavelTipo || 'Monitor')}</td>
+                                                    <td>${esc(e.areaResponsavel || (e.responsavelTipo === 'Treinador' ? 'Treinamento' : (e.responsavelTipo === 'Ambos' ? 'Qualidade & Treinamento' : 'Qualidade')))} — ${esc(e.responsavelNome || e.responsavelTipo || 'Monitor')}</td>
                                                     <td>${esc(e.qtdEstimada || '-')}</td>
                                                     <td><span class="badge ${e.concluido ? 'badge-green' : 'badge-gray'}">${e.concluido ? 'Concluído' : 'Pendente'}</span></td>
                                                 </tr>
@@ -46863,6 +46970,10 @@ storage: {
                 },
 
                 openEditUser(mat) {
+                    const canEditUsers = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev') || app.hasAdminAccess('gestao_equipe');
+                    if (!canEditUsers) {
+                        return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para editar dados ou perfil de usuário.", "error");
+                    }
                     const u = app.users.find(x => x.matricula === mat);
                     if(!u) return;
                 
@@ -46925,6 +47036,12 @@ storage: {
                 },
 
                 saveUserEdit() {
+                    const canEditUsers = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev') || app.hasAdminAccess('gestao_equipe');
+                    if (!canEditUsers) {
+                        const m = document.getElementById('edit-user-modal');
+                        if (m) m.classList.add('hidden');
+                        return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para salvar alterações de perfil.", "error");
+                    }
                     const originalMat = document.getElementById('edit-mat-original').value;
                     const nome = document.getElementById('edit-nome').value.trim();
                     const mat = document.getElementById('edit-mat').value.trim();
@@ -53944,8 +54061,8 @@ Object.assign(app.ui, {
                                         <!-- Rodapé com Contexto, Prazo e Salvamento -->
                                         <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-black/10 dark:border-white/10 text-[10px] font-bold">
                                             <div class="flex items-center gap-1.5">
-                                                <select class="postit-context-select bg-white/65 dark:bg-slate-900/60 border border-black/10 dark:border-white/10 rounded-lg px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer" data-postit-id="${p.id}" title="Contexto GTD (onde fazer)">
-                                                    ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${p.gtdContext === c.id ? 'selected' : ''}>${c.id || '@Contexto'}</option>`).join('')}
+                                                <select class="postit-context-select bg-white/65 dark:bg-slate-900/60 border border-black/10 dark:border-white/10 rounded-lg px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer" data-postit-id="${p.id}" title="Objetivo da tarefa">
+                                                    ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${p.gtdContext === c.id ? 'selected' : ''}>${c.id ? c.label : 'Objetivo'}</option>`).join('')}
                                                 </select>
                                                 <input type="date" class="postit-due-input bg-white/65 dark:bg-slate-900/60 border border-black/10 dark:border-white/10 rounded-lg px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer w-[108px]" data-postit-id="${p.id}" value="${p.dueDate || ''}" title="Prazo / Follow-up" />
                                                 ${dueBadge ? `<span class="px-1.5 py-0.5 rounded-md border ${dueBadge.cls}">${dueBadge.label}</span>` : ''}
@@ -54478,7 +54595,7 @@ Object.assign(app.ui, {
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>1. Capturar:</strong> Anote tudo na Caixa de Entrada sem filtrar na hora.</div>
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>2. Regra dos 2 Minutos:</strong> Se leva menos de 2 min, use o modo <strong>2m</strong> e conclua imediatamente.</div>
                                                 <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>3. Organizar:</strong> Separe entre <em>Próxima Ação</em> (eu faço), <em>Aguardando</em> (cobrar) ou <em>Projeto</em>.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>4. Revisar & Agir:</strong> Cheque @Contexto (@PC, @Reunião) e zere sua Caixa de Entrada.</div>
+                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>4. Revisar & Agir:</strong> Filtre por Objetivo (Aumentar Faturamento, Fidelizar ou Diminuir Custos) e zere sua Caixa de Entrada.</div>
                                             </div>
                                         </div>
                                         <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 shadow-sm">
@@ -54636,7 +54753,7 @@ Object.assign(app.ui, {
                                                 <option value="none" ${st.filterTriad === 'none' ? 'selected' : ''}>Sem Esfera</option>
                                             </select>
                                             <select onchange="app.ui.gtdSetFilter('filterContext', this.value)" class="px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none">
-                                                <option value="">Todos Contextos</option>
+                                                <option value="">Todos Objetivos</option>
                                                 ${app.gtd.GTD_CONTEXTS.filter(c => c.id).map(c => `<option value="${c.id}" ${st.filterContext === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}
                                             </select>
                                             <button type="button" onclick="app.ui.gtdSetFilter('filterTwoMin', 'toggle')" class="px-2.5 py-1.5 rounded-xl border text-xs font-extrabold transition ${st.filterTwoMin ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">
@@ -54677,7 +54794,7 @@ Object.assign(app.ui, {
                                 text: cur.text || '',
                                 triad: cur.triad || 'importante',
                                 gtdStatus: 'proxima',
-                                gtdContext: cur.gtdContext || '@pc',
+                                gtdContext: app.gtd.GTD_CONTEXTS.some(c => c.id === cur.gtdContext) ? (cur.gtdContext || '') : 'aumentar_faturamento',
                                 delegatedTo: cur.delegatedTo || '',
                                 nextAction: cur.nextAction || '',
                                 dueDate: cur.dueDate || ''
@@ -54757,7 +54874,7 @@ Object.assign(app.ui, {
                                         </div>
                                     ` : `
                                         <div>
-                                            <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Contexto (@)</label>
+                                            <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Objetivo da Tarefa</label>
                                             <select onchange="if(app.ui._gtdWizardDraft)app.ui._gtdWizardDraft.gtdContext=this.value" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold outline-none">
                                                 ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${wDraft.gtdContext === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}
                                             </select>
@@ -54868,8 +54985,8 @@ Object.assign(app.ui, {
 
                                 <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-bold">
                                     <div class="flex items-center gap-1.5">
-                                        <select onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'gtdContext', this.value)" class="bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] outline-none">
-                                            ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${n.gtdContext === c.id ? 'selected' : ''}>${c.id || '@Contexto'}</option>`).join('')}
+                                        <select onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'gtdContext', this.value)" class="bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] outline-none" title="Objetivo da tarefa">
+                                            ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${n.gtdContext === c.id ? 'selected' : ''}>${c.id ? c.label : 'Objetivo'}</option>`).join('')}
                                         </select>
                                         <input type="date" value="${n.dueDate || ''}" onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'dueDate', this.value)" class="bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] outline-none w-[105px]" title="Definir prazo" />
                                     </div>
