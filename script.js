@@ -905,6 +905,7 @@ storage: {
                             if (app.currentUser && !app.isAdmin) {
                                 const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
                                 if (updatedUser) app.currentUser = updatedUser;
+                                if (app.gtd && typeof app.gtd.syncFromUser === 'function') app.gtd.syncFromUser();
                             }
 
                             // --- INTERCEPTAÇÃO: LINK DE COMPARTILHAMENTO DE APRESENTAÇÃO (GUEST) ---
@@ -1170,6 +1171,15 @@ storage: {
                     const existingLogins = Number(existing.loginCount || 0);
                     const localLogins = Number(localU.loginCount || 0);
                     if (existingLogins > localLogins) merged.loginCount = existingLogins;
+                    const remoteGtdTs = Number((existing && existing.gtdData && existing.gtdData.updatedAt) || 0);
+                    const localGtdTs = Number((localU && localU.gtdData && localU.gtdData.updatedAt) || 0);
+                    if (remoteGtdTs > localGtdTs) {
+                        merged.gtdData = existing.gtdData;
+                    } else if (localGtdTs > remoteGtdTs) {
+                        merged.gtdData = localU.gtdData;
+                    } else if (existing && existing.gtdData && !localU.gtdData) {
+                        merged.gtdData = existing.gtdData;
+                    }
                     return merged;
                 },
                 saveUsers(options) { 
@@ -2812,6 +2822,345 @@ storage: {
                         `;
                     });
                     container.innerHTML = html;
+                },
+
+                getQualidadeIndicatorsReminder(targetUser = null) {
+                    const user = targetUser || app.currentUser;
+                    if (app.isAdmin || app.isGuest || !user || !app.isUserQualidade(user)) return null;
+
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = now.getMonth() + 1;
+                    const daysInMonth = new Date(y, m, 0).getDate();
+                    const daysLeft = daysInMonth - now.getDate();
+                    if (daysLeft < 0 || daysLeft > 5) return null;
+
+                    const monthKey = `${y}-${String(m).padStart(2, '0')}`;
+                    const todayStr = `${monthKey}-${String(now.getDate()).padStart(2, '0')}`;
+                    const res = (user.results && user.results[monthKey]) || {};
+                    const goals = Array.isArray(app.config && app.config.goals) ? app.config.goals : [];
+                    const pendencias = [];
+
+                    let checkedMonitoria = false;
+                    let checkedCalib = false;
+                    let checkedAcao = false;
+
+                    goals.forEach(g => {
+                        if (!g) return;
+                        if (g.id === 'g1' || (g.type === 'percent' && String(g.title || '').toLowerCase().includes('monitor'))) {
+                            checkedMonitoria = true;
+                            const meta = (g.id === 'g1') ? 400 : (parseFloat(res[g.id]?.meta) || 0);
+                            const real = parseFloat(res[g.id]?.real) || 0;
+                            if (meta > 0 && real < meta) {
+                                const falta = Math.max(1, Math.ceil(meta - real));
+                                pendencias.push({
+                                    id: g.id,
+                                    label: g.title || 'Monitorias',
+                                    icon: 'fa-headphones',
+                                    current: `${real} / ${meta}`,
+                                    missing: falta === 1 ? 'Falta 1 monitoria' : `Faltam ${falta} monitorias`,
+                                    tab: 'meu_painel'
+                                });
+                            }
+                        } else if (g.type === 'calibracao') {
+                            checkedCalib = true;
+                            const val = parseInt(res[g.id]?.val) || 0;
+                            if (val < 2) {
+                                const falta = 2 - val;
+                                pendencias.push({
+                                    id: g.id,
+                                    label: g.title || 'Calibrações',
+                                    icon: 'fa-handshake',
+                                    current: `${val} / 2 sessões`,
+                                    missing: falta === 1 ? 'Falta 1 calibração' : `Faltam ${falta} calibrações`,
+                                    tab: 'ata_reuniao'
+                                });
+                            }
+                        } else if (g.type === 'actions') {
+                            checkedAcao = true;
+                            const val = parseInt(res[g.id]?.val) || 0;
+                            if (val < 5) {
+                                const falta = 5 - val;
+                                pendencias.push({
+                                    id: g.id,
+                                    label: g.title || 'Ações Presenciais',
+                                    icon: 'fa-bolt',
+                                    current: `${val} / 5 ações`,
+                                    missing: falta === 1 ? 'Falta 1 ação' : `Faltam ${falta} ações`,
+                                    tab: 'registrar_acao'
+                                });
+                            }
+                        } else if (g.type === 'percent') {
+                            const meta = parseFloat(res[g.id]?.meta) || 0;
+                            const real = parseFloat(res[g.id]?.real) || 0;
+                            if (meta > 0 && real < meta) {
+                                const falta = Math.max(1, Math.ceil(meta - real));
+                                pendencias.push({
+                                    id: g.id,
+                                    label: g.title || 'Indicador',
+                                    icon: g.icon || 'fa-bullseye',
+                                    current: `${real} / ${meta}`,
+                                    missing: `Faltam ${falta} para bater a meta`,
+                                    tab: 'meu_painel'
+                                });
+                            }
+                        }
+                    });
+
+                    if (!checkedMonitoria) {
+                        const realMon = parseFloat(res.g1?.real) || 0;
+                        if (realMon < 400) {
+                            pendencias.push({
+                                id: 'g1',
+                                label: 'Monitorias',
+                                icon: 'fa-headphones',
+                                current: `${realMon} / 400`,
+                                missing: `Faltam ${Math.ceil(400 - realMon)} monitorias`,
+                                tab: 'meu_painel'
+                            });
+                        }
+                    }
+                    if (!checkedCalib) {
+                        const valCal = parseInt(res.g3?.val) || 0;
+                        if (valCal < 2) {
+                            pendencias.push({
+                                id: 'g3',
+                                label: 'Calibrações',
+                                icon: 'fa-handshake',
+                                current: `${valCal} / 2 sessões`,
+                                missing: `Falta(m) ${2 - valCal} calibração(ões)`,
+                                tab: 'ata_reuniao'
+                            });
+                        }
+                    }
+                    if (!checkedAcao) {
+                        const valAct = parseInt(res.g4?.val) || 0;
+                        if (valAct < 5) {
+                            pendencias.push({
+                                id: 'g4',
+                                label: 'Ações Presenciais',
+                                icon: 'fa-bolt',
+                                current: `${valAct} / 5 ações`,
+                                missing: `Falta(m) ${5 - valAct} ação(ões)`,
+                                tab: 'registrar_acao'
+                            });
+                        }
+                    }
+
+                    const fbStatus = res.status || 'pendente';
+                    if (fbStatus !== 'validado') {
+                        const fbDateFmt = res.fbDate ? res.fbDate.split('-').reverse().join('/') : '';
+                        pendencias.push({
+                            id: 'feedback_gestor',
+                            label: 'Feedback & Validação',
+                            icon: 'fa-comments',
+                            current: fbStatus === 'agendado' ? `Agendado (${fbDateFmt || 'definir'})` : 'Pendente',
+                            missing: fbStatus === 'agendado' ? 'Concluir feedback e assinar' : 'Realizar feedback com gestor',
+                            tab: 'meu_painel'
+                        });
+                    }
+
+                    if (pendencias.length === 0) return null;
+                    return { monthKey, todayStr, daysLeft, daysInMonth, pendencias };
+                },
+
+                updateIndicatorsHeaderPill() {
+                    const pill = document.getElementById('header-ind-alert-pill');
+                    const txtEl = document.getElementById('header-ind-alert-text');
+                    if (!pill || !txtEl) return;
+                    const info = this.getQualidadeIndicatorsReminder();
+                    if (!info) {
+                        pill.classList.add('hidden');
+                        pill.classList.remove('inline-flex');
+                        return;
+                    }
+                    const prazoTxt = info.daysLeft === 0 ? 'Fecha HOJE' : (info.daysLeft === 1 ? 'Falta 1 dia' : `Faltam ${info.daysLeft}d`);
+                    txtEl.textContent = `${prazoTxt} • ${info.pendencias.length} meta(s)`;
+                    pill.classList.remove('hidden');
+                    pill.classList.add('inline-flex');
+                },
+
+                buildIndicatorsAlertCardHtml() {
+                    const info = this.getQualidadeIndicatorsReminder();
+                    if (!info) return '';
+                    const esc = app.utils.escapeHtml;
+                    const prazoLabel = info.daysLeft === 0
+                        ? 'Último dia para fechar o mês!'
+                        : (info.daysLeft === 1 ? 'Falta apenas 1 dia para fechar o mês!' : `Faltam ${info.daysLeft} dias para fechar o mês!`);
+                    return `
+                        <div class="mb-6 rounded-3xl p-4 sm:p-5 bg-gradient-to-r from-rose-50 via-amber-50 to-orange-50 dark:from-rose-950/50 dark:via-amber-950/40 dark:to-slate-900 border-2 border-rose-300 dark:border-rose-700/70 shadow-md">
+                            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <div class="flex items-start gap-3">
+                                    <div class="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center text-lg shrink-0 shadow-md">
+                                        <i class="fa-solid fa-bell-exclamation fa-triangle-exclamation animate-pulse"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider">${esc(prazoLabel)}</span>
+                                            <span class="text-[11px] font-bold text-rose-700 dark:text-rose-300">${info.pendencias.length} indicador(es) ainda abaixo da meta</span>
+                                        </div>
+                                        <h3 class="text-sm sm:text-base font-black text-slate-800 dark:text-white mt-1">
+                                            Lembrete Diário de Fechamento de Metas (${esc(info.monthKey)})
+                                        </h3>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="app.ui.openIndicatorsAlertModal()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm transition shrink-0 self-start lg:self-center cursor-pointer">
+                                    Ver Detalhes & Agir
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-3.5">
+                                ${info.pendencias.map(p => `
+                                    <button type="button" onclick="app.ui.renderTab('${p.tab}', true)" class="text-left p-3 rounded-2xl bg-white/90 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-800/60 hover:border-rose-400 transition flex items-center gap-2.5 shadow-xs cursor-pointer">
+                                        <div class="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-300 flex items-center justify-center shrink-0 text-xs">
+                                            <i class="fa-solid ${esc(p.icon)}"></i>
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="text-xs font-black text-slate-800 dark:text-white truncate">${esc(p.label)}</div>
+                                            <div class="text-[11px] font-bold text-rose-600 dark:text-rose-400 truncate">${esc(p.missing)}</div>
+                                            <div class="text-[10px] text-slate-400 font-semibold">${esc(p.current)}</div>
+                                        </div>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                },
+
+                checkQualidadeIndicatorsAlert(forceShow = false) {
+                    this.updateIndicatorsHeaderPill();
+                    const info = this.getQualidadeIndicatorsReminder();
+                    if (!info || !app.currentUser) return;
+
+                    const mat = String(app.currentUser.matricula || '').trim();
+                    const notifId = 'notif_ind_' + mat + '_' + info.todayStr;
+                    if (!app.notificationsList) app.notificationsList = {};
+                    if (!app.notificationsList[notifId]) {
+                        const resumo = info.pendencias.map(p => `${p.label}: ${p.missing}`).join(' | ');
+                        const prazo = info.daysLeft === 0 ? 'Último dia do mês!' : `Faltam ${info.daysLeft} dia(s) p/ fechar o mês`;
+                        app.notificationsList[notifId] = {
+                            id: notifId,
+                            userId: app.currentUser.matricula,
+                            title: `Alerta de Metas (${prazo})`,
+                            message: resumo,
+                            type: 'error',
+                            read: false,
+                            timestamp: Date.now()
+                        };
+                        app.storage.saveNotifications();
+                    }
+
+                    const seenKey = `soft_ind_alert_seen_${mat}_${info.todayStr}`;
+                    if (forceShow || !localStorage.getItem(seenKey)) {
+                        try { localStorage.setItem(seenKey, '1'); } catch (e) {}
+                        if (app.ui && typeof app.ui.openIndicatorsAlertModal === 'function') {
+                            app.ui.openIndicatorsAlertModal(info);
+                        }
+                    }
+                },
+
+                sendTaskReminders({ recipients, text, details = '', triad = '', dueDate = '', alsoAddGtd = true }) {
+                    if (!Array.isArray(recipients) || recipients.length === 0 || !String(text || '').trim()) {
+                        return Promise.reject(new Error('Selecione ao menos um colaborador e informe a tarefa.'));
+                    }
+                    const fromMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || 'ADM').trim();
+                    const fromName = app.isAdmin ? 'Administração' : String(app.currentUser?.nome || 'Gestão').trim();
+                    const cleanText = String(text || '').trim();
+                    const cleanDetails = String(details || '').trim();
+                    const nowTs = Date.now();
+
+                    const ops = recipients.map(u => {
+                        if (!u || !u.matricula) return Promise.resolve();
+                        const toMat = String(u.matricula).trim();
+                        const safeMat = app.storage ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(toMat)) : toMat.toUpperCase();
+                        const remId = 'trem_' + nowTs + '_' + Math.random().toString(36).slice(2, 6);
+                        const remObj = {
+                            id: remId,
+                            fromMat,
+                            fromName,
+                            toMat,
+                            toName: u.nome || toMat,
+                            text: cleanText,
+                            details: cleanDetails,
+                            triad: triad || '',
+                            dueDate: dueDate || '',
+                            createdAt: nowTs,
+                            acknowledged: false,
+                            acknowledgedAt: null
+                        };
+
+                        const writes = [];
+                        if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+                            writes.push(firebase.database().ref(`sistema_bonificacao/task_reminders/${safeMat}/${remId}`).set(remObj));
+                        }
+                        this.notify(toMat, `Nova Tarefa de ${fromName}`, cleanText, 'info');
+
+                        if (alsoAddGtd && app.gtd && typeof app.gtd.appendAssignedNoteToUser === 'function') {
+                            writes.push(app.gtd.appendAssignedNoteToUser(u, {
+                                text: cleanDetails ? `${cleanText} — ${cleanDetails}` : cleanText,
+                                triad: triad || '',
+                                dueDate: dueDate || '',
+                                assignedBy: fromName,
+                                assignedByMat: fromMat
+                            }));
+                        }
+                        return Promise.all(writes);
+                    });
+
+                    return Promise.all(ops);
+                },
+
+                checkTaskReminders(force = false) {
+                    if (window.__TEST_MODE__ || (!app.isAdmin && !app.currentUser) || app.isGuest) return;
+                    if (typeof firebase === 'undefined' || !firebase.database) return;
+                    const nowTs = Date.now();
+                    if (!force && this._lastTaskRemCheckAt && (nowTs - this._lastTaskRemCheckAt) < 90000) return;
+                    this._lastTaskRemCheckAt = nowTs;
+
+                    const rawMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || '').trim();
+                    if (!rawMat) return;
+                    const mySafeMat = app.storage ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(rawMat)) : rawMat.toUpperCase();
+
+                    firebase.database().ref(`sistema_bonificacao/task_reminders/${mySafeMat}`)
+                        .orderByChild('createdAt')
+                        .limitToLast(25)
+                        .once('value')
+                        .then(snap => {
+                            const val = snap.val();
+                            if (!val || typeof val !== 'object') return;
+                            const pending = Object.values(val)
+                                .filter(r => r && !r.acknowledged)
+                                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                            this._pendingTaskReminders = pending;
+                            if (pending.length > 0 && app.ui && typeof app.ui.openTaskRemindersPopupModal === 'function') {
+                                app.ui.openTaskRemindersPopupModal(pending);
+                            }
+                        })
+                        .catch(err => console.warn('Aviso ao verificar lembretes de tarefa:', err));
+                },
+
+                acknowledgeTaskReminders(ids = [], goToGtd = false) {
+                    const modal = document.getElementById('task-reminder-popup-modal');
+                    if (modal) modal.remove();
+
+                    const rawMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || '').trim();
+                    if (rawMat && Array.isArray(ids) && ids.length > 0 && !window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+                        const mySafeMat = app.storage ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(rawMat)) : rawMat.toUpperCase();
+                        const updates = {};
+                        const ts = Date.now();
+                        ids.forEach(id => {
+                            if (id) {
+                                updates[`${id}/acknowledged`] = true;
+                                updates[`${id}/acknowledgedAt`] = ts;
+                            }
+                        });
+                        if (Object.keys(updates).length > 0) {
+                            firebase.database().ref(`sistema_bonificacao/task_reminders/${mySafeMat}`).update(updates).catch(() => {});
+                        }
+                    }
+                    this._pendingTaskReminders = [];
+                    if (goToGtd && app.ui) {
+                        app.ui.renderTab('produtividade_gtd', true);
+                    }
                 }
             },
 
@@ -3491,10 +3840,281 @@ storage: {
                     });
                 },
 
+                _normContatoKey(nome) {
+                    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                },
+
+                loadContatosBase() {
+                    if (!app.ataContatosBase || typeof app.ataContatosBase !== 'object') {
+                        try {
+                            const localRaw = JSON.parse(localStorage.getItem('soft_atas_participantes_base_backup') || '{}');
+                            app.ataContatosBase = (localRaw && typeof localRaw === 'object') ? localRaw : {};
+                        } catch (e) {
+                            app.ataContatosBase = {};
+                        }
+                    }
+                    if (!this._baseLoadedFromCloud && !window.__TEST_MODE__ && typeof firebase !== 'undefined' && firebase.database) {
+                        this._baseLoadedFromCloud = true;
+                        firebase.database().ref('sistema_bonificacao/atas_participantes_base')
+                            .limitToLast(300)
+                            .once('value')
+                            .then(snap => {
+                                const val = snap.val();
+                                if (val && typeof val === 'object') {
+                                    app.ataContatosBase = { ...app.ataContatosBase, ...val };
+                                    try { localStorage.setItem('soft_atas_participantes_base_backup', JSON.stringify(app.ataContatosBase)); } catch (e) {}
+                                    this.renderContatosBaseChips();
+                                }
+                            })
+                            .catch(err => console.warn('Aviso ao carregar base de contatos da Ata:', err));
+                    }
+                    return app.ataContatosBase;
+                },
+
+                getContatosSugestoes() {
+                    this.loadContatosBase();
+                    const map = new Map();
+                    const addEntry = (nome, cargo, source) => {
+                        const cleanNome = String(nome || '').trim();
+                        if (cleanNome.length < 2) return;
+                        const k = this._normContatoKey(cleanNome);
+                        if (!k) return;
+                        const cleanCargo = String(cargo || '').trim();
+                        const prev = map.get(k);
+                        if (!prev) {
+                            map.set(k, { key: k, nome: cleanNome, cargo: cleanCargo, source });
+                        } else {
+                            if (source === 'base' || (!prev.cargo && cleanCargo)) {
+                                prev.nome = source === 'base' ? cleanNome : prev.nome;
+                                if (cleanCargo) prev.cargo = cleanCargo;
+                                if (source === 'base') prev.source = 'base';
+                            }
+                        }
+                    };
+
+                    // 1. Base compartilhada pré-salva (prioridade máxima)
+                    Object.values(app.ataContatosBase || {}).forEach(c => {
+                        if (c && c.nome) addEntry(c.nome, c.cargo || '', 'base');
+                    });
+                    // 2. Usuários cadastrados no sistema
+                    (app.users || []).forEach(u => {
+                        if (u && u.nome) addEntry(u.nome, u.cargo || u.tipoAcesso || '', 'sistema');
+                    });
+                    // 3. Histórico de Atas anteriores
+                    Object.values(app.atasList || {}).forEach(a => {
+                        if (!a) return;
+                        if (a.qualidade) addEntry(a.qualidade, 'Qualidade', 'historico');
+                        if (a.qualidade2) addEntry(a.qualidade2, 'Qualidade', 'historico');
+                        if (a.sup) addEntry(a.sup, 'Supervisor Operacional', 'historico');
+                        if (Array.isArray(a.rawExtras)) {
+                            a.rawExtras.forEach(p => { if (p && p.nome) addEntry(p.nome, p.cargo || '', 'historico'); });
+                        }
+                    });
+
+                    return Array.from(map.values()).sort((a, b) => {
+                        if (a.source === 'base' && b.source !== 'base') return -1;
+                        if (b.source === 'base' && a.source !== 'base') return 1;
+                        return a.nome.localeCompare(b.nome);
+                    });
+                },
+
+                upsertContatosBatch(pairs = [], showToast = false) {
+                    this.loadContatosBase();
+                    const cleanPairs = (Array.isArray(pairs) ? pairs : [])
+                        .map(p => ({ nome: String(p?.nome || '').trim(), cargo: String(p?.cargo || '').trim() }))
+                        .filter(p => p.nome.length >= 2);
+                    if (cleanPairs.length === 0) return Promise.resolve(0);
+
+                    const updates = {};
+                    const author = app.isAdmin ? 'ADM' : String(app.currentUser?.nome || 'Sistema').trim();
+                    let changedCount = 0;
+
+                    cleanPairs.forEach(p => {
+                        const key = this._normContatoKey(p.nome);
+                        if (!key) return;
+                        const existing = app.ataContatosBase[key];
+                        if (existing && existing.nome === p.nome && (existing.cargo || '') === p.cargo) return;
+                        const item = {
+                            nome: p.nome,
+                            cargo: p.cargo || (existing ? existing.cargo || '' : ''),
+                            updatedAt: Date.now(),
+                            updatedBy: author
+                        };
+                        app.ataContatosBase[key] = item;
+                        updates[key] = item;
+                        changedCount++;
+                    });
+
+                    if (changedCount === 0) return Promise.resolve(0);
+                    try { localStorage.setItem('soft_atas_participantes_base_backup', JSON.stringify(app.ataContatosBase)); } catch (e) {}
+                    this.renderContatosBaseChips();
+
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__ || typeof firebase === 'undefined' || !firebase.database) {
+                        if (showToast && app.ui) app.ui.showNotification('Salvo na base compartilhada!', 'success', 1800);
+                        return Promise.resolve(changedCount);
+                    }
+
+                    return firebase.database().ref('sistema_bonificacao/atas_participantes_base').update(updates)
+                        .then(() => {
+                            if (showToast && app.ui) app.ui.showNotification('Nome e cargo salvos na base compartilhada de todos!', 'success', 2000);
+                            return changedCount;
+                        })
+                        .catch(err => {
+                            console.warn('Aviso ao salvar contato na base da Ata:', err);
+                            return changedCount;
+                        });
+                },
+
+                preSalvarContatoBase() {
+                    const nEl = document.getElementById('ata-base-nome');
+                    const cEl = document.getElementById('ata-base-cargo');
+                    const nome = nEl ? nEl.value.trim() : '';
+                    const cargo = cEl ? cEl.value.trim() : '';
+                    if (!nome) {
+                        if (app.ui) app.ui.showNotification('Informe o nome para pré-salvar na base.', 'warning', 1800);
+                        if (nEl) nEl.focus();
+                        return;
+                    }
+                    this.upsertContatosBatch([{ nome, cargo }], true).then(() => {
+                        if (nEl) nEl.value = '';
+                        if (cEl) cEl.value = '';
+                        if (nEl) nEl.focus();
+                    });
+                },
+
+                removeContatoBase(key) {
+                    if (!key || !app.ataContatosBase || !app.ataContatosBase[key]) return;
+                    delete app.ataContatosBase[key];
+                    try { localStorage.setItem('soft_atas_participantes_base_backup', JSON.stringify(app.ataContatosBase)); } catch (e) {}
+                    this.renderContatosBaseChips();
+                    if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+                        firebase.database().ref('sistema_bonificacao/atas_participantes_base/' + key).remove().catch(() => {});
+                    }
+                    if (app.ui) app.ui.showNotification('Contato removido da base compartilhada.', 'info', 1500);
+                },
+
+                renderContatosBaseChips() {
+                    const box = document.getElementById('ata-base-chips-container');
+                    const countEl = document.getElementById('ata-base-count');
+                    const baseList = Object.entries(app.ataContatosBase || {})
+                        .filter(([, v]) => v && v.nome)
+                        .sort((a, b) => String(a[1].nome).localeCompare(String(b[1].nome)));
+                    if (countEl) countEl.textContent = baseList.length;
+                    if (!box) return;
+                    if (baseList.length === 0) {
+                        box.innerHTML = '<span class="text-[11px] text-slate-400 italic">Nenhum nome pré-salvo ainda. Cadastre acima ou clique no ícone de salvar em qualquer participante.</span>';
+                        return;
+                    }
+                    const esc = app.utils.escapeHtml;
+                    box.innerHTML = baseList.map(([k, item]) => `
+                        <div class="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800/70 text-[11px] shadow-2xs">
+                            <button type="button" onclick="app.ata.addParticipante('${String(item.nome).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(item.cargo || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+                                class="font-bold text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer flex items-center gap-1" title="Adicionar participante na Ata">
+                                <i class="fa-solid fa-plus text-[9px] text-blue-500"></i>
+                                <span>${esc(item.nome)}</span>
+                                ${item.cargo ? `<span class="text-[10px] font-semibold text-slate-400">(${esc(item.cargo)})</span>` : ''}
+                            </button>
+                            <button type="button" onclick="app.ata.removeContatoBase('${String(k).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+                                class="text-slate-300 hover:text-rose-500 px-1 cursor-pointer" title="Remover da base compartilhada">
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        </div>
+                    `).join('');
+                },
+
+                attachAutocomplete(inputEl, opts = {}) {
+                    if (!inputEl || inputEl.dataset.ataAcAttached) return;
+                    inputEl.dataset.ataAcAttached = 'true';
+                    const mode = opts.mode || 'nome';
+                    const pairCargoEl = opts.pairCargoEl || null;
+                    const parent = inputEl.parentElement;
+                    if (!parent) return;
+                    parent.classList.add('relative');
+
+                    const drop = document.createElement('div');
+                    drop.className = 'ata-ac-dropdown hidden absolute left-0 right-0 top-full mt-1 z-[60] max-h-52 overflow-y-auto custom-scrollbar rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl py-1';
+                    parent.appendChild(drop);
+
+                    const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                    const esc = app.utils.escapeHtml;
+
+                    const renderDrop = () => {
+                        const q = norm(inputEl.value);
+                        const sugestoes = this.getContatosSugestoes();
+                        let matches = [];
+                        if (mode === 'cargo') {
+                            const cargosSet = new Set();
+                            sugestoes.forEach(s => { if (s.cargo) cargosSet.add(s.cargo); });
+                            matches = Array.from(cargosSet).filter(c => !q || norm(c).includes(q)).slice(0, 10).map(c => ({ cargo: c }));
+                        } else {
+                            matches = sugestoes.filter(s => {
+                                if (!q) return s.source === 'base';
+                                return norm(s.nome).includes(q) || norm(s.cargo).includes(q);
+                            }).slice(0, 12);
+                        }
+
+                        if (matches.length === 0) {
+                            drop.classList.add('hidden');
+                            drop.innerHTML = '';
+                            return;
+                        }
+
+                        drop.innerHTML = matches.map((m, idx) => {
+                            if (mode === 'cargo') {
+                                return `<button type="button" data-idx="${idx}" class="ata-ac-item w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer">
+                                    <span>${esc(m.cargo)}</span>
+                                    <span class="text-[10px] text-slate-400">Cargo</span>
+                                </button>`;
+                            }
+                            return `<button type="button" data-idx="${idx}" class="ata-ac-item w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-800 flex items-center justify-between gap-2 cursor-pointer">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-slate-800 dark:text-white truncate">${esc(m.nome)}</div>
+                                    ${m.cargo ? `<div class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${esc(m.cargo)}</div>` : ''}
+                                </div>
+                                ${m.source === 'base' ? '<span class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 text-[9px] font-black uppercase shrink-0">Base</span>' : ''}
+                            </button>`;
+                        }).join('');
+
+                        drop.querySelectorAll('.ata-ac-item').forEach((btn, idx) => {
+                            btn.addEventListener('mousedown', (e) => {
+                                e.preventDefault();
+                                const chosen = matches[idx];
+                                if (!chosen) return;
+                                if (mode === 'cargo') {
+                                    inputEl.value = chosen.cargo;
+                                } else {
+                                    inputEl.value = chosen.nome;
+                                    if (pairCargoEl && chosen.cargo) {
+                                        pairCargoEl.value = chosen.cargo;
+                                    }
+                                }
+                                drop.classList.add('hidden');
+                            });
+                        });
+                        drop.classList.remove('hidden');
+                    };
+
+                    inputEl.addEventListener('input', renderDrop);
+                    inputEl.addEventListener('focus', renderDrop);
+                    inputEl.addEventListener('blur', () => {
+                        setTimeout(() => drop.classList.add('hidden'), 150);
+                    });
+                    inputEl.addEventListener('keydown', (e) => {
+                        if (e.key === 'Escape') drop.classList.add('hidden');
+                    });
+                },
+
                 initForm() {
+                    this.loadContatosBase();
                     document.getElementById('ata-dynamic-actions').innerHTML = '';
                     document.getElementById('ata-dynamic-participants').innerHTML = '';
                     this.addAcao();
+                    this.attachAutocomplete(document.getElementById('ata-qualidade'), { mode: 'nome' });
+                    this.attachAutocomplete(document.getElementById('ata-qualidade2'), { mode: 'nome' });
+                    this.attachAutocomplete(document.getElementById('ata-sup1'), { mode: 'nome' });
+                    this.attachAutocomplete(document.getElementById('ata-base-nome'), { mode: 'nome', pairCargoEl: document.getElementById('ata-base-cargo') });
+                    this.attachAutocomplete(document.getElementById('ata-base-cargo'), { mode: 'cargo' });
+                    this.renderContatosBaseChips();
                 },
                 addAcao(texto = '', resp = '', prev = '') {
                     const div = document.createElement('div');
@@ -3502,20 +4122,36 @@ storage: {
                     div.innerHTML = `
                         <button type="button" onclick="this.parentElement.remove()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600"><i class="fa-solid fa-xmark text-xs"></i></button>
                         <div class="md:col-span-2"><label class="text-[10px] uppercase font-bold text-slate-500">Ação: o que será feito e resultado</label><textarea class="ata-acao-texto w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" rows="2">${texto}</textarea></div>
-                        <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Responsável (Nome/Área)</label><input type="text" class="ata-acao-resp w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" value="${resp}"></div>
+                        <div class="md:col-span-1 relative"><label class="text-[10px] uppercase font-bold text-slate-500">Responsável (Nome/Área)</label><input type="text" class="ata-acao-resp w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" value="${resp}"></div>
                         <div class="md:col-span-1"><label class="text-[10px] uppercase font-bold text-slate-500">Previsão</label><input type="date" class="ata-acao-prev w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 outline-none text-sm" value="${prev}"></div>
                     `;
                     document.getElementById('ata-dynamic-actions').appendChild(div);
+                    this.attachAutocomplete(div.querySelector('.ata-acao-resp'), { mode: 'nome' });
                 },
                 addParticipante(nome = '', cargo = '') {
                     const div = document.createElement('div');
                     div.className = 'flex gap-2 items-center';
+                    const esc = app.utils.escapeHtml;
                     div.innerHTML = `
-                        <input type="text" placeholder="Nome do Extra" class="ata-part-nome flex-1 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm" value="${nome}">
-                        <input type="text" placeholder="Papel / Cargo" class="ata-part-cargo w-1/3 p-2 rounded-lg border border-slate-200 bg-white outline-none text-sm" value="${cargo}">
+                        <div class="relative flex-1"><input type="text" placeholder="Digite o nome para buscar ou cadastrar..." class="ata-part-nome w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none text-sm" value="${esc(nome)}"></div>
+                        <div class="relative w-1/3"><input type="text" placeholder="Papel / Cargo" class="ata-part-cargo w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none text-sm" value="${esc(cargo)}"></div>
+                        <button type="button" class="ata-part-save-base text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 p-2 rounded-lg cursor-pointer" title="Pré-salvar este Nome e Cargo na Base de todos"><i class="fa-solid fa-bookmark text-xs"></i></button>
                         <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:bg-red-50 p-2 rounded-lg"><i class="fa-solid fa-trash"></i></button>
                     `;
                     document.getElementById('ata-dynamic-participants').appendChild(div);
+                    const nomeInp = div.querySelector('.ata-part-nome');
+                    const cargoInp = div.querySelector('.ata-part-cargo');
+                    const saveBaseBtn = div.querySelector('.ata-part-save-base');
+                    this.attachAutocomplete(nomeInp, { mode: 'nome', pairCargoEl: cargoInp });
+                    this.attachAutocomplete(cargoInp, { mode: 'cargo' });
+                    if (saveBaseBtn) {
+                        saveBaseBtn.onclick = () => {
+                            const nVal = nomeInp ? nomeInp.value.trim() : '';
+                            const cVal = cargoInp ? cargoInp.value.trim() : '';
+                            if (!nVal) return app.ui && app.ui.showNotification('Digite o nome antes de salvar na base.', 'warning', 1800);
+                            this.upsertContatosBatch([{ nome: nVal, cargo: cVal }], true);
+                        };
+                    }
                 },
                 getAcoesData() {
                     const blocos = document.querySelectorAll('#ata-dynamic-actions > div');
@@ -3657,6 +4293,20 @@ storage: {
                     app.atasList[payload.id] = payload;
                     try { localStorage.removeItem('soft_ata_data_draft'); } catch(e) {}
 
+                    // Alimenta automaticamente a Base Compartilhada de Participantes para todos
+                    try {
+                        const contatosParaBase = [];
+                        if (q) contatosParaBase.push({ nome: q, cargo: 'Qualidade' });
+                        if (q2Val) contatosParaBase.push({ nome: q2Val, cargo: 'Qualidade' });
+                        if (payload.sup) contatosParaBase.push({ nome: payload.sup, cargo: 'Supervisor Operacional' });
+                        if (Array.isArray(payload.rawExtras)) {
+                            payload.rawExtras.forEach(p => { if (p && p.nome) contatosParaBase.push({ nome: p.nome, cargo: p.cargo || '' }); });
+                        }
+                        if (contatosParaBase.length > 0 && typeof this.upsertContatosBatch === 'function') {
+                            this.upsertContatosBatch(contatosParaBase, false);
+                        }
+                    } catch (e) {}
+
                     this._lastSavedAtaPromise = app.storage.saveAtas(payload.id).then(() => {
                         if(!isAuto) app.ui.showAlert("Sucesso", "Ata registrada com sucesso no seu histórico.", "success");
                         return payload;
@@ -3674,9 +4324,9 @@ storage: {
                     if (!ok) return;
                     const p = this._lastSavedAtaPromise || Promise.resolve();
                     p.then(() => {
-                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = app.ui.minhasAtasFiltroMes || 'todos';
                         app.ui.showAlert("Sucesso", "Ata salva no seu histórico e enviada para acompanhamento.", "success");
-                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'ata_reuniao', true);
                     }).catch(() => {});
                 },
                 gerarWord() {
@@ -3690,9 +4340,9 @@ storage: {
 
                     const p = this._lastSavedAtaPromise || Promise.resolve();
                     p.then(() => {
-                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = app.ui.minhasAtasFiltroMes || 'todos';
                         app.ui.showAlert("Concluído", "O Download começou e a ata já consta no seu histórico.", "success");
-                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'ata_reuniao', true);
                     }).catch(() => {});
                 },
                 gerarPDF() {
@@ -3774,9 +4424,9 @@ storage: {
 
                     const p = this._lastSavedAtaPromise || Promise.resolve();
                     p.then(() => {
-                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = 'todos';
+                        if (!app.isAdmin) app.ui.minhasAtasFiltroMes = app.ui.minhasAtasFiltroMes || 'todos';
                         app.ui.showAlert("Concluído", pdfOk ? "O Download do PDF começou e a ata foi gravada no seu histórico." : "Ata gravada no seu histórico (o gerador de PDF ainda estava carregando; baixe o PDF direto pelo histórico).", "success");
-                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true);
+                        app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'ata_reuniao', true);
                     }).catch(() => {});
                 },
                 gerarPDFById(id) {
@@ -4030,7 +4680,7 @@ storage: {
                             btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Salvar Correção (Sem Baixar)';
                             btnSave.onclick = () => { 
                                 if(app.ata.saveAtaToDB(false)) {
-                                    setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'minhas_atas', true), 1000);
+                                    setTimeout(() => app.ui.renderTab(app.isAdmin?'gestao_atas':'ata_reuniao', true), 1000);
                                 }
                             };
                             btnContainer.insertBefore(btnSave, btnContainer.firstChild);
@@ -10427,6 +11077,12 @@ storage: {
                 },
 
                 logout() {
+                    if (app.gtd) {
+                        if (typeof app.gtd.flushCloudSync === 'function') app.gtd.flushCloudSync();
+                        app.gtd._lastHydratedMat = null;
+                        app.gtd._adminCloudCache = null;
+                        app.gtd._adminFetchDone = false;
+                    }
                     app.isAdmin = false; app.currentUser = null; window.selectedAdminEditUser = null;
                     localStorage.removeItem('soft_session_date');
                     localStorage.removeItem('soft_session_mat');
@@ -11945,17 +12601,355 @@ storage: {
                     { id: 'rev_mente', title: '5. Esvaziar a mente para amanhã', desc: 'Capture qualquer preocupação solta para descansar sem esquecer nada.' }
                 ],
 
+                _syncTimers: {},
+                _adminCloudCache: null,
+                _adminFetchDone: false,
+                _lastHydratedMat: null,
+                _unloadBound: false,
+
                 getUserMat() {
                     const currentUser = app.currentUser || { matricula: 'admin' };
                     return String(currentUser.matricula || 'admin').trim();
                 },
 
-                getPostitsKey() {
-                    return 'soft_user_postits_' + this.getUserMat();
+                getPostitsKey(mat = null) {
+                    return 'soft_user_postits_' + (mat || this.getUserMat());
                 },
 
-                getChecklistKey() {
-                    return 'soft_user_gtd_review_' + this.getUserMat();
+                getChecklistKey(mat = null) {
+                    return 'soft_user_gtd_review_' + (mat || this.getUserMat());
+                },
+
+                _getMetaKey(mat = null) {
+                    return 'soft_user_gtd_meta_' + (mat || this.getUserMat());
+                },
+
+                _readLocalMeta(mat = null) {
+                    try {
+                        const raw = JSON.parse(localStorage.getItem(this._getMetaKey(mat)) || 'null');
+                        if (raw && typeof raw === 'object') {
+                            return {
+                                updatedAt: Number(raw.updatedAt || 0),
+                                dirty: !!raw.dirty,
+                                migrated: !!raw.migrated
+                            };
+                        }
+                    } catch (e) {}
+                    return { updatedAt: 0, dirty: false, migrated: false };
+                },
+
+                _writeLocalMeta(mat, meta) {
+                    try {
+                        localStorage.setItem(this._getMetaKey(mat), JSON.stringify({
+                            updatedAt: Number(meta && meta.updatedAt || 0),
+                            dirty: !!(meta && meta.dirty),
+                            migrated: !!(meta && meta.migrated)
+                        }));
+                    } catch (e) {}
+                },
+
+                _nextTimestamp(prevTs = 0) {
+                    return Math.max(Date.now(), Number(prevTs || 0) + 1);
+                },
+
+                _bindUnloadFlush() {
+                    if (this._unloadBound || typeof window === 'undefined') return;
+                    this._unloadBound = true;
+                    window.addEventListener('pagehide', () => this.flushCloudSync());
+                    window.addEventListener('beforeunload', () => this.flushCloudSync());
+                    if (typeof document !== 'undefined') {
+                        document.addEventListener('visibilitychange', () => {
+                            if (document.hidden) this.flushCloudSync();
+                        });
+                    }
+                },
+
+                _extractNotesArray(rawNotes) {
+                    if (Array.isArray(rawNotes)) return rawNotes.map(item => this.normalizeNote(item));
+                    if (rawNotes && typeof rawNotes === 'object') {
+                        return Object.values(rawNotes).filter(Boolean).map(item => this.normalizeNote(item));
+                    }
+                    return [];
+                },
+
+                _isDefaultStarterNotes(notes) {
+                    if (!Array.isArray(notes) || notes.length !== 2) return false;
+                    const t0 = String((notes[0] && notes[0].text) || '');
+                    const t1 = String((notes[1] && notes[1].text) || '');
+                    return t0.startsWith('Metas do dia: Acompanhar os planos de ação abertos') &&
+                        t1.startsWith('Lembrete de governança: Checar laudos de auditoria críticos') &&
+                        notes[0].gtdStatus !== 'concluida' &&
+                        notes[1].gtdStatus !== 'concluida';
+                },
+
+                _normalizeFocusObj(parsed) {
+                    const def = this.defaultFocusState();
+                    if (!parsed || typeof parsed !== 'object') return def;
+
+                    const mode = [2, 5, 25].includes(Number(parsed.mode)) ? Number(parsed.mode) : 25;
+                    const phase = ['foco', 'pausa', 'rapido'].includes(parsed.phase)
+                        ? parsed.phase
+                        : (mode === 5 ? 'pausa' : (mode === 2 ? 'rapido' : 'foco'));
+                    const running = !!parsed.running;
+                    const endAt = (typeof parsed.endAt === 'number' && isFinite(parsed.endAt)) ? parsed.endAt : null;
+                    let remaining = (typeof parsed.remainingSeconds === 'number' && isFinite(parsed.remainingSeconds))
+                        ? Math.max(0, Math.floor(parsed.remainingSeconds))
+                        : mode * 60;
+
+                    if (running && endAt) {
+                        remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+                    }
+
+                    return {
+                        active: !!parsed.active,
+                        noteId: parsed.noteId || null,
+                        focusText: typeof parsed.focusText === 'string' ? parsed.focusText : '',
+                        mode,
+                        phase,
+                        running,
+                        endAt,
+                        remainingSeconds: remaining,
+                        completedCycles: Math.max(0, parseInt(parsed.completedCycles, 10) || 0),
+                        minimized: !!parsed.minimized,
+                        updatedAt: parsed.updatedAt || Date.now()
+                    };
+                },
+
+                _getUserByMat(mat) {
+                    if (app.isAdmin || app.isGuest || !app.storage) return null;
+                    const mNorm = app.storage._normalizeMat(mat);
+                    if (!mNorm) return null;
+                    if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === mNorm) {
+                        return app.currentUser;
+                    }
+                    return (app.users || []).find(u => u && app.storage._normalizeMat(u.matricula) === mNorm) || null;
+                },
+
+                _getCloudGtdForMat(mat) {
+                    if (app.isGuest || mat === 'guest') return null;
+                    if (app.isAdmin && mat === 'admin') {
+                        return (this._adminCloudCache && typeof this._adminCloudCache === 'object') ? this._adminCloudCache : null;
+                    }
+                    const u = this._getUserByMat(mat);
+                    return (u && u.gtdData && typeof u.gtdData === 'object') ? u.gtdData : null;
+                },
+
+                _setMemoryGtdForMat(mat, payload) {
+                    if (app.isGuest || mat === 'guest') return;
+                    if (app.isAdmin && mat === 'admin') {
+                        this._adminCloudCache = payload;
+                        return;
+                    }
+                    const mNorm = app.storage ? app.storage._normalizeMat(mat) : String(mat || '').trim().toUpperCase();
+                    if (!mNorm) return;
+                    if (app.currentUser && (!app.storage || app.storage._normalizeMat(app.currentUser.matricula) === mNorm)) {
+                        app.currentUser.gtdData = payload;
+                    }
+                    if (Array.isArray(app.users)) {
+                        const idx = app.users.findIndex(u => u && app.storage && app.storage._normalizeMat(u.matricula) === mNorm);
+                        if (idx > -1) app.users[idx].gtdData = payload;
+                    }
+                },
+
+                _readRawLocalBundle(mat) {
+                    let notes = null;
+                    let review = null;
+                    let focus = null;
+                    try {
+                        const rawN = JSON.parse(localStorage.getItem(this.getPostitsKey(mat)) || 'null');
+                        if (Array.isArray(rawN)) notes = rawN;
+                    } catch (e) {}
+                    try {
+                        const rawR = JSON.parse(localStorage.getItem(this.getChecklistKey(mat)) || 'null');
+                        if (rawR && typeof rawR === 'object' && !Array.isArray(rawR)) review = rawR;
+                    } catch (e) {}
+                    try {
+                        const rawF = JSON.parse(localStorage.getItem(this.getFocusKey(mat)) || 'null');
+                        if (rawF && typeof rawF === 'object') focus = rawF;
+                    } catch (e) {}
+                    return { notes, review, focus };
+                },
+
+                _writeLocalBundle(mat, notes, review, focus, meta = null) {
+                    try {
+                        if (Array.isArray(notes)) {
+                            localStorage.setItem(this.getPostitsKey(mat), JSON.stringify(notes.map(n => this.normalizeNote(n))));
+                        }
+                        if (review && typeof review === 'object') {
+                            localStorage.setItem(this.getChecklistKey(mat), JSON.stringify(review));
+                        }
+                        if (focus && typeof focus === 'object') {
+                            localStorage.setItem(this.getFocusKey(mat), JSON.stringify(this._normalizeFocusObj(focus)));
+                        }
+                    } catch (e) {}
+                    if (meta) this._writeLocalMeta(mat, meta);
+                },
+
+                _buildPayloadFromLocal(mat, tsOverride = null) {
+                    const raw = this._readRawLocalBundle(mat);
+                    const meta = this._readLocalMeta(mat);
+                    const cloud = this._getCloudGtdForMat(mat);
+                    const cloudValid = !!(cloud && typeof cloud === 'object' && cloud.initialized && !cloud.isDefaultSeed);
+                    const ts = tsOverride || this._nextTimestamp(meta.updatedAt);
+                    const notes = Array.isArray(raw.notes)
+                        ? raw.notes.map(n => this.normalizeNote(n))
+                        : (cloudValid ? this._extractNotesArray(cloud.notes) : []);
+                    const review = (raw.review && typeof raw.review === 'object')
+                        ? { ...raw.review }
+                        : ((cloudValid && cloud.review && typeof cloud.review === 'object') ? { ...cloud.review } : {});
+                    const focus = raw.focus
+                        ? this._normalizeFocusObj(raw.focus)
+                        : (cloudValid && cloud.focus ? this._normalizeFocusObj(cloud.focus) : this.defaultFocusState());
+                    return {
+                        notes,
+                        review,
+                        focus,
+                        updatedAt: ts,
+                        initialized: true,
+                        isDefaultSeed: false
+                    };
+                },
+
+                _shouldPersistCloud(mat) {
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) return false;
+                    if (app.isGuest || !mat || mat === 'guest') return false;
+                    if (!app.isAdmin && !app.currentUser) return false;
+                    if (typeof firebase === 'undefined' || !firebase.database) return false;
+                    return true;
+                },
+
+                _scheduleCloudSync(mat = null, debounceMs = 450) {
+                    const targetMat = mat || this.getUserMat();
+                    if (!this._shouldPersistCloud(targetMat)) return;
+                    if (this._syncTimers[targetMat]) {
+                        clearTimeout(this._syncTimers[targetMat]);
+                    }
+                    this._syncTimers[targetMat] = setTimeout(() => {
+                        delete this._syncTimers[targetMat];
+                        this._pushCloudSync(targetMat);
+                    }, Math.max(0, Number(debounceMs) || 0));
+                },
+
+                flushCloudSync(targetMat = null) {
+                    const mats = targetMat ? [targetMat] : Object.keys(this._syncTimers || {});
+                    mats.forEach(m => {
+                        if (this._syncTimers[m]) {
+                            clearTimeout(this._syncTimers[m]);
+                            delete this._syncTimers[m];
+                            this._pushCloudSync(m);
+                        }
+                    });
+                },
+
+                _pushCloudSync(mat) {
+                    if (!this._shouldPersistCloud(mat)) return Promise.resolve();
+                    const curMeta = this._readLocalMeta(mat);
+                    const payload = this._buildPayloadFromLocal(mat, curMeta.updatedAt || this._nextTimestamp());
+                    this._setMemoryGtdForMat(mat, payload);
+                    const cleanPayload = (app.storage && typeof app.storage.sanitizeFirebaseObject === 'function')
+                        ? app.storage.sanitizeFirebaseObject(payload)
+                        : payload;
+                    const sentTs = Number(cleanPayload.updatedAt || payload.updatedAt || 0);
+
+                    const onDone = () => {
+                        const latestMeta = this._readLocalMeta(mat);
+                        if (Number(latestMeta.updatedAt || 0) <= sentTs) {
+                            this._writeLocalMeta(mat, { updatedAt: sentTs, dirty: false, migrated: true });
+                        }
+                    };
+
+                    if (app.isAdmin && mat === 'admin') {
+                        return firebase.database().ref('sistema_bonificacao/gtd_users/admin').set(cleanPayload)
+                            .then(onDone)
+                            .catch(err => console.warn('Aviso ao salvar GTD admin na nuvem:', err));
+                    }
+
+                    if (app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                        return app.storage.saveUserByMatricula(mat, { gtdData: cleanPayload })
+                            .then(onDone)
+                            .catch(err => console.warn('Aviso ao salvar GTD no usuário:', err));
+                    }
+                    return Promise.resolve();
+                },
+
+                _reconcileBundle(mat) {
+                    const cloud = this._getCloudGtdForMat(mat);
+                    const localMeta = this._readLocalMeta(mat);
+                    const localRaw = this._readRawLocalBundle(mat);
+                    const cloudValid = !!(cloud && typeof cloud === 'object' && cloud.initialized && !cloud.isDefaultSeed);
+
+                    const localHasArray = Array.isArray(localRaw.notes);
+                    const localReviewDone = !!(localRaw.review && Object.values(localRaw.review).some(Boolean));
+                    const localFocusUsed = !!(localRaw.focus && (localRaw.focus.focusText || localRaw.focus.noteId || Number(localRaw.focus.completedCycles || 0) > 0 || localRaw.focus.active));
+                    const localHasRealData = (localHasArray && (!this._isDefaultStarterNotes(localRaw.notes) || localRaw.notes.length !== 2)) || localReviewDone || localFocusUsed;
+
+                    if (cloudValid) {
+                        const cloudTs = Number(cloud.updatedAt || 0);
+                        const localTs = Number(localMeta.updatedAt || 0);
+                        if (localMeta.dirty && localTs > cloudTs) {
+                            const payload = this._buildPayloadFromLocal(mat, localTs);
+                            this._setMemoryGtdForMat(mat, payload);
+                            this._scheduleCloudSync(mat, 80);
+                        } else {
+                            const cloudNotes = this._extractNotesArray(cloud.notes);
+                            const cloudReview = (cloud.review && typeof cloud.review === 'object' && !Array.isArray(cloud.review)) ? { ...cloud.review } : {};
+                            const cloudFocus = this._normalizeFocusObj(cloud.focus);
+                            this._writeLocalBundle(mat, cloudNotes, cloudReview, cloudFocus, {
+                                updatedAt: cloudTs || Date.now(),
+                                dirty: false,
+                                migrated: true
+                            });
+                        }
+                    } else if (localHasRealData) {
+                        const ts = this._nextTimestamp(localMeta.updatedAt);
+                        const payload = this._buildPayloadFromLocal(mat, ts);
+                        this._setMemoryGtdForMat(mat, payload);
+                        this._writeLocalMeta(mat, { updatedAt: ts, dirty: true, migrated: true });
+                        this._scheduleCloudSync(mat, 80);
+                    }
+
+                    this._lastHydratedMat = mat;
+                },
+
+                syncFromUser() {
+                    this._bindUnloadFlush();
+                    if (!app.isAdmin && !app.currentUser) return;
+                    if (app.isGuest) return;
+                    const mat = this.getUserMat();
+                    if (!mat || mat === 'guest') return;
+
+                    if (app.isAdmin && mat === 'admin') {
+                        this._reconcileBundle('admin');
+                        if (!this._adminFetchDone && !window.__TEST_MODE__ && typeof firebase !== 'undefined' && firebase.database) {
+                            this._adminFetchDone = true;
+                            firebase.database().ref('sistema_bonificacao/gtd_users/admin').once('value').then(snap => {
+                                const val = snap.val();
+                                if (val && typeof val === 'object') {
+                                    this._adminCloudCache = val;
+                                    this._reconcileBundle('admin');
+                                    if (app.ui && app.isAdmin && (app.currentTab === 'home' || app.currentTab === 'produtividade_gtd')) {
+                                        const activeContainer = document.getElementById('view-container-' + app.currentTab);
+                                        if (activeContainer) {
+                                            if (app.currentTab === 'home') app.ui.renderView_Home(activeContainer);
+                                            else if (app.currentTab === 'produtividade_gtd') app.ui.renderView_ProdutividadeGTD(activeContainer);
+                                        }
+                                    }
+                                }
+                            }).catch(err => console.warn('Aviso ao ler GTD admin da nuvem:', err));
+                        }
+                        return;
+                    }
+
+                    this._reconcileBundle(mat);
+                },
+
+                _ensureHydrated() {
+                    if (!app.isAdmin && !app.currentUser) return;
+                    if (app.isGuest) return;
+                    const mat = this.getUserMat();
+                    if (this._lastHydratedMat !== mat) {
+                        this.syncFromUser();
+                    }
                 },
 
                 getTodayIso() {
@@ -11977,6 +12971,8 @@ storage: {
                     if (typeof n.delegatedTo !== 'string') n.delegatedTo = '';
                     if (typeof n.nextAction !== 'string') n.nextAction = '';
                     if (typeof n.dueDate !== 'string') n.dueDate = '';
+                    if (typeof n.assignedBy !== 'string') n.assignedBy = '';
+                    if (typeof n.assignedByMat !== 'string') n.assignedByMat = '';
                     n.twoMin = !!n.twoMin;
                     n.estMinutes = (n.estMinutes !== undefined && n.estMinutes !== null && !isNaN(Number(n.estMinutes))) ? Number(n.estMinutes) : null;
                     if (!n.updatedAt) n.updatedAt = 'Lembrete';
@@ -11986,9 +12982,18 @@ storage: {
                 },
 
                 loadNotes() {
-                    const key = this.getPostitsKey();
+                    this._ensureHydrated();
+                    const mat = this.getUserMat();
+                    const key = this.getPostitsKey(mat);
                     let parsed = null;
                     try { parsed = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { parsed = null; }
+
+                    if (!parsed || !Array.isArray(parsed)) {
+                        const cloud = this._getCloudGtdForMat(mat);
+                        if (cloud && cloud.initialized && !cloud.isDefaultSeed) {
+                            parsed = this._extractNotesArray(cloud.notes);
+                        }
+                    }
 
                     if (!parsed || !Array.isArray(parsed)) {
                         const todayStr = new Date().toLocaleDateString('pt-BR');
@@ -12020,10 +13025,18 @@ storage: {
                     return parsed.map(item => this.normalizeNote(item));
                 },
 
-                saveNotes(notes) {
-                    const key = this.getPostitsKey();
+                saveNotes(notes, opts = {}) {
+                    const mat = this.getUserMat();
+                    const key = this.getPostitsKey(mat);
                     const clean = Array.isArray(notes) ? notes.map(n => this.normalizeNote(n)) : [];
                     try { localStorage.setItem(key, JSON.stringify(clean)); } catch (e) {}
+
+                    const meta = this._readLocalMeta(mat);
+                    const ts = this._nextTimestamp(meta.updatedAt);
+                    this._writeLocalMeta(mat, { updatedAt: ts, dirty: true, migrated: true });
+                    this._setMemoryGtdForMat(mat, this._buildPayloadFromLocal(mat, ts));
+                    this._scheduleCloudSync(mat, opts.debounceMs !== undefined ? opts.debounceMs : 450);
+
                     return clean;
                 },
 
@@ -12187,25 +13200,42 @@ storage: {
                 },
 
                 loadReviewChecklist() {
-                    let saved = {};
-                    try { saved = JSON.parse(localStorage.getItem(this.getChecklistKey()) || '{}') || {}; } catch (e) { saved = {}; }
+                    this._ensureHydrated();
+                    const mat = this.getUserMat();
+                    let saved = null;
+                    try { saved = JSON.parse(localStorage.getItem(this.getChecklistKey(mat)) || 'null'); } catch (e) { saved = null; }
+                    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
+                        const cloud = this._getCloudGtdForMat(mat);
+                        saved = (cloud && cloud.review && typeof cloud.review === 'object' && !Array.isArray(cloud.review)) ? { ...cloud.review } : {};
+                    }
                     return saved;
+                },
+
+                _saveReviewChecklist(cur) {
+                    const mat = this.getUserMat();
+                    const clean = (cur && typeof cur === 'object' && !Array.isArray(cur)) ? { ...cur } : {};
+                    try { localStorage.setItem(this.getChecklistKey(mat), JSON.stringify(clean)); } catch (e) {}
+
+                    const meta = this._readLocalMeta(mat);
+                    const ts = this._nextTimestamp(meta.updatedAt);
+                    this._writeLocalMeta(mat, { updatedAt: ts, dirty: true, migrated: true });
+                    this._setMemoryGtdForMat(mat, this._buildPayloadFromLocal(mat, ts));
+                    this._scheduleCloudSync(mat, 120);
+                    return clean;
                 },
 
                 toggleReviewStep(stepId) {
                     const cur = this.loadReviewChecklist();
                     cur[stepId] = !cur[stepId];
-                    try { localStorage.setItem(this.getChecklistKey(), JSON.stringify(cur)); } catch (e) {}
-                    return cur;
+                    return this._saveReviewChecklist(cur);
                 },
 
                 resetReviewChecklist() {
-                    try { localStorage.setItem(this.getChecklistKey(), JSON.stringify({})); } catch (e) {}
-                    return {};
+                    return this._saveReviewChecklist({});
                 },
 
-                getFocusKey() {
-                    return 'soft_user_gtd_focus_' + this.getUserMat();
+                getFocusKey(mat = null) {
+                    return 'soft_user_gtd_focus_' + (mat || this.getUserMat());
                 },
 
                 defaultFocusState() {
@@ -12225,43 +13255,31 @@ storage: {
                 },
 
                 loadFocusState() {
-                    const def = this.defaultFocusState();
+                    this._ensureHydrated();
+                    const mat = this.getUserMat();
                     let parsed = null;
-                    try { parsed = JSON.parse(localStorage.getItem(this.getFocusKey()) || 'null'); } catch (e) { parsed = null; }
-                    if (!parsed || typeof parsed !== 'object') return def;
-
-                    const mode = [2, 5, 25].includes(Number(parsed.mode)) ? Number(parsed.mode) : 25;
-                    const phase = ['foco', 'pausa', 'rapido'].includes(parsed.phase)
-                        ? parsed.phase
-                        : (mode === 5 ? 'pausa' : (mode === 2 ? 'rapido' : 'foco'));
-                    const running = !!parsed.running;
-                    const endAt = (typeof parsed.endAt === 'number' && isFinite(parsed.endAt)) ? parsed.endAt : null;
-                    let remaining = (typeof parsed.remainingSeconds === 'number' && isFinite(parsed.remainingSeconds))
-                        ? Math.max(0, Math.floor(parsed.remainingSeconds))
-                        : mode * 60;
-
-                    if (running && endAt) {
-                        remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+                    try { parsed = JSON.parse(localStorage.getItem(this.getFocusKey(mat)) || 'null'); } catch (e) { parsed = null; }
+                    if (!parsed || typeof parsed !== 'object') {
+                        const cloud = this._getCloudGtdForMat(mat);
+                        if (cloud && cloud.focus && typeof cloud.focus === 'object') {
+                            parsed = cloud.focus;
+                        }
                     }
-
-                    return {
-                        active: !!parsed.active,
-                        noteId: parsed.noteId || null,
-                        focusText: typeof parsed.focusText === 'string' ? parsed.focusText : '',
-                        mode,
-                        phase,
-                        running,
-                        endAt,
-                        remainingSeconds: remaining,
-                        completedCycles: Math.max(0, parseInt(parsed.completedCycles, 10) || 0),
-                        minimized: !!parsed.minimized,
-                        updatedAt: parsed.updatedAt || Date.now()
-                    };
+                    return this._normalizeFocusObj(parsed);
                 },
 
                 saveFocusState(state) {
+                    this._ensureHydrated();
+                    const mat = this.getUserMat();
                     const clean = Object.assign(this.defaultFocusState(), state || {}, { updatedAt: Date.now() });
-                    try { localStorage.setItem(this.getFocusKey(), JSON.stringify(clean)); } catch (e) {}
+                    try { localStorage.setItem(this.getFocusKey(mat), JSON.stringify(clean)); } catch (e) {}
+
+                    const meta = this._readLocalMeta(mat);
+                    const ts = this._nextTimestamp(meta.updatedAt);
+                    this._writeLocalMeta(mat, { updatedAt: ts, dirty: true, migrated: true });
+                    this._setMemoryGtdForMat(mat, this._buildPayloadFromLocal(mat, ts));
+                    this._scheduleCloudSync(mat, 150);
+
                     return clean;
                 },
 
@@ -12270,6 +13288,55 @@ storage: {
                     const mm = String(Math.floor(s / 60)).padStart(2, '0');
                     const ss = String(s % 60).padStart(2, '0');
                     return `${mm}:${ss}`;
+                },
+
+                appendAssignedNoteToUser(targetUser, opts = {}) {
+                    if (!targetUser || !targetUser.matricula) return Promise.resolve();
+                    const mat = String(targetUser.matricula).trim();
+                    const curMat = this.getUserMat();
+                    const sameCurrentUser = !app.isAdmin && app.currentUser && app.storage &&
+                        app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(mat);
+
+                    const now = new Date();
+                    const newNote = this.normalizeNote({
+                        id: 'postit_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                        text: opts.text || '',
+                        color: opts.triad === 'urgente' ? 'rose' : (opts.triad === 'importante' ? 'green' : 'blue'),
+                        gtdStatus: 'inbox',
+                        triad: opts.triad || '',
+                        dueDate: opts.dueDate || '',
+                        assignedBy: opts.assignedBy || '',
+                        assignedByMat: opts.assignedByMat || '',
+                        updatedAt: 'Enviada às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                        createdAt: Date.now()
+                    });
+
+                    if (sameCurrentUser || curMat === mat) {
+                        const notes = this.loadNotes();
+                        notes.unshift(newNote);
+                        this.saveNotes(notes, { debounceMs: 50 });
+                        return Promise.resolve();
+                    }
+
+                    const existingGtd = (targetUser.gtdData && typeof targetUser.gtdData === 'object') ? targetUser.gtdData : {};
+                    const existingNotes = this._extractNotesArray(existingGtd.notes);
+                    existingNotes.unshift(newNote);
+                    const nextGtd = {
+                        notes: existingNotes,
+                        review: (existingGtd.review && typeof existingGtd.review === 'object') ? existingGtd.review : {},
+                        focus: existingGtd.focus ? this._normalizeFocusObj(existingGtd.focus) : this.defaultFocusState(),
+                        updatedAt: this._nextTimestamp(existingGtd.updatedAt || 0),
+                        initialized: true,
+                        isDefaultSeed: false
+                    };
+                    const cleanPayload = (app.storage && typeof app.storage.sanitizeFirebaseObject === 'function')
+                        ? app.storage.sanitizeFirebaseObject(nextGtd)
+                        : nextGtd;
+                    targetUser.gtdData = cleanPayload;
+                    if (app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                        return app.storage.saveUserByMatricula(mat, { gtdData: cleanPayload });
+                    }
+                    return Promise.resolve();
                 }
             }
 ,
@@ -12281,7 +13348,7 @@ storage: {
                 menusUser: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Resultados', icon: 'fa-bullseye', items: [{id:'meu_painel', label:'Painel Financeiro'}, {id:'ranking_monitorias', label:'Minhas Monitorias'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'pesquisa_treinamento', label:'Pesquisa CSAT'}] },
-                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'minhas_atas', label:'Minhas Atas'}, {id:'ata_reuniao', label:'Criar Nova Ata'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Rotina & Qualidade', icon: 'fa-headset', items: [{id:'calendario', label:'Meu Calendário'}, {id:'ata_reuniao', label:'Atas de Reunião'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'laudos_estudos', label:'Meus Laudos'}, {id:'implantacao_ia', label:'Implantação IA (Gantt)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Formulários', icon: 'fa-pen-to-square', items: [{id:'registrar_acao', label:'Nova Ação Presencial'}, {id:'perfil', label:'Meu Perfil'}] },
                     { group: 'Apoio', icon: 'fa-toolbox', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'impressoes', label:'Centro de Impressão'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Dimens. de OP'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -12303,7 +13370,7 @@ storage: {
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal', 'pesquisa_treinamento'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'minhas_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(['home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds
@@ -12319,7 +13386,7 @@ storage: {
                             ? [...app.config.presetsGruposAcesso[g]]
                             : [...(defaults[g] || defaultUserIds)];
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
-                        base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev');
+                        base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev' && id !== 'minhas_atas');
                         if (!base.includes('home')) base.unshift('home');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('produtividade_gtd')) base.push('produtividade_gtd');
                         if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
@@ -12394,7 +13461,11 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
                     if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('qualidade_treinamento')) savedTabs.push('qualidade_treinamento');
                     if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('produtividade_gtd')) savedTabs.push('produtividade_gtd');
-                    if (!app.isAdmin && (savedTabs.includes('ata_reuniao') || tipo === 'Qualidade') && !savedTabs.includes('minhas_atas')) savedTabs.push('minhas_atas');
+                    if (savedTabs.includes('minhas_atas')) {
+                        savedTabs = savedTabs.filter(id => id !== 'minhas_atas');
+                        if (!savedTabs.includes('ata_reuniao')) savedTabs.push('ata_reuniao');
+                    }
+                    if (!app.isAdmin && tipo === 'Qualidade' && !savedTabs.includes('ata_reuniao')) savedTabs.push('ata_reuniao');
 
                     // Se o usuário teve suas abas sobrescritas apenas com 'implantacao_ia', restaura os presets do perfil
                     if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
@@ -13714,10 +14785,730 @@ storage: {
                         }
                     }
                     
+                    if (app.gtd && typeof app.gtd.syncFromUser === 'function') app.gtd.syncFromUser();
                     this.renderNav();
                     this.renderTab(app.currentTab, true);
                     app.notifications.updateBadge();
                     if (typeof this.syncGtdFocusOnBoot === 'function') this.syncGtdFocusOnBoot();
+                    if (app.notifications && typeof app.notifications.checkQualidadeIndicatorsAlert === 'function') {
+                        app.notifications.checkQualidadeIndicatorsAlert(false);
+                    }
+                    if (app.notifications && typeof app.notifications.checkTaskReminders === 'function') {
+                        app.notifications.checkTaskReminders(true);
+                    }
+                    if (typeof this.checkGtdTutorialAutoShow === 'function') {
+                        setTimeout(() => this.checkGtdTutorialAutoShow(), 450);
+                    }
+                },
+
+                getGtdTutorialSlides() {
+                    return [
+                        {
+                            badge: 'Etapa 1 de 7 • Visão Geral',
+                            icon: 'fa-rocket',
+                            accent: 'from-indigo-600 via-blue-600 to-sky-600',
+                            title: 'Domine seu Dia com GTD + Tríade do Tempo',
+                            subtitle: 'Por que o portal reúne esses dois métodos em um só lugar — e como isso elimina a sobrecarga sem você precisar decorar tudo.',
+                            bodyHtml: `
+                                <div class="space-y-4">
+                                    <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        No dia a dia da operação, chegam cobranças por chat, e-mail, reunião e sala ao mesmo tempo. Guardar tudo na cabeça gera esquecimentos e a sensação de estar sempre apagando incêndio.
+                                    </p>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                        <div class="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 space-y-1.5">
+                                            <div class="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                                                <i class="fa-solid fa-diagram-project"></i> O Papel do GTD (Fluxo)
+                                            </div>
+                                            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                <strong>Getting Things Done:</strong> tira qualquer demanda da mente na hora, separa o que depende de você do que depende de terceiros e define o próximo passo físico.
+                                            </p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 space-y-1.5">
+                                            <div class="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                                                <i class="fa-solid fa-bullseye"></i> O Papel da Tríade (Prioridade)
+                                            </div>
+                                            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                <strong>Tríade do Tempo:</strong> classifica onde sua energia está indo — evitando que tarefas importantes atrasem e virem incêndios urgentes.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-center gap-3 text-xs text-amber-900 dark:text-amber-200 font-semibold">
+                                        <i class="fa-solid fa-cloud-arrow-up text-amber-600 dark:text-amber-400 text-base shrink-0"></i>
+                                        <span>Suas tarefas ficam salvas diretamente no seu usuário do portal: você pode abrir de qualquer computador ou navegador sem perder nada.</span>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 2 de 7 • Tríade do Tempo',
+                            icon: 'fa-chart-pie',
+                            accent: 'from-emerald-600 via-teal-600 to-cyan-600',
+                            title: 'As 3 Esferas da Tríade do Tempo',
+                            subtitle: 'Todo tempo gasto no trabalho cai em uma destas 3 caixas. O segredo é equilibrar a proporção certa.',
+                            bodyHtml: `
+                                <div class="space-y-3.5">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div class="p-4 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/35 border-2 border-emerald-300 dark:border-emerald-700/70 space-y-2">
+                                            <div class="flex items-center justify-between">
+                                                <span class="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase">Importante</span>
+                                                <span class="text-sm font-black text-emerald-700 dark:text-emerald-300 tabular-nums">Meta 70%</span>
+                                            </div>
+                                            <p class="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
+                                                Gera resultado real e tem <strong>prazo planejado</strong>: monitorias em dia, calibrações agendadas, planos de ação estruturados e estudos.
+                                            </p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-rose-50/90 dark:bg-rose-950/35 border-2 border-rose-300 dark:border-rose-700/70 space-y-2">
+                                            <div class="flex items-center justify-between">
+                                                <span class="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black uppercase">Urgente</span>
+                                                <span class="text-sm font-black text-rose-700 dark:text-rose-300 tabular-nums">Até 20%</span>
+                                            </div>
+                                            <p class="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
+                                                Prazo estourando <strong>hoje</strong> ou crise imprevista. Se passar de 35%, o termômetro alerta <strong>Modo Bombeiro</strong>.
+                                            </p>
+                                        </div>
+                                        <div class="p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/35 border-2 border-amber-300 dark:border-amber-700/70 space-y-2">
+                                            <div class="flex items-center justify-between">
+                                                <span class="px-2.5 py-0.5 rounded-full bg-amber-600 text-white text-[10px] font-black uppercase">Circunstancial</span>
+                                                <span class="text-sm font-black text-amber-800 dark:text-amber-300 tabular-nums">Até 10%</span>
+                                            </div>
+                                            <p class="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
+                                                Interrupções, distrações ou tarefas sem impacto real. Regra prática: <strong>delegue, agrupe no fim do dia ou corte</strong>.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2.5">
+                                        <i class="fa-solid fa-gauge-high text-indigo-500 mt-0.5 shrink-0"></i>
+                                        <span><strong>Como funciona na tela:</strong> ao marcar cada card como <strong class="text-emerald-600 dark:text-emerald-400">Imp</strong>, <strong class="text-rose-600 dark:text-rose-400">Urg</strong> ou <strong class="text-amber-600 dark:text-amber-400">Circ</strong>, o <strong>Termômetro da Tríade</strong> calcula suas porcentagens e dá diagnóstico automático em tempo real.</span>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 3 de 7 • Método GTD',
+                            icon: 'fa-layer-group',
+                            accent: 'from-violet-600 via-purple-600 to-indigo-600',
+                            title: 'Os 5 Estágios do Fluxo GTD',
+                            subtitle: 'Em vez de uma lista infinita onde tudo se mistura, cada demanda entra no estágio exato em que ela está.',
+                            bodyHtml: `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                    <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="font-black text-slate-800 dark:text-white flex items-center gap-2 mb-1">
+                                            <i class="fa-solid fa-inbox text-slate-500"></i> 1. Caixa de Entrada (Inbox)
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Onde você anota tudo rápido na hora que surge. Não precisa organizar na captura — só tire da cabeça!</p>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/35 border border-indigo-200 dark:border-indigo-800/70">
+                                        <div class="font-black text-indigo-800 dark:text-indigo-200 flex items-center gap-2 mb-1">
+                                            <i class="fa-solid fa-bolt text-indigo-600"></i> 2. Próxima Ação (Fazer)
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Ação concreta que depende <strong>só de você</strong>. Dica: se levar <strong>menos de 2 minutos (&lt;2m)</strong>, faça na hora e não acumule!</p>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/35 border border-amber-200 dark:border-amber-800/70">
+                                        <div class="font-black text-amber-800 dark:text-amber-200 flex items-center gap-2 mb-1">
+                                            <i class="fa-solid fa-hourglass-half text-amber-600"></i> 3. Aguardando (Delegado)
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Depende da resposta do Supervisor, RH ou TI? Mova para cá e preencha <strong>"Cobrar de quem?"</strong> para nunca perder o follow-up.</p>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-purple-50/70 dark:bg-purple-950/35 border border-purple-200 dark:border-purple-800/70">
+                                        <div class="font-black text-purple-800 dark:text-purple-200 flex items-center gap-2 mb-1">
+                                            <i class="fa-solid fa-diagram-project text-purple-600"></i> 4. Projetos &amp; Algum Dia
+                                        </div>
+                                        <p class="text-slate-600 dark:text-slate-300 leading-relaxed"><strong>Projeto</strong> = entrega com 2+ passos (defina o 1º passo físico). <strong>Algum Dia / Talvez</strong> = boas ideias futuras sem pressão hoje.</p>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 4 de 7 • Uso na Página Inicial',
+                            icon: 'fa-note-sticky',
+                            accent: 'from-amber-500 via-orange-500 to-rose-500',
+                            title: 'Como Usar os Post-its GTD na Tela Inicial',
+                            subtitle: 'Sem sair da Home, você já captura, classifica e acompanha suas demandas do turno na coluna da direita.',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-black">1</div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Captura Relâmpago (Enter)</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Digite na barra superior do Post-it, clique opcionalmente em <strong>Imp / Urg / Circ</strong> ou <strong>&lt;2min</strong> e aperte <strong>Enter</strong>.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-black">2</div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Controles Diretos em Cada Bloco</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Clique no círculo para concluir, troque o estágio (Entrada, Fazer, Aguardando...), defina <strong>@Contexto</strong>, prazo, cor ou arraste para reordenar.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                                        <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 font-black">3</div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Sincronia Total com a Aba GTD &amp; Tríade</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5">Qualquer ajuste feito nos Post-its da Home aparece instantaneamente nos quadros Kanban da aba completa — clique no botão <strong>Painel</strong> para alternar.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 5 de 7 • A Aba GTD & Tríade',
+                            icon: 'fa-table-columns',
+                            accent: 'from-blue-600 via-indigo-600 to-violet-600',
+                            title: 'Explorando as 3 Visões da Aba GTD & Tríade',
+                            subtitle: 'Dentro da aba dedicada no menu "Início → GTD & Tríade", você organiza sua semana inteira em segundos.',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div class="p-3.5 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
+                                            <div class="font-black text-indigo-700 dark:text-indigo-300 mb-1"><i class="fa-solid fa-columns mr-1"></i> Aba Fluxo GTD</div>
+                                            <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Quadro Kanban com 4 colunas (Entrada, Próximas Ações, Aguardando, Projetos). Arraste e solte os cards entre etapas!</p>
+                                        </div>
+                                        <div class="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                                            <div class="font-black text-emerald-700 dark:text-emerald-300 mb-1"><i class="fa-solid fa-bullseye mr-1"></i> Aba Tríade do Tempo</div>
+                                            <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Visualize suas demandas divididas nas 3 esferas e arraste qualquer bloco sem classificação direto para Importante, Urgente ou Circunstancial.</p>
+                                        </div>
+                                        <div class="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800">
+                                            <div class="font-black text-amber-800 dark:text-amber-300 mb-1"><i class="fa-solid fa-calendar-check mr-1"></i> Revisão &amp; Histórico</div>
+                                            <p class="text-slate-600 dark:text-slate-300 leading-relaxed">Checklist guiado de Revisão Semanal (5 min) + histórico de todas as entregas concluídas (com botão para reabrir se precisar).</p>
+                                        </div>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600/10 to-purple-600/10 border border-indigo-300/60 dark:border-indigo-700/60 flex items-center gap-3">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-indigo-600 dark:text-indigo-400 text-lg shrink-0"></i>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Assistente "Processar Caixa de Entrada":</strong> quando houver itens na Caixa de Entrada, clique nesse botão para o sistema guiar você passo a passo (2min? esfera? destino?) até zerar a fila!</span>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 6 de 7 • Foco & Colaboração',
+                            icon: 'fa-stopwatch',
+                            accent: 'from-slate-800 via-indigo-900 to-blue-800',
+                            title: 'Cronômetro de Foco (25m / 5m / 2m) e Envio de Tarefas',
+                            subtitle: 'Proteja sua concentração enquanto executa e envie demandas com alerta em pop-up para sua equipe.',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="p-4 rounded-2xl bg-slate-900 text-white border border-slate-700 space-y-2">
+                                        <div class="flex flex-wrap items-center gap-2 font-black text-indigo-300 uppercase tracking-wider text-[11px]">
+                                            <i class="fa-solid fa-play"></i> Execução em Blocos Reais (Pomodoro + Regra 2m)
+                                        </div>
+                                        <p class="text-slate-200 leading-relaxed">
+                                            Clique no botão <strong>Play</strong> em qualquer tarefa (ou escolha uma no topo da aba GTD):
+                                            o modo <strong>25m</strong> cronometra foco total em 1 única ação e, ao terminar, inicia automaticamente <strong>5m</strong> de descanso com aviso sonoro.
+                                            Mesmo navegando para outras abas do portal, o mini cronômetro acompanha você no canto inferior esquerdo!
+                                        </p>
+                                    </div>
+                                    <div class="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-start gap-3">
+                                        <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                            <i class="fa-solid fa-paper-plane"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-black text-slate-800 dark:text-white">Enviar Tarefa &amp; Lembretes para Colegas</div>
+                                            <p class="text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                                                Use o botão <strong>Enviar / Enviar Tarefa</strong> (na Home, na aba GTD ou no sino de Notificações) para mandar um lembrete para um ou mais colaboradores. O destinatário recebe um <strong>pop-up na tela</strong> avisando quem enviou e a tarefa já entra no GTD dele!
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `
+                        },
+                        {
+                            badge: 'Etapa 7 de 7 • Plano de Ação Imediato',
+                            icon: 'fa-circle-check',
+                            accent: 'from-emerald-600 via-green-600 to-teal-600',
+                            title: 'Comece Agora em 3 Passos (Leva 1 Minuto)',
+                            subtitle: 'Você já sabe tudo para operar com leveza e zero esquecimentos. Que tal aplicar já?',
+                            bodyHtml: `
+                                <div class="space-y-3 text-xs">
+                                    <div class="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
+                                        <span class="w-7 h-7 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center shrink-0">1</span>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Esvazie a mente:</strong> lance 3 pendências reais de hoje na sua <strong>Caixa de Entrada</strong>.</span>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
+                                        <span class="w-7 h-7 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center shrink-0">2</span>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Calibre sua Tríade:</strong> marque se cada uma é <strong>Importante</strong>, <strong>Urgente</strong> ou <strong>Circunstancial</strong>.</span>
+                                    </div>
+                                    <div class="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
+                                        <span class="w-7 h-7 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center shrink-0">3</span>
+                                        <span class="text-slate-700 dark:text-slate-200"><strong>Execute 1 por vez:</strong> mate as rápidas de <strong>2 min</strong> agora e dê <strong>Play 25m</strong> na sua principal Próxima Ação!</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400 text-center pt-1 font-semibold">
+                                        Sempre que quiser rever esta apresentação, clique no botão <strong>"Tutorial GTD &amp; Tríade"</strong> na aba GTD ou no ícone <i class="fa-solid fa-graduation-cap text-indigo-500"></i> nos Post-its da Página Inicial.
+                                    </p>
+                                </div>
+                            `
+                        }
+                    ];
+                },
+
+                checkGtdTutorialAutoShow() {
+                    if (window.__TEST_MODE__ || app.isGuest) return;
+                    if (!app.isAdmin && !app.currentUser) return;
+                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    if (isOpUser) return;
+                    if (!app.isAdmin && app.currentUser) {
+                        const allowed = this.getEffectiveUserTabs(app.currentUser);
+                        if (!allowed.includes('home') && !allowed.includes('produtividade_gtd')) return;
+                    }
+
+                    const mat = app.isAdmin ? 'admin' : String(app.currentUser?.matricula || '').trim();
+                    if (!mat) return;
+                    const seenKey = 'soft_gtd_tutorial_v1_seen_' + mat;
+                    const seenCloud = !!(app.currentUser && app.currentUser.gtdTutorialSeen);
+                    const seenLocal = !!localStorage.getItem(seenKey);
+
+                    if (!seenCloud && !seenLocal) {
+                        this.openGtdTutorialModal(0, true);
+                    }
+                },
+
+                openGtdTutorialModal(startStep = 0, isAuto = false) {
+                    const slides = this.getGtdTutorialSlides();
+                    this._gtdTutorialStep = Math.max(0, Math.min(slides.length - 1, Number(startStep) || 0));
+                    this._gtdTutorialAuto = !!isAuto;
+
+                    let modal = document.getElementById('gtd-tutorial-modal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'gtd-tutorial-modal';
+                        modal.className = 'fixed inset-0 z-[94] flex items-center justify-center bg-slate-900/70 dark:bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-fade-in';
+                        document.body.appendChild(modal);
+                    }
+                    if (!window._gtdTutorialKeyBound) {
+                        window._gtdTutorialKeyBound = true;
+                        document.addEventListener('keydown', (e) => {
+                            const m = document.getElementById('gtd-tutorial-modal');
+                            if (!m) return;
+                            const total = app.ui.getGtdTutorialSlides().length;
+                            const cur = app.ui._gtdTutorialStep || 0;
+                            if (e.key === 'ArrowRight' && cur < total - 1) app.ui.setGtdTutorialStep(cur + 1);
+                            else if (e.key === 'ArrowLeft' && cur > 0) app.ui.setGtdTutorialStep(cur - 1);
+                            else if (e.key === 'Escape') app.ui.finishGtdTutorial(false);
+                        });
+                    }
+                    this._renderGtdTutorialModalContent();
+                },
+
+                setGtdTutorialStep(stepIdx) {
+                    const slides = this.getGtdTutorialSlides();
+                    this._gtdTutorialStep = Math.max(0, Math.min(slides.length - 1, Number(stepIdx) || 0));
+                    this._renderGtdTutorialModalContent();
+                },
+
+                _renderGtdTutorialModalContent() {
+                    const modal = document.getElementById('gtd-tutorial-modal');
+                    if (!modal) return;
+                    const slides = this.getGtdTutorialSlides();
+                    const idx = this._gtdTutorialStep || 0;
+                    const slide = slides[idx];
+                    const total = slides.length;
+                    const pct = Math.round(((idx + 1) / total) * 100);
+                    const isFirst = idx === 0;
+                    const isLast = idx === total - 1;
+
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[92vh]">
+                            <!-- Header Slide -->
+                            <div class="px-6 py-5 bg-gradient-to-r ${slide.accent} text-white relative">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div class="flex items-start gap-3.5 min-w-0">
+                                        <div class="w-12 h-12 rounded-2xl bg-white/20 border border-white/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                                            <i class="fa-solid ${slide.icon}"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <span class="inline-block px-2.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-wider mb-1.5">
+                                                ${slide.badge}
+                                            </span>
+                                            <h3 class="text-lg sm:text-xl font-black leading-tight">${slide.title}</h3>
+                                            <p class="text-xs text-white/90 mt-1 leading-relaxed">${slide.subtitle}</p>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="app.ui.finishGtdTutorial(false)" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm shrink-0 cursor-pointer transition" title="Fechar tutorial">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                <div class="w-full h-1.5 rounded-full bg-white/25 overflow-hidden mt-4">
+                                    <div style="width:${pct}%" class="h-full bg-white rounded-full transition-all duration-300"></div>
+                                </div>
+                            </div>
+
+                            <!-- Conteúdo da Etapa -->
+                            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                                ${slide.bodyHtml}
+                            </div>
+
+                            <!-- Rodapé Navegação por Etapas -->
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                                <div class="flex items-center gap-1.5">
+                                    ${slides.map((_, i) => `
+                                        <button type="button" onclick="app.ui.setGtdTutorialStep(${i})"
+                                            class="h-2.5 rounded-full transition-all cursor-pointer ${i === idx ? 'w-7 bg-indigo-600' : (i < idx ? 'w-2.5 bg-emerald-500' : 'w-2.5 bg-slate-300 dark:bg-slate-600 hover:bg-slate-400')}"
+                                            title="Ir para Etapa ${i + 1}">
+                                        </button>
+                                    `).join('')}
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 ml-auto">
+                                    ${!isLast ? `
+                                        <button type="button" onclick="app.ui.finishGtdTutorial(false)" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white cursor-pointer transition">
+                                            Pular Tutorial
+                                        </button>
+                                    ` : ''}
+                                    ${!isFirst ? `
+                                        <button type="button" onclick="app.ui.setGtdTutorialStep(${idx - 1})" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-extrabold cursor-pointer transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-arrow-left"></i> Anterior
+                                        </button>
+                                    ` : ''}
+                                    ${!isLast ? `
+                                        <button type="button" onclick="app.ui.setGtdTutorialStep(${idx + 1})" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                            Próximo <i class="fa-solid fa-arrow-right"></i>
+                                        </button>
+                                    ` : `
+                                        <button type="button" onclick="app.ui.finishGtdTutorial(false)" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer transition">
+                                            Concluir
+                                        </button>
+                                        <button type="button" onclick="app.ui.finishGtdTutorial(true)" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                            <i class="fa-solid fa-bullseye"></i> Abrir Aba GTD &amp; Tríade
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                },
+
+                finishGtdTutorial(goToGtdTab = false) {
+                    const modal = document.getElementById('gtd-tutorial-modal');
+                    if (modal) modal.remove();
+
+                    const mat = app.isAdmin ? 'admin' : String(app.currentUser?.matricula || '').trim();
+                    if (mat) {
+                        try { localStorage.setItem('soft_gtd_tutorial_v1_seen_' + mat, '1'); } catch (e) {}
+                        if (!app.isAdmin && app.currentUser && !app.currentUser.gtdTutorialSeen) {
+                            app.currentUser.gtdTutorialSeen = true;
+                            if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                                app.storage.saveUserByMatricula(mat, { gtdTutorialSeen: true }).catch(() => {});
+                            }
+                        }
+                    }
+
+                    if (goToGtdTab) {
+                        this.renderTab('produtividade_gtd', true);
+                    }
+                },
+
+                openIndicatorsAlertModal(infoInput = null) {
+                    const info = infoInput || (app.notifications && app.notifications.getQualidadeIndicatorsReminder ? app.notifications.getQualidadeIndicatorsReminder() : null);
+                    const existing = document.getElementById('ind-alert-modal');
+                    if (existing) existing.remove();
+                    if (!info) return;
+
+                    const esc = app.utils.escapeHtml;
+                    const prazoTitulo = info.daysLeft === 0
+                        ? 'Último dia para fechar o mês!'
+                        : (info.daysLeft === 1 ? 'Falta 1 dia para fechar o mês!' : `Faltam ${info.daysLeft} dias para fechar o mês!`);
+
+                    const wrapper = document.createElement('div');
+                    wrapper.id = 'ind-alert-modal';
+                    wrapper.className = 'fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm p-4 animate-fade-in';
+                    wrapper.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 border-rose-300 dark:border-rose-700 overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 text-white flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-lg shrink-0">
+                                        <i class="fa-solid fa-triangle-exclamation animate-pulse"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[11px] font-black uppercase tracking-wider opacity-90">Lembrete Diário • Fechamento ${esc(info.monthKey)}</div>
+                                        <h3 class="text-lg font-black leading-tight">${esc(prazoTitulo)}</h3>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="document.getElementById('ind-alert-modal')?.remove()" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm cursor-pointer">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="p-6 space-y-3 max-h-[65vh] overflow-y-auto custom-scrollbar">
+                                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    Os seguintes indicadores do seu perfil de <strong>Qualidade</strong> ainda não atingiram a meta este mês. Clique em qualquer item para agir agora:
+                                </p>
+                                <div class="space-y-2.5">
+                                    ${info.pendencias.map(p => `
+                                        <button type="button" onclick="document.getElementById('ind-alert-modal')?.remove(); app.ui.renderTab('${p.tab}', true);"
+                                            class="w-full text-left p-3.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 hover:border-rose-400 transition flex items-center justify-between gap-3 cursor-pointer">
+                                            <div class="flex items-center gap-3 min-w-0">
+                                                <div class="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-300 flex items-center justify-center shrink-0">
+                                                    <i class="fa-solid ${esc(p.icon)}"></i>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <div class="text-xs font-black text-slate-800 dark:text-white">${esc(p.label)}</div>
+                                                    <div class="text-[11px] font-bold text-rose-600 dark:text-rose-400">${esc(p.missing)}</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0">
+                                                <div class="text-xs font-extrabold text-slate-700 dark:text-slate-200 tabular-nums">${esc(p.current)}</div>
+                                                <div class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">Abrir <i class="fa-solid fa-arrow-right ml-0.5"></i></div>
+                                            </div>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                                <span class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">O aviso ficará destacado no topo da tela até bater a meta.</span>
+                                <button type="button" onclick="document.getElementById('ind-alert-modal')?.remove()" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-extrabold cursor-pointer transition">
+                                    Entendi
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(wrapper);
+                },
+
+                openTaskRemindersPopupModal(reminders = []) {
+                    if (!Array.isArray(reminders) || reminders.length === 0) return;
+                    const existing = document.getElementById('task-reminder-popup-modal');
+                    if (existing) existing.remove();
+
+                    try { if (app.utils && typeof app.utils.playCuteSound === 'function') app.utils.playCuteSound(); } catch (e) {}
+
+                    const esc = app.utils.escapeHtml;
+                    const idsJson = JSON.stringify(reminders.map(r => r.id).filter(Boolean)).replace(/"/g, '&quot;');
+                    const firstSender = reminders[0].fromName || 'um gestor';
+                    const headline = reminders.length === 1
+                        ? `Você recebeu uma tarefa de ${firstSender}!`
+                        : `Você recebeu ${reminders.length} tarefas!`;
+
+                    const wrapper = document.createElement('div');
+                    wrapper.id = 'task-reminder-popup-modal';
+                    wrapper.className = 'fixed inset-0 z-[96] flex items-center justify-center bg-slate-900/65 dark:bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
+                    wrapper.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 border-indigo-400 dark:border-indigo-700 overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 via-blue-600 to-sky-600 text-white flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+                                        <i class="fa-solid fa-paper-plane animate-bounce"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-[10px] font-black uppercase tracking-wider opacity-90">Lembrete de Tarefa Recebida</div>
+                                        <h3 class="text-base sm:text-lg font-black leading-tight">${esc(headline)}</h3>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                ${reminders.map(r => {
+                                    const sp = r.triad && app.gtd && app.gtd.TRIAD_SPHERES[r.triad] ? app.gtd.TRIAD_SPHERES[r.triad] : null;
+                                    const dueFmt = r.dueDate ? r.dueDate.split('-').reverse().join('/') : '';
+                                    const dtFmt = r.createdAt ? new Date(r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+                                    return `
+                                        <div class="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 space-y-2">
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-black">
+                                                    <i class="fa-solid fa-user-tie text-[10px]"></i> Tarefa de ${esc(r.fromName || 'Colega')}
+                                                </span>
+                                                <span class="text-[10px] text-slate-400 font-bold">${esc(dtFmt)}</span>
+                                            </div>
+                                            <div class="text-sm font-black text-slate-800 dark:text-white leading-snug">
+                                                ${esc(r.text || '')}
+                                            </div>
+                                            ${r.details ? `<div class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${esc(r.details)}</div>` : ''}
+                                            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                                                ${sp ? `<span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${sp.pillIdle}">${esc(sp.label)}</span>` : ''}
+                                                ${dueFmt ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-[10px] font-bold"><i class="fa-regular fa-calendar mr-1"></i>Prazo: ${esc(dueFmt)}</span>` : ''}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-end gap-2.5">
+                                <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, false)" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer transition">
+                                    Ciente
+                                </button>
+                                <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, true)" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-bullseye"></i> Ciente e Abrir Minhas Tarefas (GTD)
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(wrapper);
+                },
+
+                openEnviarTarefaModal() {
+                    const existing = document.getElementById('send-task-reminder-modal');
+                    if (existing) existing.remove();
+
+                    const esc = app.utils.escapeHtml;
+                    const users = (app.users || [])
+                        .filter(u => u && u.matricula && u.nome)
+                        .sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+
+                    this._sendTaskSelectedMats = new Set();
+
+                    const wrapper = document.createElement('div');
+                    wrapper.id = 'send-task-reminder-modal';
+                    wrapper.className = 'fixed inset-0 z-[92] flex items-center justify-center bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm p-4 animate-fade-in';
+                    wrapper.innerHTML = `
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-blue-700 text-white flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center text-lg">
+                                        <i class="fa-solid fa-paper-plane"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-base sm:text-lg font-black leading-tight">Enviar Lembrete de Tarefa</h3>
+                                        <p class="text-[11px] text-indigo-100">O colaborador receberá um pop-up na tela informando sua tarefa.</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="document.getElementById('send-task-reminder-modal')?.remove()" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-sm cursor-pointer">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div class="p-6 space-y-4 max-h-[72vh] overflow-y-auto custom-scrollbar">
+                                <div>
+                                    <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">1. Tarefa / Lembrete *</label>
+                                    <input id="send-task-text" type="text" placeholder="Ex: Finalizar calibração da operação Copel e enviar evidência..."
+                                        class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs sm:text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">Prioridade na Tríade</label>
+                                        <select id="send-task-triad" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                                            <option value="importante">Importante (Meta / Planejado)</option>
+                                            <option value="urgente">Urgente (Prazo Imediato)</option>
+                                            <option value="circunstancial">Circunstancial</option>
+                                            <option value="">Sem classificação</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">Prazo (Opcional)</label>
+                                        <input id="send-task-due" type="date" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">Observações (Opcional)</label>
+                                    <textarea id="send-task-details" rows="2" placeholder="Detalhes ou orientações complementares..."
+                                        class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                                </div>
+
+                                <div class="space-y-2">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <label class="text-[11px] font-black uppercase tracking-wider text-slate-500">2. Selecionar Colaboradores (<span id="send-task-sel-count">0</span> selecionado(s))</label>
+                                        <div class="flex items-center gap-2 text-[11px] font-bold">
+                                            <button type="button" onclick="app.ui.selecionarTodosEnviarTarefa(true)" class="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">Marcar visíveis</button>
+                                            <span class="text-slate-300">|</span>
+                                            <button type="button" onclick="app.ui.selecionarTodosEnviarTarefa(false)" class="text-slate-500 hover:underline cursor-pointer">Limpar</button>
+                                        </div>
+                                    </div>
+                                    <div class="relative">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input id="send-task-user-search" type="text" oninput="app.ui.filtrarEnviarTarefaUsers(this.value)" placeholder="Filtrar por nome, matrícula ou perfil (ex: Qualidade)..."
+                                            class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                                    </div>
+                                    <div id="send-task-users-list" class="max-h-48 overflow-y-auto custom-scrollbar rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900/50">
+                                        ${users.map(u => `
+                                            <label class="send-task-user-row flex items-center justify-between gap-3 px-3.5 py-2 hover:bg-indigo-50/50 dark:hover:bg-slate-800 cursor-pointer text-xs"
+                                                data-search="${esc(String(u.nome + ' ' + u.matricula + ' ' + (u.tipoAcesso || '') + ' ' + (u.cargo || '')).toLowerCase())}">
+                                                <div class="flex items-center gap-2.5 min-w-0">
+                                                    <input type="checkbox" value="${esc(u.matricula)}" onchange="app.ui.toggleEnviarTarefaUser('${esc(u.matricula)}', this.checked)" class="send-task-user-chk rounded text-indigo-600 focus:ring-indigo-500" />
+                                                    <div class="min-w-0">
+                                                        <div class="font-bold text-slate-800 dark:text-slate-100 truncate">${esc(u.nome)}</div>
+                                                        <div class="text-[10px] text-slate-400">${esc(u.matricula)} • ${esc(u.tipoAcesso || u.cargo || 'Colaborador')}</div>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+
+                                <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer pt-1">
+                                    <input id="send-task-add-gtd" type="checkbox" checked class="rounded text-indigo-600 focus:ring-indigo-500" />
+                                    <span>Adicionar automaticamente esta tarefa na lista GTD & Tríade do colaborador</span>
+                                </label>
+                            </div>
+                            <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-2.5">
+                                <button type="button" onclick="document.getElementById('send-task-reminder-modal')?.remove()" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white text-xs font-bold cursor-pointer">
+                                    Cancelar
+                                </button>
+                                <button id="btn-submit-send-task" type="button" onclick="app.ui.submitEnviarTarefaModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer flex items-center gap-1.5">
+                                    <i class="fa-solid fa-paper-plane"></i> Enviar Lembrete
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(wrapper);
+                    setTimeout(() => {
+                        const inp = document.getElementById('send-task-text');
+                        if (inp) inp.focus();
+                    }, 40);
+                },
+
+                toggleEnviarTarefaUser(mat, checked) {
+                    if (!this._sendTaskSelectedMats) this._sendTaskSelectedMats = new Set();
+                    if (checked) this._sendTaskSelectedMats.add(mat);
+                    else this._sendTaskSelectedMats.delete(mat);
+                    const cnt = document.getElementById('send-task-sel-count');
+                    if (cnt) cnt.textContent = this._sendTaskSelectedMats.size;
+                },
+
+                filtrarEnviarTarefaUsers(q) {
+                    const query = String(q || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                    document.querySelectorAll('#send-task-users-list .send-task-user-row').forEach(row => {
+                        const hay = (row.getAttribute('data-search') || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        row.classList.toggle('hidden', !!(query && !hay.includes(query)));
+                    });
+                },
+
+                selecionarTodosEnviarTarefa(flag) {
+                    if (!this._sendTaskSelectedMats) this._sendTaskSelectedMats = new Set();
+                    document.querySelectorAll('#send-task-users-list .send-task-user-row').forEach(row => {
+                        if (flag && row.classList.contains('hidden')) return;
+                        const chk = row.querySelector('.send-task-user-chk');
+                        if (!chk) return;
+                        chk.checked = !!flag;
+                        if (flag) this._sendTaskSelectedMats.add(chk.value);
+                        else this._sendTaskSelectedMats.delete(chk.value);
+                    });
+                    const cnt = document.getElementById('send-task-sel-count');
+                    if (cnt) cnt.textContent = this._sendTaskSelectedMats.size;
+                },
+
+                submitEnviarTarefaModal() {
+                    const txt = document.getElementById('send-task-text')?.value.trim() || '';
+                    const details = document.getElementById('send-task-details')?.value.trim() || '';
+                    const triad = document.getElementById('send-task-triad')?.value || '';
+                    const dueDate = document.getElementById('send-task-due')?.value || '';
+                    const alsoAddGtd = !!document.getElementById('send-task-add-gtd')?.checked;
+                    const selectedMats = Array.from(this._sendTaskSelectedMats || []);
+
+                    if (!txt) {
+                        this.showNotification('Informe a descrição da tarefa antes de enviar.', 'warning', 2000);
+                        document.getElementById('send-task-text')?.focus();
+                        return;
+                    }
+                    if (selectedMats.length === 0) {
+                        this.showNotification('Selecione ao menos um colaborador destinatário.', 'warning', 2000);
+                        return;
+                    }
+
+                    const recipients = selectedMats
+                        .map(m => (app.users || []).find(u => u && String(u.matricula).trim() === String(m).trim()))
+                        .filter(Boolean);
+
+                    const btn = document.getElementById('btn-submit-send-task');
+                    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...'; }
+
+                    app.notifications.sendTaskReminders({ recipients, text: txt, details, triad, dueDate, alsoAddGtd })
+                        .then(() => {
+                            document.getElementById('send-task-reminder-modal')?.remove();
+                            this.showNotification(`Tarefa enviada para ${recipients.length} colaborador(es)!`, 'success', 2500);
+                            if (app.currentTab === 'home' || app.currentTab === 'produtividade_gtd') {
+                                this.renderTab(app.currentTab, true);
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Erro ao enviar tarefa:', err);
+                            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Enviar Lembrete'; }
+                            this.showAlert('Erro', 'Não foi possível enviar o lembrete. Tente novamente.', 'error');
+                        });
                 },
 
                 renderNav() {
@@ -13924,6 +15715,7 @@ storage: {
 
                     if (tabId === 'gestao_equipe' || tabId === 'operacoes') { tabId = 'hierarquia'; }
                     if (tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') { tabId = 'treinamentos'; }
+                    if (tabId === 'minhas_atas') { tabId = 'ata_reuniao'; }
                     if (!app.isAdmin && app.currentUser) {
                         const allowedTabs = this.getEffectiveUserTabs(app.currentUser);
                         if (allowedTabs.length > 0 && !allowedTabs.includes(tabId)) {
@@ -13958,6 +15750,12 @@ storage: {
 
                     this.renderNav();
                     if (typeof this.syncGtdFloatingTimer === 'function') this.syncGtdFloatingTimer();
+                    if (app.notifications && typeof app.notifications.updateIndicatorsHeaderPill === 'function') {
+                        app.notifications.updateIndicatorsHeaderPill();
+                    }
+                    if (app.notifications && typeof app.notifications.checkTaskReminders === 'function') {
+                        app.notifications.checkTaskReminders(false);
+                    }
                     const mainContainer = document.getElementById('content-container');
                     
                     // Remove abas inativas do DOM para liberar memória e evitar peso com milhares de elementos ocultos
@@ -14014,17 +15812,23 @@ storage: {
                             }
 
                             else if(tabId === 'calendario') this.renderView_Calendario(viewDiv); 
-                            else if(tabId === 'ata_reuniao') this.renderView_AtaReuniao(viewDiv);
+                            else if(tabId === 'ata_reuniao') {
+                                if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
+                                    app.storage.ensureAtasLoaded().then(() => {
+                                        if (app.currentTab === 'ata_reuniao') app.ui.renderTab('ata_reuniao', true);
+                                    });
+                                }
+                                this.renderView_AtaReuniao(viewDiv);
+                            }
                             else if(tabId === 'perfil') this.renderView_Perfil(viewDiv);
                             else if(tabId === 'operacoes') this.renderView_Operacoes(viewDiv);
-                            else if(tabId === 'gestao_atas' || tabId === 'minhas_atas') {
+                            else if(tabId === 'gestao_atas') {
                                 if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
                                     app.storage.ensureAtasLoaded().then(() => {
                                         if (app.currentTab === tabId) app.ui.renderTab(tabId, true);
                                     });
                                 }
-                                if (tabId === 'gestao_atas') this.renderView_GestaoAtas(viewDiv);
-                                else this.renderView_MinhasAtas(viewDiv);
+                                this.renderView_GestaoAtas(viewDiv);
                             }
                             else if(tabId === 'gestao_equipe') this.renderView_GestaoEquipe(viewDiv);
                             else if(tabId === 'campanha_mes') this.renderView_CampanhaMes(viewDiv);
@@ -15705,6 +17509,17 @@ storage: {
                     container.innerHTML = html;
                 },
 
+                toggleCalVerEquipe() {
+                    this.calVerEquipe = !this.calVerEquipe;
+                    if (this.calVerEquipe) {
+                        this.calFiltroColab = 'TODOS';
+                    } else {
+                        this.calFiltroColab = 'MEU';
+                        this.calFiltroNome = '';
+                    }
+                    this.renderTab('calendario', true);
+                },
+
                 renderView_Calendario(container) {
                     const isGestorGerenteDev = this.isGestorGerenteDev();
                     const isGlobalCalendar = isGestorGerenteDev;
@@ -15725,7 +17540,12 @@ storage: {
                         return this.renderView_CalendarioDashboard(container);
                     }
 
-                    if (this.calFiltroColab === undefined || this.calFiltroColab === null) {
+                    if (this.calVerEquipe === undefined) {
+                        this.calVerEquipe = false;
+                    }
+                    if (!this.calVerEquipe) {
+                        this.calFiltroColab = 'MEU';
+                    } else if (this.calFiltroColab === undefined || this.calFiltroColab === null || this.calFiltroColab === 'MEU') {
                         this.calFiltroColab = 'TODOS';
                     }
 
@@ -15753,13 +17573,17 @@ storage: {
                     let allEvtsMonth = Object.values(app.eventsList || {}).filter(e => e && e.data && e.data.startsWith(`${year}-${month}`));
                     let myEvts = allEvtsMonth;
 
-                    if (this.calFiltroColab === 'MEU') {
-                        myEvts = allEvtsMonth.filter(e => (curMat && e.matricula === curMat) || e.matricula === 'TODOS' || (curNome && (e.autor||'').toLowerCase().trim() === curNome));
+                    if (!this.calVerEquipe || this.calFiltroColab === 'MEU') {
+                        myEvts = allEvtsMonth.filter(e => {
+                            if (e.matricula === 'TODOS') return true;
+                            if (app.isAdmin) return e.matricula === 'ADM' || e.autor === 'ADM';
+                            return (curMat && e.matricula === curMat) || (curNome && (e.autor || '').toLowerCase().trim() === curNome);
+                        });
                     } else if (this.calFiltroColab && this.calFiltroColab !== 'TODOS') {
                         myEvts = allEvtsMonth.filter(e => e.matricula === this.calFiltroColab || (e.autor||'').toLowerCase().includes(this.calFiltroColab.toLowerCase()));
                     }
 
-                    if (this.calFiltroNome) {
+                    if (this.calVerEquipe && this.calFiltroNome) {
                         const busca = this.calFiltroNome.toLowerCase().trim();
                         myEvts = myEvts.filter(e => {
                             const nomeMatch = (e.autor||'').toLowerCase().includes(busca);
@@ -15780,7 +17604,7 @@ storage: {
                     let html = `
                         <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGestorGerenteDev ? 'Calendário Global da Operação' : (this.calFiltroColab === 'MEU' ? 'Meu Calendário Pessoal' : 'Calendário da Equipe (Disponibilidade)')}</h2>
+                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${this.calVerEquipe ? (isGestorGerenteDev ? 'Calendário Global da Operação' : 'Calendário da Equipe (Disponibilidade)') : 'Meu Calendário Pessoal'}</h2>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 ${isGestorGerenteDev ? `
@@ -15806,21 +17630,29 @@ storage: {
                             <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center shadow-sm"><div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Cancelados</div><div class="text-3xl font-black text-red-500 dark:text-red-400">${cancelados}</div></div>
                         </div>
 
-                        <div class="flex flex-wrap gap-3 mb-6 bg-slate-100 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
-                            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-full mb-1"><i class="fa-solid fa-filter"></i> Filtros e Visualização de Disponibilidade</div>
+                        <div class="flex flex-wrap items-center gap-3 mb-6 bg-slate-100 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-full flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <span><i class="fa-solid fa-filter mr-1"></i> Filtros do Calendário</span>
+                                <button type="button" onclick="app.ui.toggleCalVerEquipe()" class="px-3.5 py-1.5 rounded-xl border text-xs font-extrabold normal-case tracking-normal transition-all flex items-center gap-2 cursor-pointer ${this.calVerEquipe ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:border-blue-400'}">
+                                    <i class="fa-solid ${this.calVerEquipe ? 'fa-eye' : 'fa-users'}"></i>
+                                    <span>${this.calVerEquipe ? 'Agenda da Equipe Ativa (Ocultar)' : 'Ver Agenda da Equipe'}</span>
+                                </button>
+                            </div>
                             
-                            <!-- Seletor de Visão de Agenda (Minha Agenda vs Toda a Equipe vs Colaborador) -->
-                            <select onchange="app.ui.calFiltroColab=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer font-bold">
-                                <option value="TODOS" ${(!this.calFiltroColab || this.calFiltroColab==='TODOS')?'selected':''}>Toda a Equipe (Disponibilidade)</option>
-                                <option value="MEU" ${this.calFiltroColab==='MEU'?'selected':''}>Minha Agenda Pessoal</option>
-                                <optgroup label="Filtrar por Colaborador">
-                                    ${(app.users || []).filter(u => u && u.nome).sort((a,b) => a.nome.localeCompare(b.nome)).map(u => `
-                                        <option value="${u.matricula}" ${this.calFiltroColab===u.matricula?'selected':''}>${u.nome} (${u.matricula})</option>
-                                    `).join('')}
-                                </optgroup>
-                            </select>
+                            ${this.calVerEquipe ? `
+                                <!-- Seletor de Visão de Agenda (Somente quando usuário ativa ver agenda da equipe) -->
+                                <select onchange="app.ui.calFiltroColab=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer font-bold">
+                                    <option value="TODOS" ${(!this.calFiltroColab || this.calFiltroColab==='TODOS')?'selected':''}>Toda a Equipe (Disponibilidade)</option>
+                                    <option value="MEU" ${this.calFiltroColab==='MEU'?'selected':''}>Apenas Minha Agenda</option>
+                                    <optgroup label="Filtrar por Colaborador">
+                                        ${(app.users || []).filter(u => u && u.nome).sort((a,b) => a.nome.localeCompare(b.nome)).map(u => `
+                                            <option value="${u.matricula}" ${this.calFiltroColab===u.matricula?'selected':''}>${u.nome} (${u.matricula})</option>
+                                        `).join('')}
+                                    </optgroup>
+                                </select>
 
-                            <input type="text" placeholder="Nome do Colaborador (Enter)" value="${this.calFiltroNome || ''}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-48 sm:w-56">
+                                <input type="text" placeholder="Nome do Colaborador (Enter)" value="${this.calFiltroNome || ''}" onchange="app.ui.calFiltroNome=this.value; app.ui.renderTab('calendario', true)" onkeydown="if(event.key==='Enter') this.blur()" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white w-48 sm:w-56">
+                            ` : ''}
                             
                             <select onchange="app.ui.calFiltroOp=this.value; app.ui.renderTab('calendario', true)" class="p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white cursor-pointer">
                                 <option value="">Todas Operações</option>${operacoes}
@@ -15924,153 +17756,285 @@ storage: {
                     const today = (draftData && /^\d{4}-\d{2}-\d{2}$/.test(draftData) && draftData.slice(0, 7) === hojeIso.slice(0, 7))
                         ? draftData
                         : hojeIso;
-                    // NOVO: Puxando a lista de operações dinamicamente
-                    const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
+                    const monthLabel = this.formatMonthLabel(app.currentMonth);
+                    const operacoes = Object.values(app.operacoesList || {}).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
+
+                    // Coleta histórico de atas do usuário (ou todas no caso de ADM)
+                    const curMatRaw = String(app.currentUser?.matricula || '').trim();
+                    const curMat = curMatRaw.toUpperCase();
+                    const curNome = String(app.currentUser?.nome || '').trim();
+                    const mesFiltro = this.minhasAtasFiltroMes || app.currentMonth || 'todos';
+
+                    const allUserAtas = Object.values(app.atasList || {}).filter(a => {
+                        if (!a) return false;
+                        if (app.isAdmin && !app.currentUser) return true;
+                        const aMat = String(a.matricula || '').trim().toUpperCase();
+                        if (curMat && aMat === curMat) return true;
+                        const aMatQual1 = String(a.matriculaQualidade || '').trim().toUpperCase();
+                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim().toUpperCase();
+                        if (curMat && (aMatQual1 === curMat || aMatQual2 === curMat)) return true;
+                        if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
+                            const matchedUsers = app.ata.findQualidadeUsersForAta(a);
+                            if (matchedUsers.some(u => String(u.matricula || '').trim().toUpperCase() === curMat)) return true;
+                        }
+                        if (curNome && app.ata && typeof app.ata.isStrictNameMatch === 'function') {
+                            const camposNome = [a.autor, a.qualidade, a.qualidade2, a.sup];
+                            if (Array.isArray(a.rawExtras)) {
+                                a.rawExtras.forEach(p => { if (p && p.nome) camposNome.push(p.nome); });
+                            }
+                            if (camposNome.some(c => c && app.ata.isStrictNameMatch(curNome, String(c).trim()))) return true;
+                        }
+                        return false;
+                    });
+
+                    const myAtas = (mesFiltro === 'todos'
+                        ? [...allUserAtas]
+                        : allUserAtas.filter(a => app.ata.getAtaMonth(a) === mesFiltro)
+                    ).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                    const mesesPresentes = [...new Set(allUserAtas.map(a => app.ata.getAtaMonth(a)).filter(Boolean))].sort().reverse();
+                    let mesesOpts = `<option value="${app.currentMonth}" ${mesFiltro === app.currentMonth ? 'selected' : ''}>${this.formatMonthLabel(app.currentMonth)}</option>`;
+                    mesesOpts += `<option value="todos" ${mesFiltro === 'todos' ? 'selected' : ''}>Todas as Atas (${allUserAtas.length})</option>`;
+                    mesesPresentes.filter(m => m && m !== app.currentMonth).forEach(m => {
+                        mesesOpts += `<option value="${m}" ${mesFiltro === m ? 'selected' : ''}>${this.formatMonthLabel(m)}</option>`;
+                    });
 
                     const html = `
-                        <div class="mb-8 flex flex-wrap justify-between items-center gap-3">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Reunião e Calibração</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Preencha o formulário e salve ou faça o download (salvamento automático no histórico).</p>
-                            </div>
-                            <button type="button" onclick="app.ui.renderTab(app.isAdmin ? 'gestao_atas' : 'minhas_atas', true)" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs flex items-center gap-2 cursor-pointer transition">
-                                <i class="fa-solid fa-clock-rotate-left text-indigo-600"></i> Ver Meu Histórico
-                            </button>
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Ata de Reunião e Calibração</h2>
+                            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Registre ou atualize suas atas referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
                         </div>
-                        <div class="glass-card p-6 md:p-8 rounded-3xl w-full border-t-4 border-t-blue-600 shadow-xl">
-                            <input type="hidden" id="ata-edit-id" value="">
 
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 border-b border-slate-100 dark:border-slate-700 pb-8">
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ata *</label><input type="date" id="ata-data" value="${today}" onchange="try{localStorage.setItem('soft_ata_data_draft', this.value)}catch(e){}" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label><input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
-                                <div><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Fim *</label><input type="time" id="ata-hora-fim" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500"></div>
-                                
-                                <!-- MODIFICADO AQUI: Agora é um Select usando as operações cadastradas -->
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
-                                    <select id="ata-op" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500">
-                                        <option value="">Selecione...</option>
-                                        ${operacoes}
-                                    </select>
+                        <!-- DIVISÃO EM DOIS (MESMO LAYOUT DE AÇÃO): FORMULÁRIO À ESQUERDA E HISTÓRICO À DIREITA -->
+                        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+
+                            <!-- COLUNA 1: FORMULÁRIO DE REGISTRO DA ATA (xl:col-span-6) -->
+                            <div class="xl:col-span-6 glass-card p-6 md:p-8 rounded-3xl shadow-sm">
+                                <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                                    <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-paper-plane text-green-600"></i> Formulário de Registro
+                                    </h3>
+                                    <span class="text-xs text-slate-400 font-semibold">* Campos obrigatórios</span>
                                 </div>
+                                <input type="hidden" id="ata-edit-id" value="">
 
-                                <div class="md:col-span-4"><label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema Principal da Reunião *</label><input type="text" id="ata-tema" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none text-lg font-semibold text-blue-700"></div>
-                            </div>
-                            
-                            <div class="mb-8 bg-blue-50/50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h4 class="font-bold text-blue-800 dark:text-blue-300 text-sm"><i class="fa-solid fa-users"></i> Gestores e Participantes</h4>
-                                    <button type="button" onclick="app.ata.addParticipante()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">+ Participante</button>
-                                </div>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 1 *</label><input type="text" id="ata-qualidade" value="${String(app.currentUser ? app.currentUser.nome : '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
-                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Gestor Qualidade 2</label><input type="text" id="ata-qualidade2" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
-                                    <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Supervisor Operacional</label><input type="text" id="ata-sup1" class="w-full p-2.5 rounded-lg bg-white border border-slate-200 outline-none"></div>
-                                </div>
-                                <div id="ata-dynamic-participants" class="space-y-2 border-t border-blue-200/50 pt-3 mt-2"></div>
-                            </div>
-                            
-                            <div class="space-y-8">
-                                <div>
-                                    <label class="block text-sm font-bold text-slate-700 dark:text-slate-300 uppercase mb-2 flex items-center justify-between">
-                                        <span class="flex items-center gap-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</span>
-                                        <span class="text-xs font-normal text-slate-400">Formatação rica habilitada</span>
-                                    </label>
-                                    <div class="w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all shadow-sm">
-                                        <!-- Toolbar de Formatação Rica: Tamanho, Negrito, Itálico, Sublinhado, Cores, Listas -->
-                                        <div class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 p-2.5 flex flex-wrap items-center gap-1.5 text-xs select-none">
-                                            <!-- Seletor de Tamanho / Cabeçalho -->
-                                            <select onchange="if(this.value){ document.execCommand('formatBlock', false, this.value); this.value=''; }"
-                                                class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold outline-none cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
-                                                title="Tamanho do Texto / Estilo">
-                                                <option value="">Tamanho / Estilo</option>
-                                                <option value="p">Normal (Texto)</option>
-                                                <option value="h2">Título Principal (Grande)</option>
-                                                <option value="h3">Subtítulo (Médio)</option>
-                                                <option value="h4">Tópico (Pequeno)</option>
-                                            </select>
-
-                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-                                            <!-- Estilos de Fonte: Negrito, Itálico, Sublinhado, Tachado -->
-                                            <button type="button" onclick="document.execCommand('bold', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold flex items-center justify-center transition-colors" title="Negrito (Ctrl+B)">
-                                                <strong>B</strong>
-                                            </button>
-                                            <button type="button" onclick="document.execCommand('italic', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 italic font-serif flex items-center justify-center transition-colors" title="Itálico (Ctrl+I)">
-                                                <em>I</em>
-                                            </button>
-                                            <button type="button" onclick="document.execCommand('underline', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 underline flex items-center justify-center transition-colors" title="Sublinhado (Ctrl+U)">
-                                                <u>U</u>
-                                            </button>
-                                            <button type="button" onclick="document.execCommand('strikeThrough', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 line-through flex items-center justify-center transition-colors" title="Tachado">
-                                                <s>S</s>
-                                            </button>
-
-                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-                                            <!-- Listas -->
-                                            <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors" title="Lista com Marcadores">
-                                                <i class="fa-solid fa-list-ul"></i>
-                                            </button>
-                                            <button type="button" onclick="document.execCommand('insertOrderedList', false, null)"
-                                                class="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors" title="Lista Numerada">
-                                                <i class="fa-solid fa-list-ol"></i>
-                                            </button>
-
-                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-                                            <!-- Cores Rápidas -->
-                                            <button type="button" onclick="document.execCommand('foreColor', false, '#16a34a')"
-                                                class="w-6 h-6 rounded-full bg-emerald-600 hover:scale-110 transition-transform shadow-xs" title="Cor Verde (Positivo/Meta)"></button>
-                                            <button type="button" onclick="document.execCommand('foreColor', false, '#dc2626')"
-                                                class="w-6 h-6 rounded-full bg-red-600 hover:scale-110 transition-transform shadow-xs" title="Cor Vermelho (Alerta/Ofensor)"></button>
-                                            <button type="button" onclick="document.execCommand('foreColor', false, '#2563eb')"
-                                                class="w-6 h-6 rounded-full bg-blue-600 hover:scale-110 transition-transform shadow-xs" title="Cor Azul (Institucional)"></button>
-                                            <button type="button" onclick="document.execCommand('foreColor', false, '#0f172a')"
-                                                class="w-6 h-6 rounded-full bg-slate-900 dark:bg-white hover:scale-110 transition-transform shadow-xs" title="Cor Padrão"></button>
-                                            <button type="button" onclick="document.execCommand('hiliteColor', false, '#fef08a')"
-                                                class="px-2 py-1 rounded-lg bg-amber-200 text-amber-900 font-bold text-[10px] hover:bg-amber-300 transition-colors" title="Marca-Texto Amarelo">
-                                                <i class="fa-solid fa-highlighter mr-1"></i> Destacar
-                                            </button>
-
-                                            <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-                                            <!-- Limpar Formatação -->
-                                            <button type="button" onclick="document.execCommand('removeFormat', false, null)"
-                                                class="px-2.5 py-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-1 font-semibold transition-colors" title="Remover Formatação">
-                                                <i class="fa-solid fa-eraser"></i> Limpar
-                                            </button>
+                                <div class="space-y-5">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Data da Ata *</label>
+                                            <input type="date" id="ata-data" value="${today}" onchange="try{localStorage.setItem('soft_ata_data_draft', this.value)}catch(e){}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-green-500 text-sm cursor-pointer">
                                         </div>
-
-                                        <!-- Editor Rich Text dos Pontos Discutidos -->
-                                        <div id="ata-fortes-rich" contenteditable="true"
-                                            oninput="const el=document.getElementById('ata-fortes'); if(el) el.value=this.innerHTML;"
-                                            class="w-full p-4 min-h-[180px] max-h-[480px] overflow-y-auto outline-none text-sm text-slate-800 dark:text-slate-100 cursor-text resize-y leading-relaxed bg-white dark:bg-slate-900"
-                                            placeholder="Descreva detalhadamente os pontos discutidos, destaques e deliberações da reunião..."></div>
-
-                                        <!-- Input Oculto para persistência e retrocompatibilidade -->
-                                        <input type="hidden" id="ata-fortes">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operação *</label>
+                                            <select id="ata-op" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none cursor-pointer focus:ring-2 focus:ring-green-500 text-sm">
+                                                <option value="">Selecione...</option>
+                                                ${operacoes}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Início *</label>
+                                            <input type="time" id="ata-hora" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-green-500 text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Hora Fim *</label>
+                                            <input type="time" id="ata-hora-fim" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-green-500 text-sm">
+                                        </div>
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Tema Principal da Reunião *</label>
+                                            <input type="text" id="ata-tema" placeholder="Ex: Calibração Quinzenal ou Alinhamento de Indicadores" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-green-500 text-sm font-semibold text-blue-700 dark:text-blue-300">
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                <div class="bg-slate-50 dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
-                                    <div class="flex justify-between items-center mb-4">
-                                        <label class="block text-sm font-bold text-slate-700 dark:text-white uppercase"><i class="fa-solid fa-list-check text-purple-500"></i> Ações Definidas (Relatório)</label>
-                                        <button type="button" onclick="app.ata.addAcao()" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">+ Adicionar Ação</button>
+
+                                    <!-- Gestores e Participantes + Base Compartilhada -->
+                                    <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                        <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+                                            <h4 class="font-bold text-blue-800 dark:text-blue-300 text-xs uppercase tracking-wider flex items-center gap-1.5"><i class="fa-solid fa-users"></i> Gestores e Participantes</h4>
+                                            <div class="flex flex-wrap items-center gap-1.5">
+                                                <button type="button" onclick="document.getElementById('ata-base-panel')?.classList.toggle('hidden')" class="bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-xs flex items-center gap-1 cursor-pointer transition">
+                                                    <i class="fa-solid fa-address-book"></i> Base (<span id="ata-base-count">0</span>)
+                                                </button>
+                                                <button type="button" onclick="app.ata.addParticipante()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-sm cursor-pointer">+ Participante</button>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
+                                            <div class="relative"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Qualidade 1 *</label><input type="text" id="ata-qualidade" value="${String(app.currentUser ? app.currentUser.nome : '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-xs"></div>
+                                            <div class="relative"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Qualidade 2</label><input type="text" id="ata-qualidade2" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-xs"></div>
+                                            <div class="relative"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Supervisor Op.</label><input type="text" id="ata-sup1" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none text-xs"></div>
+                                        </div>
+                                        <div id="ata-dynamic-participants" class="space-y-2 border-t border-blue-200/50 pt-2.5 mt-2"></div>
+
+                                        <!-- Painel de Pré-Salvamento Compartilhado (Base para todos) -->
+                                        <div id="ata-base-panel" class="mt-3 pt-3 border-t border-blue-200/60 dark:border-blue-800/50">
+                                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                <span class="text-[10px] font-extrabold text-blue-800 dark:text-blue-300 uppercase tracking-wider flex items-center gap-1">
+                                                    <i class="fa-solid fa-bookmark"></i> Pré-salvar Nome e Cargo (Base de todos)
+                                                </span>
+                                            </div>
+                                            <div class="flex flex-col sm:flex-row gap-2 mb-2">
+                                                <div class="relative flex-1">
+                                                    <input type="text" id="ata-base-nome" placeholder="Nome completo..." class="w-full p-2 rounded-lg border border-blue-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500" />
+                                                </div>
+                                                <div class="relative sm:w-1/3">
+                                                    <input type="text" id="ata-base-cargo" placeholder="Cargo / Papel" class="w-full p-2 rounded-lg border border-blue-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500" />
+                                                </div>
+                                                <button type="button" onclick="app.ata.preSalvarContatoBase()" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 shrink-0 cursor-pointer transition">
+                                                    <i class="fa-solid fa-floppy-disk"></i> Salvar na Base
+                                                </button>
+                                            </div>
+                                            <div id="ata-base-chips-container" class="flex flex-wrap gap-1.5"></div>
+                                        </div>
                                     </div>
-                                    <div id="ata-dynamic-actions" class="space-y-4"></div>
+
+                                    <!-- Pontos Discutidos -->
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5 flex items-center justify-between">
+                                            <span>Pontos Discutidos *</span>
+                                            <span class="text-[10px] font-normal text-slate-400 normal-case">Formatação rica habilitada</span>
+                                        </label>
+                                        <div class="w-full rounded-xl bg-slate-50 border border-slate-200 dark:border-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-green-500 transition-all">
+                                            <div class="bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-2 flex flex-wrap items-center gap-1 text-xs select-none">
+                                                <select onchange="if(this.value){ document.execCommand('formatBlock', false, this.value); this.value=''; }" class="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-semibold text-[11px] outline-none cursor-pointer">
+                                                    <option value="">Estilo</option>
+                                                    <option value="p">Normal</option>
+                                                    <option value="h2">Título</option>
+                                                    <option value="h3">Subtítulo</option>
+                                                </select>
+                                                <button type="button" onclick="document.execCommand('bold', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs" title="Negrito">B</button>
+                                                <button type="button" onclick="document.execCommand('italic', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 italic font-serif text-xs" title="Itálico">I</button>
+                                                <button type="button" onclick="document.execCommand('underline', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 underline text-xs" title="Sublinhado">U</button>
+                                                <div class="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-0.5"></div>
+                                                <button type="button" onclick="document.execCommand('insertUnorderedList', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs" title="Lista"><i class="fa-solid fa-list-ul"></i></button>
+                                                <button type="button" onclick="document.execCommand('insertOrderedList', false, null)" class="w-7 h-7 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs" title="Lista Numerada"><i class="fa-solid fa-list-ol"></i></button>
+                                                <div class="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-0.5"></div>
+                                                <button type="button" onclick="document.execCommand('foreColor', false, '#16a34a')" class="w-5 h-5 rounded-full bg-emerald-600" title="Verde"></button>
+                                                <button type="button" onclick="document.execCommand('foreColor', false, '#dc2626')" class="w-5 h-5 rounded-full bg-red-600" title="Vermelho"></button>
+                                                <button type="button" onclick="document.execCommand('foreColor', false, '#2563eb')" class="w-5 h-5 rounded-full bg-blue-600" title="Azul"></button>
+                                                <button type="button" onclick="document.execCommand('hiliteColor', false, '#fef08a')" class="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-bold text-[10px]" title="Destacar"><i class="fa-solid fa-highlighter"></i></button>
+                                                <button type="button" onclick="document.execCommand('removeFormat', false, null)" class="px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 text-[10px] font-semibold" title="Limpar Formatação"><i class="fa-solid fa-eraser"></i></button>
+                                            </div>
+                                            <div id="ata-fortes-rich" contenteditable="true"
+                                                oninput="const el=document.getElementById('ata-fortes'); if(el) el.value=this.innerHTML;"
+                                                class="w-full p-3.5 min-h-[160px] max-h-[340px] overflow-y-auto outline-none text-sm text-slate-800 dark:text-slate-100 cursor-text resize-y leading-relaxed bg-white dark:bg-slate-900"
+                                                placeholder="Descreva detalhadamente os pontos discutidos, destaques e deliberações da reunião..."></div>
+                                            <input type="hidden" id="ata-fortes">
+                                        </div>
+                                    </div>
+
+                                    <!-- Ações Definidas -->
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                        <div class="flex justify-between items-center mb-3">
+                                            <label class="block text-xs font-bold text-slate-700 dark:text-white uppercase"><i class="fa-solid fa-list-check text-purple-500 mr-1"></i> Ações Definidas (Relatório)</label>
+                                            <button type="button" onclick="app.ata.addAcao()" class="bg-slate-800 hover:bg-slate-900 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs cursor-pointer">+ Ação</button>
+                                        </div>
+                                        <div id="ata-dynamic-actions" class="space-y-3"></div>
+                                    </div>
+
+                                    <!-- Botões de Envio -->
+                                    <div class="pt-3 flex flex-col sm:flex-row gap-3">
+                                        <button type="button" onclick="app.ata.salvarApenas()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition text-sm"><i class="fa-solid fa-floppy-disk"></i> Salvar Ata</button>
+                                        <button type="button" onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition text-sm"><i class="fa-solid fa-file-pdf"></i> Salvar e PDF</button>
+                                        <button type="button" onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition text-sm"><i class="fa-solid fa-file-word"></i> Salvar e .doc</button>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <div class="flex flex-col md:flex-row gap-4 mt-10 pt-6 border-t border-slate-200">
-                                <button type="button" onclick="app.ata.salvarApenas()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-floppy-disk"></i> Salvar Ata (Sem Baixar)</button>
-                                <button type="button" onclick="app.ata.gerarPDF()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-file-pdf"></i> Salvar e Baixar PDF</button>
-                                <button type="button" onclick="app.ata.gerarWord()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition"><i class="fa-solid fa-file-word"></i> Salvar e Baixar (.doc)</button>
+
+                            <!-- COLUNA 2: HISTÓRICO / DEVOLUTIVAS DAS ATAS (xl:col-span-6) -->
+                            <div class="xl:col-span-6 glass-card p-6 md:p-8 rounded-3xl shadow-sm flex flex-col">
+                                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 mb-6">
+                                    <div>
+                                        <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                                            <i class="fa-solid fa-clock-rotate-left text-blue-600"></i> Histórico / Devolutivas
+                                        </h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Acompanhe suas atas e calibrações vinculadas a você</p>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <select onchange="app.ui.minhasAtasFiltroMes=this.value; app.ui.renderTab('ata_reuniao', true)" class="px-2.5 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold cursor-pointer">
+                                            ${mesesOpts}
+                                        </select>
+                                        <span class="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-xs font-bold">
+                                            ${myAtas.length} ${myAtas.length === 1 ? 'Ata' : 'Atas'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 max-h-[850px] overflow-y-auto pr-1 custom-scrollbar">
+                                    ${myAtas.length === 0 ? `
+                                        <div class="p-8 text-center text-slate-400 dark:text-slate-500 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40">
+                                            <i class="fa-solid fa-folder-open text-3xl mb-2 text-slate-300 dark:text-slate-600 block"></i>
+                                            <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Nenhuma ata encontrada neste filtro.</p>
+                                            <p class="text-[11px] text-slate-400 mt-1 mb-3">Preencha o formulário ao lado para registrar sua ata ou selecione outro período.</p>
+                                            ${allUserAtas.length > 0 && mesFiltro !== 'todos' ? `
+                                                <button type="button" onclick="app.ui.minhasAtasFiltroMes='todos'; app.ui.renderTab('ata_reuniao', true)" class="px-3.5 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 transition cursor-pointer">
+                                                    Ver Todas (${allUserAtas.length})
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    ` : myAtas.map(ata => {
+                                        const isDevolvido = ata.status === 'devolvido';
+                                        const isAprovado = ata.status === 'aprovado' || ata.status === 'aprovada';
+                                        const isAprovSemBonus = ata.status === 'aprovado_sem_bonus';
+                                        const statusBadge = isDevolvido
+                                            ? `<span class="bg-red-100 text-red-600 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Devolvida</span>`
+                                            : (isAprovado
+                                                ? `<span class="bg-green-100 text-green-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Aprovada & Somada</span>`
+                                                : (isAprovSemBonus
+                                                    ? `<span class="bg-blue-100 text-blue-700 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Validada (Doc)</span>`
+                                                    : `<span class="bg-orange-100 text-orange-600 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Aguardando Gestor</span>`));
+
+                                        const fortesPlain = String(ata.fortes || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '-';
+                                        const canEditAta = isDevolvido || app.isAdmin || (!isAprovado && !isAprovSemBonus && curMat && String(ata.matricula || '').trim().toUpperCase() === curMat);
+
+                                        return `
+                                            <div class="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 shadow-xs hover:shadow-md transition-shadow">
+                                                <div class="flex items-center justify-between gap-2 mb-1.5">
+                                                    <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">${ata.op || 'Operação'}</span>
+                                                    ${statusBadge}
+                                                </div>
+                                                <h4 class="font-extrabold text-sm text-slate-800 dark:text-white leading-tight truncate mb-1" title="${ata.tema || ''}">
+                                                    ${ata.tema || '-'}
+                                                </h4>
+                                                <div class="text-[10px] text-slate-400 font-semibold mb-2.5">
+                                                    Data: ${app.ata.formatAtaData(ata.data)} (${ata.hora || '--:--'}) | Líder: ${ata.qualidade || '-'}
+                                                </div>
+
+                                                <div class="grid grid-cols-2 gap-1.5 mb-2.5">
+                                                    <div class="bg-slate-50 dark:bg-slate-900/60 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 text-center">
+                                                        <div class="text-[9px] uppercase font-bold text-slate-400">Supervisor</div>
+                                                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">${ata.sup || '-'}</div>
+                                                    </div>
+                                                    <div class="bg-slate-50 dark:bg-slate-900/60 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800 text-center">
+                                                        <div class="text-[9px] uppercase font-bold text-slate-400">Ações</div>
+                                                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${Array.isArray(ata.rawAcoes) ? ata.rawAcoes.filter(x => x && x.texto).length : 0} definida(s)</div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="bg-slate-50 dark:bg-slate-900/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 mb-3 text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                                                    ${fortesPlain}
+                                                </div>
+
+                                                ${isDevolvido && ata.comentario ? `
+                                                    <div class="mb-3 p-2 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-[11px] text-red-600 dark:text-red-400 font-semibold">
+                                                        <i class="fa-solid fa-reply mr-1"></i> Motivo Reprovação: ${ata.comentario}
+                                                    </div>
+                                                ` : ''}
+
+                                                <div class="flex flex-wrap items-center gap-2 justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                    ${canEditAta ? `
+                                                        <button type="button" onclick="app.ata.editAta('${ata.id}')" class="text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer">
+                                                            <i class="fa-solid fa-pen text-[10px]"></i> Corrigir / Editar
+                                                        </button>
+                                                    ` : ''}
+                                                    <button type="button" onclick="app.ata.viewAtaLegal('${ata.id}')" class="text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer">
+                                                        <i class="fa-solid fa-eye text-[10px]"></i> Visualização
+                                                    </button>
+                                                    <button type="button" onclick="app.ata.gerarPDFById('${ata.id}')" class="text-red-600 bg-red-50 dark:bg-red-950/40 dark:text-red-300 hover:bg-red-100 border border-red-200 dark:border-red-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer" title="Baixar PDF">
+                                                        <i class="fa-solid fa-file-pdf text-[10px]"></i> PDF
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
                             </div>
                         </div>
                     `;
@@ -16129,6 +18093,13 @@ storage: {
                     }
 
                     if(!targetUser) return;
+
+                    if (app.notifications && typeof app.notifications.buildIndicatorsAlertCardHtml === 'function') {
+                        const isSelfQual = !app.isAdmin && app.currentUser && targetUser.matricula === app.currentUser.matricula;
+                        if (isSelfQual) {
+                            html += app.notifications.buildIndicatorsAlertCardHtml();
+                        }
+                    }
 
                     const resultsForMonth = (targetUser.results && targetUser.results[app.currentMonth]) || {};
                     const total = app.calc.getTotal(resultsForMonth);
@@ -18905,33 +20876,28 @@ storage: {
                         });
 
                         container.innerHTML = `
-                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-4 animate-fade-in">
                                 <!-- Sub-navegação Fixa no Topo -->
                                 ${navSubTabsHtml}
 
-                                <!-- Banner Header -->
-                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                                    <div class="relative z-10">
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
-                                            <i class="fa-solid fa-chart-pie"></i> Painel Executivo da Gestão
+                                <!-- Cabeçalho Executivo Compacto (sem botão duplicado e baixo perfil vertical) -->
+                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-2xl px-5 py-3.5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/15 flex items-center justify-center text-emerald-200 shrink-0">
+                                            <i class="fa-solid fa-chart-pie"></i>
                                         </div>
-                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Dashboard de Diários de Bordo</h2>
-                                        <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
-                                            Visão consolidada em tempo real de todas as operações: frequência em sala, absenteísmo e desligamentos de turmas em formação.
-                                        </p>
+                                        <div class="min-w-0">
+                                            <h2 class="text-lg sm:text-xl font-extrabold tracking-tight leading-tight">Dashboard de Diários de Bordo</h2>
+                                            <p class="text-emerald-100/85 text-xs truncate">Frequência em sala, absenteísmo e desligamentos das turmas em formação.</p>
+                                        </div>
                                     </div>
-                                    <div class="relative z-10 flex flex-wrap items-center gap-3">
-                                        <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-plus text-emerald-600"></i> Novo Diário de Bordo
-                                        </button>
-                                    </div>
-                                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
-                                        <i class="fa-solid fa-chart-line"></i>
-                                    </div>
+                                    <span class="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold uppercase tracking-wider text-emerald-100 shrink-0 self-start sm:self-center">
+                                        Painel Executivo
+                                    </span>
                                 </div>
 
                                 <!-- Barra de Filtro de Período -->
-                                <div class="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div class="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <span class="text-xs font-bold text-slate-500 uppercase tracking-wider"><i class="fa-regular fa-calendar mr-1"></i> Período:</span>
                                         <div class="flex flex-wrap gap-1.5">
@@ -18946,62 +20912,73 @@ storage: {
                                     </div>
                                 </div>
 
-                                <!-- Macro KPIs Globais -->
-                                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>Operações</span> <i class="fa-solid fa-building text-blue-500"></i>
+                                <!-- Macro KPIs Globais (Hierarquia visual: informativos vs indicadores críticos %) -->
+                                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+                                    <!-- Informativos -->
+                                    <div class="bg-white dark:bg-slate-800 px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Operações</span> <i class="fa-solid fa-building text-slate-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${opsComTurmas.length} <span class="text-xs font-semibold text-slate-400">/ ${operacoesCadastradas.length}</span></div>
-                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Operações com turmas</div>
+                                        <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${opsComTurmas.length} <span class="text-xs font-semibold text-slate-400">/ ${operacoesCadastradas.length}</span></div>
+                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Com turmas ativas</div>
                                     </div>
 
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>Turmas</span> <i class="fa-solid fa-chalkboard text-indigo-500"></i>
+                                    <div class="bg-white dark:bg-slate-800 px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Turmas</span> <i class="fa-solid fa-chalkboard text-slate-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${diariosPeriodo.length}</div>
-                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Diários registrados</div>
+                                        <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${diariosPeriodo.length}</div>
+                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Diários registrados</div>
                                     </div>
 
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                    <div class="bg-white dark:bg-slate-800 px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                                             <span>Previstos</span> <i class="fa-solid fa-users text-slate-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${globPrev}</div>
-                                        <div class="text-[10px] text-slate-400 font-medium mt-1">Headcount total</div>
+                                        <div class="text-xl font-extrabold text-slate-700 dark:text-slate-100 tabular-nums">${globPrev}</div>
+                                        <div class="text-[11px] text-slate-400 font-medium mt-0.5">Headcount previsto</div>
                                     </div>
 
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 shadow-xs flex flex-col justify-between bg-emerald-50/20">
-                                        <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>Presentes</span> <i class="fa-solid fa-user-check text-emerald-500"></i>
+                                    <!-- Críticos de Performance (Taxa % em destaque máximo) -->
+                                    <div class="bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-3.5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 border-l-4 border-l-emerald-500 shadow-sm flex flex-col justify-between">
+                                        <div class="text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Presentes</span> <i class="fa-solid fa-user-check text-emerald-600 dark:text-emerald-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400">${globPres} <span class="text-xs font-bold">(${globPctPres}%)</span></div>
-                                        <div class="text-[10px] text-emerald-700/80 dark:text-emerald-400 font-medium mt-1">Frequência geral</div>
+                                        <div class="flex items-baseline justify-between gap-2">
+                                            <span class="text-3xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums leading-none">${globPctPres}%</span>
+                                            <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 text-xs font-extrabold tabular-nums">${globPres}</span>
+                                        </div>
+                                        <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400 font-semibold mt-1">Taxa de presença</div>
                                     </div>
 
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-amber-200 dark:border-amber-800/40 shadow-xs flex flex-col justify-between bg-amber-50/20">
-                                        <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>ABS (Faltas)</span> <i class="fa-solid fa-user-xmark text-amber-500"></i>
+                                    <div class="bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3.5 rounded-2xl border border-amber-200 dark:border-amber-800/60 border-l-4 border-l-amber-500 shadow-sm flex flex-col justify-between">
+                                        <div class="text-[11px] font-extrabold text-amber-700 dark:text-amber-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>ABS (Faltas)</span> <i class="fa-solid fa-user-xmark text-amber-600 dark:text-amber-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-amber-600 dark:text-amber-400">${globAbs} <span class="text-xs font-bold">(${globPctAbs}%)</span></div>
-                                        <div class="text-[10px] text-amber-700/80 dark:text-amber-400 font-medium mt-1">Ausências totais</div>
+                                        <div class="flex items-baseline justify-between gap-2">
+                                            <span class="text-3xl font-black text-amber-700 dark:text-amber-300 tabular-nums leading-none">${globPctAbs}%</span>
+                                            <span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-extrabold tabular-nums">${globAbs}</span>
+                                        </div>
+                                        <div class="text-[11px] text-amber-700/80 dark:text-amber-400 font-semibold mt-1">Taxa de absenteísmo</div>
                                     </div>
 
-                                    <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-rose-200 dark:border-rose-800/40 shadow-xs flex flex-col justify-between bg-rose-50/20">
-                                        <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                                            <span>Desligamentos</span> <i class="fa-solid fa-user-minus text-rose-500"></i>
+                                    <div class="bg-rose-50/70 dark:bg-rose-950/30 px-4 py-3.5 rounded-2xl border border-rose-200 dark:border-rose-800/60 border-l-4 border-l-rose-500 shadow-sm flex flex-col justify-between">
+                                        <div class="text-[11px] font-extrabold text-rose-700 dark:text-rose-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                                            <span>Desligamentos</span> <i class="fa-solid fa-user-minus text-rose-600 dark:text-rose-400"></i>
                                         </div>
-                                        <div class="text-2xl font-black text-rose-600 dark:text-rose-400">${globDesl} <span class="text-xs font-bold">(${globPctDesl}%)</span></div>
-                                        <div class="text-[10px] text-rose-700/80 dark:text-rose-400 font-medium mt-1">Turnover em turma</div>
+                                        <div class="flex items-baseline justify-between gap-2">
+                                            <span class="text-3xl font-black text-rose-700 dark:text-rose-300 tabular-nums leading-none">${globPctDesl}%</span>
+                                            <span class="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 text-xs font-extrabold tabular-nums">${globDesl}</span>
+                                        </div>
+                                        <div class="text-[11px] text-rose-700/80 dark:text-rose-400 font-semibold mt-1">Turnover em turma</div>
                                     </div>
                                 </div>
 
                                 <!-- Cards das Operações (Bater o Olho) -->
                                 <div>
-                                    <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center justify-between mb-3">
                                         <div>
-                                            <h3 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                            <h3 class="text-base sm:text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
                                                 <i class="fa-solid fa-chart-simple text-emerald-500"></i> Visão Rápida por Operação
                                             </h3>
                                             <p class="text-xs text-slate-500 dark:text-slate-400">Resumo imediato de frequência, faltas e turnover por operação.</p>
@@ -19037,7 +21014,7 @@ storage: {
                                                                 <h4 class="text-base font-black text-slate-800 dark:text-white truncate" title="${op.nome}">
                                                                     ${op.nome}
                                                                 </h4>
-                                                                <div class="text-[11px] font-semibold text-slate-400 mt-0.5">
+                                                                <div class="text-xs font-semibold text-slate-400 mt-0.5">
                                                                     ${op.turmas.length} turma${op.turmas.length === 1 ? '' : 's'} no período
                                                                 </div>
                                                             </div>
@@ -19047,23 +21024,27 @@ storage: {
                                                         </div>
 
                                                         ${hasTurmas ? `
-                                                            <!-- Grid Métricas da Operação -->
-                                                            <div class="grid grid-cols-4 gap-2 text-center my-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700/60">
-                                                                <div>
-                                                                    <div class="text-[9px] font-bold text-slate-400 uppercase">Prev.</div>
-                                                                    <div class="text-xs font-black text-slate-700 dark:text-slate-200">${op.previstos}</div>
+                                                            <!-- Grid Métricas da Operação (Mais legibilidade e respiro) -->
+                                                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3.5 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700/70">
+                                                                <div class="text-center py-1 px-1">
+                                                                    <div class="text-[11px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Prev.</div>
+                                                                    <div class="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100 tabular-nums leading-tight">${op.previstos}</div>
+                                                                    <div class="text-[11px] font-semibold text-slate-400 mt-0.5">colab.</div>
                                                                 </div>
-                                                                <div>
-                                                                    <div class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Pres.</div>
-                                                                    <div class="text-xs font-black text-emerald-700 dark:text-emerald-300">${op.presentes} <span class="text-[9px] font-normal">(${pctPres}%)</span></div>
+                                                                <div class="text-center py-1 px-1">
+                                                                    <div class="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Pres.</div>
+                                                                    <div class="text-base sm:text-lg font-black text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">${op.presentes}</div>
+                                                                    <div class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">${pctPres}%</div>
                                                                 </div>
-                                                                <div>
-                                                                    <div class="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">ABS</div>
-                                                                    <div class="text-xs font-black text-amber-700 dark:text-amber-300">${op.abs} <span class="text-[9px] font-normal">(${pctAbs}%)</span></div>
+                                                                <div class="text-center py-1 px-1">
+                                                                    <div class="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1">ABS</div>
+                                                                    <div class="text-base sm:text-lg font-black text-amber-700 dark:text-amber-300 tabular-nums leading-tight">${op.abs}</div>
+                                                                    <div class="text-[11px] font-bold text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">${pctAbs}%</div>
                                                                 </div>
-                                                                <div>
-                                                                    <div class="text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase">T.O</div>
-                                                                    <div class="text-xs font-black text-rose-700 dark:text-rose-300">${op.desligamentos} <span class="text-[9px] font-normal">(${pctDesl}%)</span></div>
+                                                                <div class="text-center py-1 px-1">
+                                                                    <div class="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1">T.O</div>
+                                                                    <div class="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300 tabular-nums leading-tight">${op.desligamentos}</div>
+                                                                    <div class="text-[11px] font-bold text-rose-600 dark:text-rose-400 tabular-nums mt-0.5">${pctDesl}%</div>
                                                                 </div>
                                                             </div>
 
@@ -32580,7 +34561,7 @@ storage: {
                     this.renderTab('analise_csv_dinamico', true);
                 },
 
-                openTrocarApresentacaoModal() {
+                _getApresentacoesVisiveisTroca() {
                     let lista = Object.values(app.apresentacoesList || {}).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
                     const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
@@ -32597,65 +34578,107 @@ storage: {
                             return false;
                         });
                     }
+                    return lista;
+                },
 
-                    const curId = app.analiseCSVDinamicoData?._savedAprId || '';
-                    let bodyListHtml = '';
+                _buildTrocarApresentacaoListaHtml(lista, query = '') {
+                    const norm = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                    const q = norm(query);
+                    const filtrada = q
+                        ? lista.filter(a => {
+                            const pasta = a.setor || a.pasta || 'Geral';
+                            const hay = norm(`${a.nome || ''} ${pasta} ${a.criadorNome || ''} ${a.dataStr || ''}`);
+                            return hay.includes(q);
+                        })
+                        : lista;
+
                     if (lista.length === 0) {
-                        bodyListHtml = `
+                        return `
                             <div class="p-6 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
                                 <i class="fa-solid fa-folder-open text-2xl text-slate-400 mb-2 block"></i>
                                 Nenhuma apresentação salva encontrada na nuvem para o seu perfil. Você pode limpar a sessão atual abaixo para iniciar uma nova importação.
                             </div>
                         `;
-                    } else {
-                        const pastas = {};
-                        lista.forEach(a => {
-                            const keyPasta = a.setor || a.pasta || 'Geral';
-                            if (!pastas[keyPasta]) pastas[keyPasta] = [];
-                            pastas[keyPasta].push(a);
-                        });
-                        bodyListHtml = `<div class="space-y-4 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">` +
-                            Object.keys(pastas).sort().map(nomePasta => {
-                                const safePasta = this._escapeAnaliseModalHtml(nomePasta);
-                                const itensHtml = pastas[nomePasta].map(apr => {
-                                    const safeId = this._escapeAnaliseModalHtml(apr.id);
-                                    const safeNome = this._escapeAnaliseModalHtml(apr.nome || 'Sem Nome');
-                                    const safeData = this._escapeAnaliseModalHtml(apr.dataStr || '');
-                                    const safeCriador = this._escapeAnaliseModalHtml(apr.criadorNome || '');
-                                    const isAtual = curId && curId === apr.id;
-                                    return `
-                                        <button type="button" data-apr-id="${safeId}" onclick="app.admin.loadApresentacaoFromDB(this.getAttribute('data-apr-id'), true)"
-                                            class="w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${isAtual
-                                                ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700'
-                                                : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:bg-blue-50/60 dark:hover:bg-slate-800'}">
-                                            <div class="min-w-0 flex-1">
-                                                <div class="flex items-center gap-2 flex-wrap">
-                                                    <span class="font-bold text-xs text-slate-800 dark:text-white truncate">${safeNome}</span>
-                                                    ${isAtual ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-600 text-white">Atual</span>' : ''}
-                                                </div>
-                                                <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-2">
-                                                    <span><i class="fa-regular fa-clock mr-1"></i>${safeData}</span>
-                                                    ${safeCriador ? `<span><i class="fa-regular fa-user mr-1"></i>${safeCriador}</span>` : ''}
-                                                </div>
-                                            </div>
-                                            <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
-                                                <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i>Abrir
-                                            </span>
-                                        </button>
-                                    `;
-                                }).join('');
-                                return `
-                                    <div class="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900/50">
-                                        <div class="px-4 py-2.5 bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                                            <span class="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-2"><i class="fa-solid fa-folder-open text-blue-500"></i>${safePasta}</span>
-                                            <span class="text-[10px] font-bold text-slate-500">${pastas[nomePasta].length}</span>
-                                        </div>
-                                        <div class="p-2.5 space-y-2">${itensHtml}</div>
-                                    </div>
-                                `;
-                            }).join('') +
-                        `</div>`;
                     }
+                    if (filtrada.length === 0) {
+                        const safeQ = this._escapeAnaliseModalHtml(query);
+                        return `
+                            <div class="p-6 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 space-y-2">
+                                <i class="fa-solid fa-magnifying-glass text-2xl text-slate-400 block"></i>
+                                <div>Nenhuma apresentação encontrada para <strong>"${safeQ}"</strong>.</div>
+                                <button type="button" onclick="app.ui.filtrarTrocarApresentacaoModal('')" class="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-bold text-[11px] hover:bg-indigo-100 transition cursor-pointer">
+                                    Limpar pesquisa
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    const curId = app.analiseCSVDinamicoData?._savedAprId || '';
+                    const pastas = {};
+                    filtrada.forEach(a => {
+                        const keyPasta = a.setor || a.pasta || 'Geral';
+                        if (!pastas[keyPasta]) pastas[keyPasta] = [];
+                        pastas[keyPasta].push(a);
+                    });
+
+                    return `<div class="space-y-4 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">` +
+                        Object.keys(pastas).sort().map(nomePasta => {
+                            const safePasta = this._escapeAnaliseModalHtml(nomePasta);
+                            const itensHtml = pastas[nomePasta].map(apr => {
+                                const safeId = this._escapeAnaliseModalHtml(apr.id);
+                                const safeNome = this._escapeAnaliseModalHtml(apr.nome || 'Sem Nome');
+                                const safeData = this._escapeAnaliseModalHtml(apr.dataStr || '');
+                                const safeCriador = this._escapeAnaliseModalHtml(apr.criadorNome || '');
+                                const isAtual = curId && curId === apr.id;
+                                return `
+                                    <button type="button" data-apr-id="${safeId}" onclick="app.admin.loadApresentacaoFromDB(this.getAttribute('data-apr-id'), true)"
+                                        class="w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${isAtual
+                                            ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-700'
+                                            : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:bg-blue-50/60 dark:hover:bg-slate-800'}">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="font-bold text-xs text-slate-800 dark:text-white truncate">${safeNome}</span>
+                                                ${isAtual ? '<span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-indigo-600 text-white">Atual</span>' : ''}
+                                            </div>
+                                            <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap gap-2">
+                                                <span><i class="fa-regular fa-clock mr-1"></i>${safeData}</span>
+                                                ${safeCriador ? `<span><i class="fa-regular fa-user mr-1"></i>${safeCriador}</span>` : ''}
+                                            </div>
+                                        </div>
+                                        <span class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
+                                            <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i>Abrir
+                                        </span>
+                                    </button>
+                                `;
+                            }).join('');
+                            return `
+                                <div class="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900/50">
+                                    <div class="px-4 py-2.5 bg-slate-100/80 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                        <span class="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-2"><i class="fa-solid fa-folder-open text-blue-500"></i>${safePasta}</span>
+                                        <span class="text-[10px] font-bold text-slate-500">${pastas[nomePasta].length}</span>
+                                    </div>
+                                    <div class="p-2.5 space-y-2">${itensHtml}</div>
+                                </div>
+                            `;
+                        }).join('') +
+                    `</div>`;
+                },
+
+                filtrarTrocarApresentacaoModal(query) {
+                    this._trocarAprBusca = String(query || '');
+                    const inp = document.getElementById('trocar-apr-search');
+                    if (inp && inp.value !== this._trocarAprBusca) inp.value = this._trocarAprBusca;
+                    const clearBtn = document.getElementById('trocar-apr-search-clear');
+                    if (clearBtn) clearBtn.classList.toggle('hidden', !this._trocarAprBusca.trim());
+                    const lista = this._getApresentacoesVisiveisTroca();
+                    const container = document.getElementById('trocar-apr-list-container');
+                    if (container) container.innerHTML = this._buildTrocarApresentacaoListaHtml(lista, this._trocarAprBusca);
+                },
+
+                openTrocarApresentacaoModal() {
+                    this._trocarAprBusca = '';
+                    const lista = this._getApresentacoesVisiveisTroca();
+                    const bodyListHtml = this._buildTrocarApresentacaoListaHtml(lista, '');
 
                     const modalBox = document.querySelector('#global-modal > div');
                     if (modalBox) {
@@ -32667,7 +34690,18 @@ storage: {
                         <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
                             Escolha abaixo uma apresentação salva na nuvem para carregar na tela ou limpe a sessão atual para iniciar uma nova importação.
                         </p>
-                        ${bodyListHtml}
+                        ${lista.length > 0 ? `
+                            <div class="relative mb-3">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                                <input id="trocar-apr-search" type="text" value="" oninput="app.ui.filtrarTrocarApresentacaoModal(this.value)"
+                                    placeholder="Pesquisar apresentação por nome, operação/pasta, criador ou data..."
+                                    class="w-full pl-9 pr-9 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <button id="trocar-apr-search-clear" type="button" onclick="app.ui.filtrarTrocarApresentacaoModal('')" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer" title="Limpar pesquisa">
+                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                </button>
+                            </div>
+                        ` : ''}
+                        <div id="trocar-apr-list-container">${bodyListHtml}</div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button type="button" onclick="app.ui.voltarParaTelaInicialApresentacao()" class="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 mr-auto">
@@ -32678,6 +34712,10 @@ storage: {
                         </button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
+                    setTimeout(() => {
+                        const sInp = document.getElementById('trocar-apr-search');
+                        if (sInp) sInp.focus();
+                    }, 50);
                 },
 
                 continuarSemSalvarTrocarApresentacao(targetAprId = null) {
@@ -47754,23 +49792,13 @@ Object.assign(app.ui, {
                             },
                             {
                                 id: 'ata_reuniao',
-                                title: 'Criar Nova Ata de Reunião',
+                                title: 'Atas de Reunião & Calibração',
                                 cat: 'qualidade',
                                 catLabel: 'Qualidade & Governança',
                                 icon: 'fa-pen-to-square',
                                 badge: 'Rotina',
                                 iconBg: 'bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-lg shadow-teal-500/30',
-                                desc: 'Formulário completo com toolbar rica, participantes, pautas discutidas e salvamento automático.'
-                            },
-                            {
-                                id: 'minhas_atas',
-                                title: 'Minhas Atas Gravadas',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Governança',
-                                icon: 'fa-folder-open',
-                                badge: 'Atas',
-                                iconBg: 'bg-gradient-to-br from-cyan-600 to-blue-700 text-white shadow-lg shadow-cyan-500/30',
-                                desc: 'Histórico pessoal de atas cadastradas, downloads em PDF e acompanhamento de status de aprovação.'
+                                desc: 'Registre novas atas, gerencie participantes na base compartilhada e acompanhe o histórico e devolutivas no mesmo painel.'
                             },
                             {
                                 id: 'laudos_estudos',
@@ -48004,8 +50032,13 @@ Object.assign(app.ui, {
                         let activeFilter = 'all';
                         let searchQuery = '';
 
+                        const indAlertHomeHtml = (app.notifications && typeof app.notifications.buildIndicatorsAlertCardHtml === 'function')
+                            ? app.notifications.buildIndicatorsAlertCardHtml()
+                            : '';
+
                         container.innerHTML = `
                             <div class="w-full px-2 sm:px-6 py-4 animate-fade-in space-y-6">
+                                ${indAlertHomeHtml}
                                 <!-- Banner Hero de Boas-Vindas em Toda a Largura (Proporcional, Amplo e Elegante) -->
                                 <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
                                     <div class="relative z-10 max-w-4xl">
@@ -48130,6 +50163,14 @@ Object.assign(app.ui, {
                                                     </div>
 
                                                     <div class="flex items-center gap-1.5 shrink-0">
+                                                        <button type="button" onclick="app.ui.openGtdTutorialModal(0, false)"
+                                                            class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-slate-600 dark:text-slate-300 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 font-bold text-xs transition flex items-center justify-center cursor-pointer" title="Ver Tutorial Completo: GTD & Tríade">
+                                                            <i class="fa-solid fa-graduation-cap text-xs"></i>
+                                                        </button>
+                                                        <button type="button" onclick="app.ui.openEnviarTarefaModal()"
+                                                            class="px-2.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold text-xs transition flex items-center gap-1 cursor-pointer" title="Enviar tarefa e lembrete para colaborador">
+                                                            <i class="fa-solid fa-paper-plane text-[11px]"></i> <span class="hidden sm:inline">Enviar</span>
+                                                        </button>
                                                         <button type="button" onclick="app.ui.renderTab('produtividade_gtd', true)"
                                                             class="px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs transition flex items-center gap-1" title="Abrir Painel Completo GTD & Tríade (Kanban e Wizard)">
                                                             <i class="fa-solid fa-table-columns text-[11px]"></i> <span class="hidden sm:inline">Painel</span>
@@ -49045,6 +51086,14 @@ Object.assign(app.ui, {
 
                                     <!-- Bloco Guia Rápido + Timer Persistente -->
                                     <div class="flex flex-wrap items-center gap-3">
+                                        <button type="button" onclick="app.ui.openGtdTutorialModal(0, false)" class="px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 text-xs font-extrabold shadow-xs transition flex items-center gap-2 cursor-pointer" title="Abrir apresentação completa passo a passo sobre GTD, Tríade e esta aba">
+                                            <i class="fa-solid fa-graduation-cap text-sm"></i>
+                                            <span>Tutorial Completo</span>
+                                        </button>
+                                        <button type="button" onclick="app.ui.openEnviarTarefaModal()" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2 cursor-pointer" title="Enviar tarefa para colaboradores com alerta em pop-up">
+                                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                                            <span>Enviar Tarefa</span>
+                                        </button>
                                         <button type="button" onclick="app.ui.gtdToggleHelp()" class="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-extrabold shadow-xs transition flex items-center gap-2">
                                             <i class="fa-solid fa-circle-question text-indigo-500 text-sm"></i>
                                             <span>${st.showHelp ? 'Ocultar Guia Rápido' : 'Como usar em 30s'}</span>
@@ -49556,6 +51605,7 @@ Object.assign(app.ui, {
                                         <button type="button" onclick="app.ui.gtdToggleTwoMin('${n.id}')" class="px-1.5 py-0.5 rounded-full border text-[10px] font-extrabold transition ${n.twoMin ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:text-amber-500'}" title="Regra dos 2 Minutos">
                                             <i class="fa-solid fa-bolt text-[9px]"></i> 2m
                                         </button>
+                                        ${n.assignedBy ? `<span class="px-1.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold" title="Tarefa enviada por ${esc(n.assignedBy)}"><i class="fa-solid fa-paper-plane text-[8px] mr-0.5"></i> De: ${esc(n.assignedBy.split(' ')[0])}</span>` : ''}
                                         ${dueBadge ? `<span class="px-1.5 py-0.5 rounded-full border text-[10px] font-bold ${dueBadge.cls}">${dueBadge.label}</span>` : ''}
                                     </div>
 
