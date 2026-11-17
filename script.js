@@ -8085,6 +8085,12 @@ storage: {
                 }).sort((a, b) => (b.ultimaData || '').localeCompare(a.ultimaData || ''));
             },
 
+            _toArray(val) {
+                if (Array.isArray(val)) return val.filter(Boolean);
+                if (val && typeof val === 'object') return Object.values(val).filter(Boolean);
+                return [];
+            },
+
             novoDiario(turmaId = null) {
                 const turmasCadastradas = this.getTurmasCadastradas();
                 if (turmasCadastradas.length === 0) {
@@ -8094,7 +8100,19 @@ storage: {
 
                 const hoje = new Date().toISOString().split('T')[0];
                 const curUser = app.currentUser || {};
-                const targetTurmaId = turmaId || turmasCadastradas[0].id;
+                let targetTurmaId = turmaId;
+                if (!targetTurmaId) {
+                    const ordenadas = [...turmasCadastradas].sort((a, b) => {
+                        const aConcl = (a.status === 'Entregue' || a.status === 'Integrados') ? 1 : 0;
+                        const bConcl = (b.status === 'Entregue' || b.status === 'Integrados') ? 1 : 0;
+                        if (aConcl !== bConcl) return aConcl - bConcl;
+                        const aRegular = (!a.tipoTurma || a.tipoTurma === 'treinamento') ? 0 : 1;
+                        const bRegular = (!b.tipoTurma || b.tipoTurma === 'treinamento') ? 0 : 1;
+                        if (aRegular !== bRegular) return aRegular - bRegular;
+                        return String(b.dataInicio || '').localeCompare(String(a.dataInicio || ''));
+                    });
+                    targetTurmaId = ordenadas[0].id;
+                }
                 const tBase = app.turmasTreinamentoList && app.turmasTreinamentoList[targetTurmaId];
                 const isRec = tBase && tBase.tipoTurma === 'reciclagem';
 
@@ -8142,14 +8160,21 @@ storage: {
                 }
                 const hoje = new Date().toISOString().split('T')[0];
                 const curUser = app.currentUser || {};
-                const tBase = item.turmaBaseId && app.turmasTreinamentoList ? app.turmasTreinamentoList[item.turmaBaseId] : null;
-                const chamadaLimpa = Array.isArray(item.chamada)
-                    ? item.chamada.map(c => {
+                const tBase = (item.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[item.turmaBaseId])
+                    ? app.turmasTreinamentoList[item.turmaBaseId]
+                    : this.findTurmaForDiario(item);
+                const itemChamadaArr = this._toArray(item.chamada);
+                const tBaseColabsArr = tBase ? this._toArray(tBase.colaboradores) : [];
+                const sourceLista = itemChamadaArr.length > 0 ? itemChamadaArr : tBaseColabsArr;
+                const isRecCont = (item.tipoTurma === 'reciclagem') || (tBase && tBase.tipoTurma === 'reciclagem');
+                const chamadaLimpa = (!isRecCont && sourceLista.length > 0)
+                    ? sourceLista.map(c => {
                         if (!c) return c;
-                        const isTO = (c.statusDia === 'T.O' || c.statusDia === 'Declínio' || c.riscado);
+                        const stOrig = c.statusDia || c.statusGeral || 'Presente';
+                        const isTO = (stOrig === 'T.O' || stOrig === 'Declínio' || c.riscado);
                         return {
                             ...JSON.parse(JSON.stringify(c)),
-                            statusDia: isTO ? (c.statusDia === 'Declínio' ? 'Declínio' : 'T.O') : 'Presente',
+                            statusDia: isTO ? (stOrig === 'Declínio' ? 'Declínio' : 'T.O') : 'Presente',
                             riscado: !!isTO,
                             perfil: ''
                         };
@@ -8249,7 +8274,7 @@ storage: {
                 if (!turmaId) return;
                 const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
                 if (!t || !this.diarioEmEdicao) return;
-                if (!this.canEditTurma(t)) {
+                if (!this.canEditTurma(t) && !this.canEditDiario(this.diarioEmEdicao)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para utilizar a turma de outro colaborador.", "warning");
                 }
 
@@ -8282,7 +8307,7 @@ storage: {
                         this.diarioEmEdicao.faseDoDia = 'sala';
                     }
 
-                    const colaboradores = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                    const colaboradores = this._toArray(t.colaboradores);
                     this.diarioEmEdicao.chamada = colaboradores.map(c => {
                         const isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
                         return {
@@ -8332,10 +8357,20 @@ storage: {
                 }
             },
 
-            alterarStatusChamada(matricula, novoStatus) {
+            _findChamadaColab(d, rowIdxOrMat) {
+                if (!d || !Array.isArray(d.chamada)) return null;
+                if (typeof rowIdxOrMat === 'number' && Number.isInteger(rowIdxOrMat) && d.chamada[rowIdxOrMat]) {
+                    return d.chamada[rowIdxOrMat];
+                }
+                const key = String(rowIdxOrMat || '').trim().toLowerCase();
+                if (!key) return null;
+                return d.chamada.find(c => c && String(c.matricula || '').trim().toLowerCase() === key) || null;
+            },
+
+            alterarStatusChamada(rowIdxOrMat, novoStatus) {
                 const d = this.diarioEmEdicao;
                 if (!d || !Array.isArray(d.chamada)) return;
-                const colab = d.chamada.find(c => String(c.matricula).trim().toLowerCase() === String(matricula).trim().toLowerCase());
+                const colab = this._findChamadaColab(d, rowIdxOrMat);
                 if (!colab) return;
 
                 colab.statusDia = novoStatus;
@@ -8343,16 +8378,16 @@ storage: {
                 colab.riscado = isDesligado;
 
                 // Se houver turma base cadastrada vinculada, atualiza o status permanente do colaborador
-                if (d.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[d.turmaBaseId]) {
+                const colabMat = String(colab.matricula || '').trim().toLowerCase();
+                if (colabMat && colabMat !== '-' && d.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[d.turmaBaseId]) {
                     const tBase = app.turmasTreinamentoList[d.turmaBaseId];
-                    if (Array.isArray(tBase.colaboradores)) {
-                        const colabBase = tBase.colaboradores.find(c => String(c.matricula).trim().toLowerCase() === String(matricula).trim().toLowerCase());
-                        if (colabBase) {
-                            colabBase.statusGeral = isDesligado ? novoStatus : 'Ativo';
-                            tBase.atualizadoEm = Date.now();
-                            if (app.storage && app.storage.saveTurmasTreinamento) {
-                                app.storage.saveTurmasTreinamento(d.turmaBaseId);
-                            }
+                    const tColabs = this._toArray(tBase.colaboradores);
+                    const colabBase = tColabs.find(c => String(c.matricula || '').trim().toLowerCase() === colabMat);
+                    if (colabBase) {
+                        colabBase.statusGeral = isDesligado ? novoStatus : 'Ativo';
+                        tBase.atualizadoEm = Date.now();
+                        if (app.storage && app.storage.saveTurmasTreinamento) {
+                            app.storage.saveTurmasTreinamento(d.turmaBaseId);
                         }
                     }
                 }
@@ -8361,10 +8396,10 @@ storage: {
                 this.renderTabelaChamada();
             },
 
-            atualizarPerfilColaborador(matricula, texto) {
+            atualizarPerfilColaborador(rowIdxOrMat, texto) {
                 const d = this.diarioEmEdicao;
                 if (!d || !Array.isArray(d.chamada)) return;
-                const colab = d.chamada.find(c => String(c.matricula).trim().toLowerCase() === String(matricula).trim().toLowerCase());
+                const colab = this._findChamadaColab(d, rowIdxOrMat);
                 if (colab) {
                     colab.perfil = texto;
                 }
@@ -8408,18 +8443,24 @@ storage: {
                 const badgeTotal = document.getElementById('db-badge-chamada-total');
                 if (!tbody || !d) return;
 
-                const lista = Array.isArray(d.chamada) ? d.chamada : [];
+                const lista = this._toArray(d.chamada);
+                d.chamada = lista;
                 if (badgeTotal) {
                     const presCount = lista.filter(c => c.statusDia === 'Presente').length;
                     badgeTotal.textContent = `${lista.length} matriculados • ${presCount} presentes`;
                 }
 
+                const manualAbsBox = document.getElementById('db-manual-abs-box');
+                if (manualAbsBox) {
+                    if (lista.length === 0) manualAbsBox.classList.remove('hidden');
+                }
+
                 if (lista.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="4" class="p-8 text-center text-xs text-slate-400 italic">
+                            <td colspan="4" class="p-6 text-center text-xs text-slate-400 italic">
                                 <i class="fa-solid fa-users text-2xl text-slate-300 dark:text-slate-600 mb-2 block"></i>
-                                Nenhuma turma selecionada ou lista de colaboradores vazia. Selecione uma turma cadastrada acima ou adicione colaboradores remanejados.
+                                Lista nominal vazia nesta turma. Selecione uma turma acima ou registre faltas / alunos manualmente logo abaixo.
                             </td>
                         </tr>
                     `;
@@ -8463,7 +8504,7 @@ storage: {
                             </td>
 
                             <td class="p-3 w-56">
-                                <select onchange="app.diarioBordo.alterarStatusChamada('${item.matricula}', this.value)" class="w-full px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer outline-none ${
+                                <select onchange="app.diarioBordo.alterarStatusChamada(${idx}, this.value)" class="w-full px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer outline-none ${
                                     isTO ? 'bg-rose-100 border-rose-300 text-rose-800 dark:bg-rose-900/50 dark:border-rose-700 dark:text-rose-200' :
                                     isABS ? 'bg-amber-100 border-amber-300 text-amber-800 dark:bg-amber-900/50 dark:border-amber-700 dark:text-amber-200' :
                                     'bg-emerald-100 border-emerald-300 text-emerald-800 dark:bg-emerald-900/50 dark:border-emerald-700 dark:text-emerald-200'
@@ -8479,7 +8520,7 @@ storage: {
                             </td>
 
                             <td class="p-3">
-                                <input type="text" data-chamada-perfil="${item.matricula || ''}" value="${this._escapeDbHtml(item.perfil || '')}" oninput="app.diarioBordo.atualizarPerfilColaborador('${item.matricula}', this.value); this.classList.remove('ring-2','ring-rose-500','border-rose-500'); const hasTxt = this.value.trim().length > 0; this.classList.toggle('border-emerald-300', hasTxt); this.classList.toggle('dark:border-emerald-700', hasTxt); this.classList.toggle('border-amber-300', !hasTxt); this.classList.toggle('dark:border-amber-700', !hasTxt);" placeholder="${isTO && item.riscado ? 'Desligado em dia anterior (opcional)' : 'Obrigatório: descreva postura, desempenho ou ocorrência no dia...'}" class="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border ${item.riscado ? 'border-slate-200 dark:border-slate-700' : (String(item.perfil || '').trim() ? 'border-emerald-300 dark:border-emerald-700' : 'border-amber-300 dark:border-amber-700')} text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                <input type="text" data-chamada-idx="${idx}" data-chamada-perfil="${item.matricula || ''}" value="${this._escapeDbHtml(item.perfil || '')}" oninput="app.diarioBordo.atualizarPerfilColaborador(${idx}, this.value); this.classList.remove('ring-2','ring-rose-500','border-rose-500'); const hasTxt = this.value.trim().length > 0; this.classList.toggle('border-emerald-300', hasTxt); this.classList.toggle('dark:border-emerald-700', hasTxt); this.classList.toggle('border-amber-300', !hasTxt); this.classList.toggle('dark:border-amber-700', !hasTxt);" placeholder="${isTO && item.riscado ? 'Desligado em dia anterior (opcional)' : 'Obrigatório: descreva postura, desempenho ou ocorrência no dia...'}" class="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border ${item.riscado ? 'border-slate-200 dark:border-slate-700' : (String(item.perfil || '').trim() ? 'border-emerald-300 dark:border-emerald-700' : 'border-amber-300 dark:border-amber-700')} text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                             </td>
 
                             <td class="p-3 w-28 text-center">
@@ -8537,10 +8578,36 @@ storage: {
                 }
                 this._returnViewMode = returnViewMode || null;
                 this.diarioEmEdicao = JSON.parse(JSON.stringify(item));
-                if (!Array.isArray(this.diarioEmEdicao.desligamentos)) this.diarioEmEdicao.desligamentos = [];
-                if (!Array.isArray(this.diarioEmEdicao.alteracoesQuadro)) this.diarioEmEdicao.alteracoesQuadro = [];
-                if (!Array.isArray(this.diarioEmEdicao.abs)) this.diarioEmEdicao.abs = [];
-                if (!Array.isArray(this.diarioEmEdicao.chamada)) this.diarioEmEdicao.chamada = [];
+                this.diarioEmEdicao.desligamentos = this._toArray(this.diarioEmEdicao.desligamentos);
+                this.diarioEmEdicao.alteracoesQuadro = this._toArray(this.diarioEmEdicao.alteracoesQuadro);
+                this.diarioEmEdicao.abs = this._toArray(this.diarioEmEdicao.abs);
+                this.diarioEmEdicao.chamada = this._toArray(this.diarioEmEdicao.chamada);
+
+                // Se a lista de chamada veio vazia (registro legado ou turma atualizada depois), hidrata da turma vinculada
+                const tBaseEdit = this.findTurmaForDiario(this.diarioEmEdicao);
+                if (tBaseEdit && this.diarioEmEdicao.tipoTurma !== 'reciclagem' && tBaseEdit.tipoTurma !== 'reciclagem' && this.diarioEmEdicao.chamada.length === 0) {
+                    const baseColabs = this._toArray(tBaseEdit.colaboradores);
+                    if (baseColabs.length > 0) {
+                        const absSet = new Set(this.diarioEmEdicao.abs.map(x => String(x.matricula || '').trim().toLowerCase()).filter(Boolean));
+                        const deslSet = new Set(this.diarioEmEdicao.desligamentos.map(x => String(x.matricula || '').trim().toLowerCase()).filter(Boolean));
+                        this.diarioEmEdicao.chamada = baseColabs.map(c => {
+                            const mLow = String(c.matricula || '').trim().toLowerCase();
+                            const isDesl = deslSet.has(mLow) || c.statusGeral === 'T.O' || c.statusGeral === 'Declínio';
+                            const isAbs = !isDesl && absSet.has(mLow);
+                            return {
+                                id: c.id || ('colab_' + Date.now() + '_' + Math.floor(Math.random() * 1000)),
+                                matricula: c.matricula || '-',
+                                nome: c.nome || 'Colaborador',
+                                cpf: c.cpf || '',
+                                dataAdmissao: c.dataAdmissao || '',
+                                statusDia: isDesl ? (c.statusGeral === 'Declínio' ? 'Declínio' : 'T.O') : (isAbs ? 'ABS' : 'Presente'),
+                                perfil: '',
+                                riscado: !!isDesl,
+                                remanejado: !!c.remanejado
+                            };
+                        });
+                    }
+                }
                 this.viewMode = 'form';
                 app.ui.renderTab('diario_bordo', true);
             },
@@ -8597,20 +8664,26 @@ storage: {
                 const isReciclagemSave = (d.tipoTurma === 'reciclagem') || (tVinculadaForm && tVinculadaForm.tipoTurma === 'reciclagem');
                 if (!isReciclagemSave && Array.isArray(d.chamada) && d.chamada.length > 0) {
                     document.querySelectorAll('[data-chamada-perfil]').forEach(inp => {
-                        const mat = String(inp.getAttribute('data-chamada-perfil') || '').trim();
-                        const row = d.chamada.find(c => String(c.matricula || '').trim() === mat);
+                        const idxAttr = inp.getAttribute('data-chamada-idx');
+                        const row = (idxAttr !== null && idxAttr !== '' && d.chamada[Number(idxAttr)])
+                            ? d.chamada[Number(idxAttr)]
+                            : d.chamada.find(c => String(c.matricula || '').trim() === String(inp.getAttribute('data-chamada-perfil') || '').trim());
                         if (row) row.perfil = inp.value;
                     });
                     const semPerfil = d.chamada.filter(c => !c.riscado && !String(c.perfil || '').trim());
                     if (semPerfil.length > 0) {
-                        const firstMat = String(semPerfil[0].matricula || '').trim();
+                        const firstIdx = d.chamada.indexOf(semPerfil[0]);
                         let firstEl = null;
                         document.querySelectorAll('[data-chamada-perfil]').forEach(inp => {
-                            const mat = String(inp.getAttribute('data-chamada-perfil') || '').trim();
-                            const row = d.chamada.find(c => String(c.matricula || '').trim() === mat);
+                            const idxAttr = inp.getAttribute('data-chamada-idx');
+                            const row = (idxAttr !== null && idxAttr !== '' && d.chamada[Number(idxAttr)])
+                                ? d.chamada[Number(idxAttr)]
+                                : d.chamada.find(c => String(c.matricula || '').trim() === String(inp.getAttribute('data-chamada-perfil') || '').trim());
                             if (row && !row.riscado && !String(row.perfil || '').trim()) {
                                 inp.classList.add('ring-2', 'ring-rose-500', 'border-rose-500');
-                                if (!firstEl && mat === firstMat) firstEl = inp;
+                                if (!firstEl && ((idxAttr !== null && Number(idxAttr) === firstIdx) || row === semPerfil[0])) {
+                                    firstEl = inp;
+                                }
                             }
                         });
                         if (firstEl) {
@@ -8870,24 +8943,67 @@ storage: {
 
                 if (!mat && !nome) return app.ui.showAlert("Aviso", "Informe a matrícula ou o nome do colaborador faltante.", "warning");
 
-                if (!this.diarioEmEdicao.abs) this.diarioEmEdicao.abs = [];
-                this.diarioEmEdicao.abs.push({
-                    id: 'abs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-                    matricula: mat || '-',
-                    nome: nome || 'Colaborador',
-                    motivo: motivo || 'Sem justificativa informada'
-                });
+                if (!Array.isArray(this.diarioEmEdicao.chamada)) this.diarioEmEdicao.chamada = [];
+                if (this.diarioEmEdicao.chamada.length > 0) {
+                    const mLow = mat.toLowerCase();
+                    const nLow = nome.toLowerCase();
+                    const existente = this.diarioEmEdicao.chamada.find(c =>
+                        (mLow && String(c.matricula || '').trim().toLowerCase() === mLow) ||
+                        (nLow && String(c.nome || '').trim().toLowerCase() === nLow)
+                    );
+                    if (existente) {
+                        existente.statusDia = 'ABS';
+                        existente.riscado = false;
+                        if (motivo) existente.perfil = motivo;
+                    } else {
+                        this.diarioEmEdicao.chamada.push({
+                            id: 'colab_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                            matricula: mat || '-',
+                            nome: nome || 'Colaborador',
+                            cpf: '',
+                            dataAdmissao: '',
+                            statusDia: 'ABS',
+                            perfil: motivo || 'Falta / ABS registrada manualmente',
+                            riscado: false,
+                            remanejado: false
+                        });
+                    }
+                    this.sincronizarChamadaComMetricas();
+                    this.renderTabelaChamada();
+                } else {
+                    if (!this.diarioEmEdicao.abs) this.diarioEmEdicao.abs = [];
+                    this.diarioEmEdicao.abs.push({
+                        id: 'abs_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        matricula: mat || '-',
+                        nome: nome || 'Colaborador',
+                        motivo: motivo || 'Sem justificativa informada'
+                    });
+                    this.atualizarSecoesFormulario();
+                }
 
                 if (matEl) matEl.value = '';
                 if (nomeEl) nomeEl.value = '';
                 if (motEl) motEl.value = '';
-
-                this.atualizarSecoesFormulario();
             },
 
             removerAbs(idx) {
                 if (!this.diarioEmEdicao || !this.diarioEmEdicao.abs) return;
-                this.diarioEmEdicao.abs.splice(idx, 1);
+                const removed = this.diarioEmEdicao.abs.splice(idx, 1)[0];
+                if (removed && Array.isArray(this.diarioEmEdicao.chamada) && this.diarioEmEdicao.chamada.length > 0) {
+                    const rMat = String(removed.matricula || '').trim().toLowerCase();
+                    const rNome = String(removed.nome || '').trim().toLowerCase();
+                    const match = this.diarioEmEdicao.chamada.find(c =>
+                        (rMat && rMat !== '-' && String(c.matricula || '').trim().toLowerCase() === rMat) ||
+                        (rNome && String(c.nome || '').trim().toLowerCase() === rNome)
+                    );
+                    if (match) {
+                        match.statusDia = 'Presente';
+                        match.riscado = false;
+                    }
+                    this.sincronizarChamadaComMetricas();
+                    this.renderTabelaChamada();
+                    return;
+                }
                 this.atualizarSecoesFormulario();
             },
 
@@ -24243,9 +24359,14 @@ storage: {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span id="db-badge-chamada-total" class="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
-                                                ${(d.chamada || []).length} matriculados
-                                            </span>
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <button type="button" onclick="const b = document.getElementById('db-manual-abs-box'); if(b){ b.classList.toggle('hidden'); }" class="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer" title="Lançar Falta (ABS) manualmente por matrícula ou nome">
+                                                    <i class="fa-solid fa-user-xmark text-amber-600"></i> + Lançar Falta (ABS) Manual
+                                                </button>
+                                                <span id="db-badge-chamada-total" class="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                                    ${(d.chamada || []).length} matriculados
+                                                </span>
+                                            </div>
                                         </div>
 
                                         <!-- Tabela de Chamada -->
@@ -24263,6 +24384,50 @@ storage: {
                                                     <!-- Injetado via renderTabelaChamada() -->
                                                 </tbody>
                                             </table>
+                                        </div>
+
+                                        <!-- Lançamento Manual de Falta / ABS (Fallback quando chamada vazia ou falta avulsa) -->
+                                        <div id="db-manual-abs-box" class="${(d.chamada || []).length === 0 ? '' : 'hidden'} p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 space-y-3">
+                                            <div class="flex items-center justify-between">
+                                                <h4 class="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                                                    <i class="fa-solid fa-user-xmark"></i> Registro Manual de Falta / ABS
+                                                </h4>
+                                                <span class="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Para incluir falta sem usar a lista acima</span>
+                                            </div>
+                                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                                                <div class="sm:col-span-2">
+                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Matrícula:</label>
+                                                    <input type="text" id="db-add-abs-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('abs', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
+                                                </div>
+                                                <div class="sm:col-span-4">
+                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Colaborador:</label>
+                                                    <input type="text" id="db-add-abs-nome" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
+                                                </div>
+                                                <div class="sm:col-span-4">
+                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo / Ocorrência:</label>
+                                                    <input type="text" id="db-add-abs-mot" placeholder="Ex: ABS, Atestado, Sem retorno..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                                                </div>
+                                                <div class="sm:col-span-2">
+                                                    <button type="button" onclick="app.diarioBordo.adicionarAbs()" class="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
+                                                        <i class="fa-solid fa-plus"></i> Add Falta
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="overflow-x-auto rounded-xl border border-amber-200/70 dark:border-amber-800/50 bg-white dark:bg-slate-900">
+                                                <table class="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr class="bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border-b border-amber-200/70 dark:border-amber-800/50">
+                                                            <th class="p-2.5 w-28">Matrícula</th>
+                                                            <th class="p-2.5">Colaborador</th>
+                                                            <th class="p-2.5">Motivo da Falta</th>
+                                                            <th class="p-2.5 w-14 text-right">Ação</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="db-tbody-abs">
+                                                        <!-- Injetado via atualizarSecoesFormulario() -->
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     </div>
                                 `}
