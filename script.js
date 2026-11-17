@@ -162,11 +162,20 @@ const app = {
             dataLoaded: false, // <--- ADICIONADO: Trava de segurança do Firebase
             config: { baseValue: 400, goals: [], supabaseKey: 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl', supabaseUrl: '' }, // <--- ADICIONADO: Evita tela branca se o banco estiver vazio
 
-            // Helpers de Perfil (Bonificação exclusiva para Qualidade)
+            // Helpers de Perfil (Qualidade, Treinamento & Operadores)
+            isUserOperador(u) {
+                if (!u) return true;
+                const tipo = String(u.tipoAcesso || '').trim().toLowerCase();
+                const cargo = String(u.cargo || '').trim().toLowerCase();
+                return tipo === 'operador' || Boolean(u.turmaId || u.turmaNumero) || cargo.includes('operador');
+            },
             isUserQualidade(u) {
-                if (!u) return false;
-                if (u.tipoAcesso === 'Operador' || u.turmaId || (u.cargo && u.cargo.includes('Operador'))) return false;
+                if (!u || this.isUserOperador(u)) return false;
                 return (u.tipoAcesso || 'Qualidade') === 'Qualidade';
+            },
+            isUserTreinamento(u) {
+                if (!u || this.isUserOperador(u)) return false;
+                return String(u.tipoAcesso || '').trim() === 'Treinamento';
             },
             getQualidadeUsers() {
                 return (this.users || []).filter(u => this.isUserQualidade(u));
@@ -454,6 +463,512 @@ storage: {
                     appId: "1:96589923224:web:c81d609302104c62f9a1ed"
                 },
                 
+                _fetchFirebaseNodeFast(nodePath, restDelayMs = 600, timeoutMs = 20000) {
+                    return new Promise((resolve) => {
+                        let settled = false;
+                        let timerDelay = null;
+                        let timerAbort = null;
+                        let controller = null;
+                        const finish = (val, ok) => {
+                            if (settled) return;
+                            settled = true;
+                            if (timerDelay) clearTimeout(timerDelay);
+                            if (timerAbort) clearTimeout(timerAbort);
+                            resolve({ val, ok });
+                        };
+
+                        const startRest = () => {
+                            try {
+                                const dbBase = String(this.firebaseConfig?.databaseURL || '').replace(/\/+$/, '');
+                                if (!dbBase || typeof fetch !== 'function') return;
+                                controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                                timerAbort = setTimeout(() => {
+                                    try { if (controller) controller.abort(); } catch (e) {}
+                                    finish(null, false);
+                                }, timeoutMs);
+                                fetch(`${dbBase}/${nodePath}.json`, {
+                                    method: 'GET',
+                                    cache: 'no-store',
+                                    signal: controller ? controller.signal : undefined
+                                }).then(resp => {
+                                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                                    return resp.json();
+                                }).then(json => {
+                                    finish(json, true);
+                                }).catch(() => {});
+                            } catch (e) {}
+                        };
+
+                        try {
+                            firebase.database().ref(nodePath).once('value').then(snap => {
+                                finish(snap.val(), true);
+                            }).catch(err => {
+                                console.warn("Aviso SDK ao carregar nó " + nodePath + ":", err);
+                                startRest();
+                            });
+                        } catch (e) {
+                            startRest();
+                        }
+
+                        timerDelay = setTimeout(() => {
+                            if (!settled) startRest();
+                        }, restDelayMs);
+
+                        setTimeout(() => {
+                            if (!settled) finish(null, false);
+                        }, timeoutMs + 500);
+                    });
+                },
+
+                _applyHydratedData(data) {
+                    if (!data || typeof data !== 'object') return;
+                    const has = (k) => Object.prototype.hasOwnProperty.call(data, k);
+
+                    if (has('config') && data.config) {
+                        app.config = data.config;
+
+                        // Mescla backup local imediato para não perder configurações (DE/PARA, metas, ocultos, aliases) ao dar F5
+                        try {
+                            const localCfgRaw = localStorage.getItem('soft_config_backup');
+                            if (localCfgRaw) {
+                                const localCfg = JSON.parse(localCfgRaw);
+                                if (localCfg && typeof localCfg === 'object') {
+                                    if (localCfg.deParaSetoresVG) app.config.deParaSetoresVG = { ...(app.config.deParaSetoresVG || {}), ...localCfg.deParaSetoresVG };
+                                    if (localCfg.metasSetoresVG) app.config.metasSetoresVG = { ...(app.config.metasSetoresVG || {}), ...localCfg.metasSetoresVG };
+                                    if (localCfg.metaPadraoVG !== undefined) app.config.metaPadraoVG = localCfg.metaPadraoVG;
+                                    if (localCfg.metasSetoresVG_Monitor) app.config.metasSetoresVG_Monitor = { ...(app.config.metasSetoresVG_Monitor || {}), ...localCfg.metasSetoresVG_Monitor };
+                                    if (localCfg.metasSetoresVG_Supervisor) app.config.metasSetoresVG_Supervisor = { ...(app.config.metasSetoresVG_Supervisor || {}), ...localCfg.metasSetoresVG_Supervisor };
+                                    if (localCfg.metaPadraoVG_Monitor !== undefined) app.config.metaPadraoVG_Monitor = localCfg.metaPadraoVG_Monitor;
+                                    if (localCfg.metaPadraoVG_Supervisor !== undefined) app.config.metaPadraoVG_Supervisor = localCfg.metaPadraoVG_Supervisor;
+                                    if (Array.isArray(localCfg.ignoredSetoresRH)) app.config.ignoredSetoresRH = localCfg.ignoredSetoresRH;
+                                    if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
+                                    if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
+                                    if (!app.config.presetsGruposAcesso && localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = localCfg.presetsGruposAcesso;
+                                    if (!app.config.regraFeedback && localCfg.regraFeedback) app.config.regraFeedback = localCfg.regraFeedback;
+                                    if (!app.config.regrasFeedbackPorMes && localCfg.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = localCfg.regrasFeedbackPorMes;
+                                    if (!app.config.supabaseKey && localCfg.supabaseKey) app.config.supabaseKey = localCfg.supabaseKey;
+                                    if (!app.config.supabaseUrl && localCfg.supabaseUrl) app.config.supabaseUrl = localCfg.supabaseUrl;
+                                }
+                            }
+                            if (!app.config.supabaseKey) {
+                                app.config.supabaseKey = localStorage.getItem('soft_supabase_key') || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
+                            }
+                            if (!app.config.supabaseUrl) {
+                                app.config.supabaseUrl = localStorage.getItem('soft_supabase_url') || '';
+                            }
+                            localStorage.setItem('soft_config_backup', JSON.stringify(app.config));
+                        } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
+
+                        if ((!app.config.metasSetoresVG_Monitor || Object.keys(app.config.metasSetoresVG_Monitor).length === 0) && app.config.metasSetoresVG && Object.keys(app.config.metasSetoresVG).length > 0) {
+                            app.config.metasSetoresVG_Monitor = { ...app.config.metasSetoresVG };
+                        }
+                        if (app.config.metaPadraoVG_Monitor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Monitor)) || parseFloat(app.config.metaPadraoVG_Monitor) <= 0) {
+                            app.config.metaPadraoVG_Monitor = (app.config.metaPadraoVG !== undefined && parseFloat(app.config.metaPadraoVG) > 0) ? parseFloat(app.config.metaPadraoVG) : 2;
+                        }
+                        if (app.config.metaPadraoVG_Supervisor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Supervisor)) || parseFloat(app.config.metaPadraoVG_Supervisor) <= 0) {
+                            app.config.metaPadraoVG_Supervisor = 4;
+                        }
+                        if (!app.config.classificacaoOperadoresCargos || typeof app.config.classificacaoOperadoresCargos !== 'object') {
+                            try {
+                                const localClass = localStorage.getItem('soft_classificacao_operadores_backup');
+                                if (localClass) app.config.classificacaoOperadoresCargos = JSON.parse(localClass);
+                                else app.config.classificacaoOperadoresCargos = {};
+                            } catch (e) {
+                                app.config.classificacaoOperadoresCargos = {};
+                            }
+                        }
+                        if (!app.config.goals) app.config.goals = [];
+                        const g3 = app.config.goals.find(g => g.id === 'g3');
+                        if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
+                        const g4 = app.config.goals.find(g => g.id === 'g4');
+                        if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
+                        const g6 = app.config.goals.find(g => g.id === 'g6');
+                        if (g6 && g6.type !== 'gestor') { g6.type = 'gestor'; g6.title = "Avaliação Gestor"; }
+                        const g7 = app.config.goals.find(g => g.id === 'g7');
+                        if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
+                        if (app.config.goals.find(g => g.id === 'g5')) {
+                            app.config.goals = app.config.goals.filter(g => g.id !== 'g5');
+                            const updateG6 = app.config.goals.find(g => g.id === 'g6');
+                            if(updateG6) updateG6.weight = 0.15;
+                            const updateG7 = app.config.goals.find(g => g.id === 'g7');
+                            if(updateG7) updateG7.weight = 0.15;
+                        }
+                    }
+
+                    if (has('users')) {
+                        if (data.users) {
+                            this._userKeyMap = new Map();
+                            if (!this._plaintextPwdMats) this._plaintextPwdMats = new Set();
+                            const rawEntries = Array.isArray(data.users)
+                                ? data.users.map((u, idx) => [String(idx), u])
+                                : Object.entries(data.users);
+                            app.users = [];
+                            rawEntries.forEach(([fbKey, u]) => {
+                                if (u === null || u === undefined) return;
+                                if(u.results && typeof u.results !== 'object') {
+                                    u.results = {};
+                                } else if(u.results && (u.results.g1 || u.results.g2)) {
+                                    const oldData = {...u.results};
+                                    u.results = { "2026-06": oldData };
+                                }
+                                if(!u.results) u.results = {};
+                                if (u.operacoes) {
+                                    u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
+                                } else {
+                                    u.operacoes = [];
+                                }
+                                const mKey = this._normalizeMat(u.matricula);
+                                if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
+                                    if (!String(u.senha).startsWith('enc$v1$') && mKey) {
+                                        this._plaintextPwdMats.add(mKey);
+                                    }
+                                    u.senha = app.utils.encryptPassword(u.senha);
+                                }
+                                if (String(u.tipoAcesso || '').trim() === 'Treinamento') {
+                                    if (!u.subclasse) {
+                                        const cLower = String(u.cargo || '').toLowerCase();
+                                        const nLower = String(u.nome || '').toLowerCase();
+                                        u.subclasse = (cLower.includes('analista') || nLower.includes('analista')) ? 'Analista' : 'Instrutor';
+                                    }
+                                }
+                                if (mKey && !this._userKeyMap.has(mKey)) {
+                                    this._userKeyMap.set(mKey, String(fbKey));
+                                }
+                                app.users.push(u);
+                            });
+                            try { if (app.users && app.users.length > 0) localStorage.setItem("soft_users_backup", JSON.stringify(app.users)); } catch(e) {}
+                        } else if (!Array.isArray(app.users) || app.users.length === 0) {
+                            this._userKeyMap = new Map();
+                            app.users = [];
+                        }
+                    }
+
+                    if (has('actions')) {
+                        if (data.actions) app.actionsList = data.actions; else app.actionsList = {};
+                        try {
+                            const localActsRaw = localStorage.getItem('soft_actions_backup');
+                            if (localActsRaw) {
+                                const localActs = JSON.parse(localActsRaw);
+                                if (localActs && typeof localActs === 'object') {
+                                    app.actionsList = { ...localActs, ...(app.actionsList || {}) };
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    if (has('notifications')) app.notificationsList = data.notifications || {};
+                    if (has('events')) app.eventsList = data.events || {};
+                    if (has('atas')) {
+                        if (data.atas) {
+                            if (Array.isArray(data.atas)) {
+                                app.atasList = {};
+                                data.atas.forEach((a, idx) => { if (a) app.atasList[a.id || ('ata_' + idx)] = a; });
+                            } else if (typeof data.atas === 'object') {
+                                app.atasList = data.atas;
+                            } else {
+                                app.atasList = {};
+                            }
+                            app._atasLoadedFromCloud = true;
+                            try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
+                            if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
+                        } else {
+                            app._atasLoadedFromCloud = true;
+                            try {
+                                const localAtasRaw = localStorage.getItem('soft_atas_backup');
+                                const localAtas = localAtasRaw ? JSON.parse(localAtasRaw) : null;
+                                app.atasList = (localAtas && typeof localAtas === 'object') ? localAtas : {};
+                            } catch (e) { app.atasList = {}; }
+                        }
+                    }
+                    if (has('laudos')) app.laudos.list = data.laudos ? (Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean)) : [];
+                    if (has('apresentacoes')) app.apresentacoesList = data.apresentacoes || {};
+                    if (has('estoque')) app.estoqueItems = data.estoque || {};
+                    if (has('estoqueLogs')) app.estoqueLogs = data.estoqueLogs || {};
+                    if (has('impressoes')) app.impressoesList = data.impressoes || {};
+                    if (has('impressoesStats')) app.impressoesStats = data.impressoesStats || { arquivos: 0, folhas: 0 };
+
+                    if (has('diario_bordo')) {
+                        if (data.diario_bordo) {
+                            if (Array.isArray(data.diario_bordo)) {
+                                app.diarioBordoList = {};
+                                data.diario_bordo.forEach((d, idx) => {
+                                    if (d && typeof d === 'object') {
+                                        const key = d.id || ('db_' + idx);
+                                        if (!d.id) d.id = key;
+                                        app.diarioBordoList[key] = d;
+                                    }
+                                });
+                            } else if (typeof data.diario_bordo === 'object') {
+                                app.diarioBordoList = data.diario_bordo;
+                                Object.entries(app.diarioBordoList).forEach(([k, v]) => {
+                                    if (v && typeof v === 'object' && !v.id) v.id = k;
+                                });
+                            } else {
+                                app.diarioBordoList = {};
+                            }
+                            try { localStorage.setItem('soft_diario_bordo_backup', JSON.stringify(app.diarioBordoList)); } catch (e) {}
+                            if (typeof localforage !== 'undefined') localforage.setItem('soft_diario_bordo_hd', app.diarioBordoList).catch(() => {});
+                        } else {
+                            try {
+                                const localDbRaw = localStorage.getItem('soft_diario_bordo_backup');
+                                const localDb = localDbRaw ? JSON.parse(localDbRaw) : null;
+                                app.diarioBordoList = (localDb && typeof localDb === 'object') ? localDb : {};
+                            } catch (e) { app.diarioBordoList = {}; }
+                        }
+                    }
+
+                    if (has('turmas_treinamento')) {
+                        if (data.turmas_treinamento) {
+                            if (typeof data.turmas_treinamento === 'object') {
+                                app.turmasTreinamentoList = data.turmas_treinamento;
+                                Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
+                                    if (v && typeof v === 'object' && !v.id) v.id = k;
+                                });
+                            } else app.turmasTreinamentoList = {};
+                            try { localStorage.setItem('soft_turmas_treinamento_backup', JSON.stringify(app.turmasTreinamentoList)); } catch (e) {}
+                        } else {
+                            try {
+                                const localT = localStorage.getItem('soft_turmas_treinamento_backup');
+                                if (localT) {
+                                    app.turmasTreinamentoList = JSON.parse(localT) || {};
+                                    Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
+                                        if (v && typeof v === 'object' && !v.id) v.id = k;
+                                    });
+                                } else {
+                                    app.turmasTreinamentoList = {};
+                                }
+                            } catch (e) { app.turmasTreinamentoList = {}; }
+                        }
+                    }
+
+                    if (has('diario_bordo') || has('turmas_treinamento')) {
+                        try {
+                            if (app.diarioBordo && typeof app.diarioBordo.sincronizarLoginsTodasTurmas === 'function') {
+                                app.diarioBordo.sincronizarLoginsTodasTurmas();
+                            }
+                        } catch(e) {}
+                        try {
+                            if (app.diarioBordo && typeof app.diarioBordo._reconciliarTurmasOrfas === 'function') {
+                                app.diarioBordo._reconciliarTurmasOrfas();
+                            }
+                        } catch(e) {}
+                    }
+
+                    if (has('harmonyDeploy')) {
+                        if (data.harmonyDeploy) {
+                            app.harmonyDeployList = data.harmonyDeploy;
+                            try {
+                                const localH = localStorage.getItem('soft_harmony_backup');
+                                if (localH) {
+                                    const localParsed = JSON.parse(localH);
+                                    if (localParsed && typeof localParsed === 'object') {
+                                        Object.entries(localParsed).forEach(([lk, lp]) => {
+                                            if (!lp || typeof lp !== 'object') return;
+                                            const rp = app.harmonyDeployList[lk];
+                                            if (!rp) return;
+                                            const lMs = Date.parse(lp.atualizadoEm || '') || 0;
+                                            const rMs = Date.parse(rp.atualizadoEm || '') || 0;
+                                            if (lMs > rMs) {
+                                                app.harmonyDeployList[lk] = lp;
+                                            }
+                                        });
+                                    }
+                                }
+                            } catch (e) {}
+                        } else {
+                            try {
+                                const localH = localStorage.getItem('soft_harmony_backup');
+                                if (localH) app.harmonyDeployList = JSON.parse(localH);
+                                else app.harmonyDeployList = {};
+                            } catch (e) { app.harmonyDeployList = {}; }
+                        }
+                    }
+
+                    if (has('csatNpsProvas')) {
+                        if (data.csatNpsProvas) app.csatNpsProvas = data.csatNpsProvas;
+                        else {
+                            try {
+                                const localP = localStorage.getItem('soft_csat_nps_provas');
+                                app.csatNpsProvas = localP ? JSON.parse(localP) : {};
+                            } catch (e) { app.csatNpsProvas = {}; }
+                        }
+                    }
+                    if (has('reportes')) {
+                        if (data.reportes) app.reportesList = data.reportes;
+                        else {
+                            try {
+                                const localR = localStorage.getItem('portal_reportes_list');
+                                app.reportesList = localR ? JSON.parse(localR) : {};
+                            } catch (e) { app.reportesList = {}; }
+                        }
+                    }
+                    if (has('softlingo')) {
+                        if (data.softlingo) {
+                            app.softlingoModulos = data.softlingo.modulos || null;
+                            app.tentativasRespostas = data.softlingo.tentativas_respostas || {};
+                            if (data.softlingo.mascotes && app.duolingo && typeof app.duolingo.mesclarListaMascotes === 'function') {
+                                app.duolingo.mesclarListaMascotes(Array.isArray(data.softlingo.mascotes) ? data.softlingo.mascotes : Object.values(data.softlingo.mascotes));
+                            }
+                        } else {
+                            try {
+                                const localSM = localStorage.getItem('softlingo_modulos_backup');
+                                if (localSM) app.softlingoModulos = JSON.parse(localSM);
+                                const localTR = localStorage.getItem('softlingo_tentativas_backup');
+                                if (localTR) app.tentativasRespostas = JSON.parse(localTR);
+                            } catch(e) {}
+                        }
+                    }
+                    if (has('softlingo_temas') && data.softlingo_temas && app.duolingo && typeof app.duolingo.normalizeTemas === 'function') {
+                        const fbTemas = app.duolingo.normalizeTemas(data.softlingo_temas);
+                        try {
+                            const localRaw = localStorage.getItem('softlingo_temas_backup');
+                            if (localRaw) {
+                                const localTemas = app.duolingo.normalizeTemas(JSON.parse(localRaw));
+                                if (localTemas.length > 0) app.softlingoTemas = localTemas;
+                                else {
+                                    app.softlingoTemas = fbTemas;
+                                    localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
+                                }
+                            } else if (fbTemas.length > 0) {
+                                app.softlingoTemas = fbTemas;
+                                localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
+                            }
+                        } catch (e) {
+                            app.softlingoTemas = fbTemas;
+                        }
+                    }
+                    if (has('fcrProvas')) {
+                        if (data.fcrProvas) app.fcrProvas = data.fcrProvas;
+                        else {
+                            try {
+                                const localF = localStorage.getItem('portal_fcr_provas');
+                                app.fcrProvas = localF ? JSON.parse(localF) : {};
+                            } catch (e) { app.fcrProvas = {}; }
+                        }
+                    }
+                    if (has('biBancoHoras')) {
+                        if (data.biBancoHoras && typeof data.biBancoHoras === 'object') {
+                            app.biBancoHorasData = data.biBancoHoras;
+                            try { localStorage.setItem('portal_bi_banco_horas', JSON.stringify(app.biBancoHorasData)); } catch (e) {}
+                        } else {
+                            try {
+                                const localBh = localStorage.getItem('portal_bi_banco_horas');
+                                app.biBancoHorasData = localBh ? JSON.parse(localBh) : null;
+                            } catch (e) { app.biBancoHorasData = null; }
+                        }
+                        if (app.ui && typeof app.ui._hydrateBiBancoHorasFromCloud === 'function') {
+                            app.ui._hydrateBiBancoHorasFromCloud();
+                        }
+                    }
+                    if (has('visaoGeralData')) {
+                        if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
+                            const rawVG = data.visaoGeralData;
+                            const isMonthly = Object.keys(rawVG).some(k => /^\d{4}-\d{2}$/.test(k));
+                            if (isMonthly) {
+                                app.allVisaoGeralData = {};
+                                Object.entries(rawVG).forEach(([m, mData]) => {
+                                    app.allVisaoGeralData[m] = this.normalizeVisaoGeralKeys(mData);
+                                });
+                            } else {
+                                app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(rawVG) };
+                            }
+                            app.visaoGeralData = app.allVisaoGeralData[app.currentMonth] || {};
+                        } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
+                            try {
+                                const localVG = localStorage.getItem('soft_visao_geral_backup');
+                                if (localVG) {
+                                    const parsed = JSON.parse(localVG);
+                                    const isMonthly = Object.keys(parsed).some(k => /^\d{4}-\d{2}$/.test(k));
+                                    if (isMonthly) {
+                                        app.allVisaoGeralData = parsed;
+                                        app.visaoGeralData = this.normalizeVisaoGeralKeys(app.allVisaoGeralData[app.currentMonth] || {});
+                                    } else {
+                                        app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(parsed) };
+                                        app.visaoGeralData = app.allVisaoGeralData[app.currentMonth];
+                                    }
+                                } else {
+                                    app.allVisaoGeralData = {};
+                                    app.visaoGeralData = {};
+                                }
+                            } catch (e) {
+                                app.allVisaoGeralData = {};
+                                app.visaoGeralData = {};
+                            }
+                        }
+                    }
+                    if (has('monitorias')) {
+                        if (data.monitorias) {
+                            app.allMonitorias = data.monitorias;
+                            if (app.allMonitorias.ranking || app.allMonitorias.detalhes) {
+                                const oldData = { ...app.allMonitorias };
+                                app.allMonitorias = { [app.currentMonth]: oldData };
+                            }
+                            app.monitoriasData = app.allMonitorias[app.currentMonth] || { ranking: [] };
+                        } else {
+                            app.allMonitorias = {};
+                            app.monitoriasData = { ranking: [] };
+                        }
+                    }
+                    if (has('anatel')) {
+                        if (data.anatel) {
+                            app.allAnatel = data.anatel;
+                            if (app.allAnatel.registros || app.allAnatel.canceladasNovas) {
+                                const oldAnatel = { ...app.allAnatel };
+                                app.allAnatel = { [app.currentMonth]: oldAnatel };
+                            }
+                            app.anatelData = app.allAnatel[app.currentMonth] || { registros: [], canceladasNovas: [] };
+                        } else {
+                            app.allAnatel = {};
+                            app.anatelData = { registros: [], canceladasNovas: [] };
+                        }
+                    }
+                    if (has('operacoes')) {
+                        app.operacoesList = data.operacoes || {};
+                    }
+                },
+
+                _refreshCurrentTabSilentlyAfterBgSync(loadedKeys) {
+                    const viewApp = document.getElementById('view-app');
+                    if (!viewApp || viewApp.classList.contains('hidden')) return;
+                    if (!app.currentUser && !app.isAdmin) return;
+                    const gm = document.getElementById('global-modal');
+                    if (gm && !gm.classList.contains('hidden')) return;
+                    if (app.diarioBordo && (app.diarioBordo.diarioEmEdicao || app.diarioBordo.turmaEmEdicao)) return;
+                    const activeEl = document.activeElement;
+                    if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) return;
+
+                    const tab = app.currentTab;
+                    if (tab === 'implantacao_ia' && loadedKeys.includes('harmonyDeploy') && app.ui?._refreshImplantacaoIAInPlace) {
+                        app.ui._refreshImplantacaoIAInPlace();
+                        return;
+                    }
+                    if ((tab === 'span_operacoes' || tab === 'hierarquia' || tab === 'gestao_equipe') && app.ui?._refreshSpanOrHierarquiaInPlace) {
+                        app.ui._refreshSpanOrHierarquiaInPlace();
+                        return;
+                    }
+                    const tabDependsOn = {
+                        'home': ['events', 'diario_bordo', 'visaoGeralData', 'monitorias', 'notifications'],
+                        'diario_bordo': ['diario_bordo', 'turmas_treinamento'],
+                        'calendario': ['events'],
+                        'gestao_atas': ['atas'],
+                        'ata_reuniao': ['atas'],
+                        'laudos_estudos': ['laudos'],
+                        'controle_estoque': ['estoque', 'estoqueLogs'],
+                        'impressoes': ['impressoes', 'impressoesStats'],
+                        'gestao_impressoes': ['impressoes', 'impressoesStats'],
+                        'analitico_visao_geral': ['visaoGeralData', 'monitorias'],
+                        'dashboard_adm': ['visaoGeralData', 'monitorias', 'anatel'],
+                        'meu_painel': ['monitorias', 'visaoGeralData'],
+                        'analise_csv_dinamico': ['apresentacoes'],
+                        'bi_banco_horas': ['biBancoHoras'],
+                        'treinamentos': ['softlingo', 'softlingo_temas', 'csatNpsProvas', 'fcrProvas'],
+                        'pesquisa_treinamento': ['turmas_treinamento', 'csatNpsProvas']
+                    };
+                    const deps = tabDependsOn[tab];
+                    if (deps && deps.some(k => loadedKeys.includes(k)) && app.ui?.renderTab) {
+                        app.ui.renderTab(tab, true);
+                    }
+                },
+
                 init() {
                     if (!window.firebase) {
                         console.error("Firebase nao carregou corretamente.");
@@ -465,8 +980,7 @@ storage: {
                     }
                     if (!firebase.apps.length) { firebase.initializeApp(this.firebaseConfig); }
                     
-                    console.log("Tentando conectar ao banco de dados...");
-                    // Monitor de status de conexao em tempo real
+                    console.log("Tentando conectar ao banco de dados (boot rápido)...");
                     try {
                         firebase.database().ref(".info/connected").on("value", (snap) => {
                             const isConn = snap.val() === true;
@@ -475,7 +989,26 @@ storage: {
                         });
                     } catch(e) {}
 
-                    // Pré-carrega ações e atas salvas no cache IndexedDB (localforage) com 0 bytes de consumo de rede
+                    // Pre-hidratação instantânea do cache local para destravar Login sem esperar os nós pesados (monitorias/apresentacoes)
+                    try {
+                        const localCfg = localStorage.getItem('soft_config_backup');
+                        if (localCfg) {
+                            const parsedCfg = JSON.parse(localCfg);
+                            if (parsedCfg && typeof parsedCfg === 'object') app.config = parsedCfg;
+                        }
+                        const localUsersRaw = localStorage.getItem('soft_users_backup');
+                        if (localUsersRaw) {
+                            const parsedUsers = JSON.parse(localUsersRaw);
+                            if (Array.isArray(parsedUsers) && parsedUsers.length >= 5) {
+                                app.users = parsedUsers;
+                            }
+                        }
+                        const localT = localStorage.getItem('soft_turmas_treinamento_backup');
+                        if (localT) app.turmasTreinamentoList = JSON.parse(localT) || {};
+                        const localH = localStorage.getItem('soft_harmony_backup');
+                        if (localH) app.harmonyDeployList = JSON.parse(localH) || {};
+                    } catch (e) {}
+
                     if (typeof localforage !== 'undefined') {
                         localforage.getItem('soft_actions_hd').then(cachedActs => {
                             if (cachedActs && typeof cachedActs === 'object') {
@@ -494,589 +1027,184 @@ storage: {
                         }).catch(() => {});
                     }
 
-                    // Carga paralela ultra-rápida apenas dos nós leves essenciais (SEM actions de 34MB e SEM shares de 13.6MB no boot!)
-                    const coreKeys = ['config', 'users', 'visaoGeralData', 'monitorias', 'anatel', 'atas', 'laudos', 'operacoes', 'softlingo', 'softlingo_temas', 'events', 'estoque', 'estoqueLogs', 'impressoes', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'harmonyDeploy', 'notifications', 'apresentacoes', 'diario_bordo', 'turmas_treinamento', 'biBancoHoras'];
+                    // Se não existe sessão salva para hoje, exibe a tela de login IMEDIATAMENTE (0ms)
+                    const bootTodayStr = new Date().toLocaleDateString('pt-BR');
+                    const bootSavedDate = localStorage.getItem('soft_session_date');
+                    const bootSavedMat = localStorage.getItem('soft_session_mat');
+                    const bootSavedAdmin = localStorage.getItem('soft_session_admin') === 'true';
+                    const hasSavedSessionToday = (bootSavedDate === bootTodayStr) && (bootSavedAdmin || !!bootSavedMat);
+                    if (!hasSavedSessionToday) {
+                        const ws0 = document.getElementById("session-wait-screen");
+                        if (ws0) ws0.classList.add("hidden");
+                        const vl0 = document.getElementById("view-login");
+                        if (vl0) vl0.classList.remove("hidden");
+                    }
 
-                    // Carga única (.once) direta do Firebase no boot (sem cache local que desconecte usuários e sem loops .on)
-                    const fetchCoreData = async () => {
-                        if (typeof localforage !== 'undefined') {
-                            localforage.removeItem('soft_core_cache_hd').catch(() => {});
-                        }
-                        const promises = coreKeys.map(k => {
-                            return firebase.database().ref('sistema_bonificacao/' + k).once('value').then(snap => {
-                                return { key: k, val: snap.val() };
-                            }).catch(err => {
-                                console.warn("Aviso ao carregar nó " + k + ":", err);
-                                return { key: k, val: null };
-                            });
-                        });
+                    const phase1Keys = ['config', 'users', 'operacoes', 'notifications'];
+                    const wave2AKeys = ['visaoGeralData', 'harmonyDeploy', 'laudos', 'atas', 'diario_bordo', 'turmas_treinamento', 'estoque', 'estoqueLogs', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'softlingo', 'softlingo_temas', 'anatel', 'biBancoHoras'];
+                    const wave2BKeys = ['events', 'impressoes', 'monitorias', 'apresentacoes'];
+
+                    const fetchBatch = async (keysList, restDelayMs = 600, timeoutMs = 20000) => {
+                        const promises = keysList.map(k =>
+                            this._fetchFirebaseNodeFast('sistema_bonificacao/' + k, restDelayMs, timeoutMs).then(res => ({
+                                key: k,
+                                val: res.ok ? res.val : undefined,
+                                ok: res.ok
+                            }))
+                        );
                         const results = await Promise.all(promises);
-                        const freshData = {};
-                        results.forEach(r => { freshData[r.key] = r.val; });
-                        return freshData;
+                        const out = {};
+                        results.forEach(r => {
+                            if (r.ok) out[r.key] = r.val;
+                        });
+                        return out;
                     };
 
-                    fetchCoreData().then(async (data) => {
-                        console.log("Dados essenciais recebidos com sucesso!");
+                    if (typeof localforage !== 'undefined') {
+                        localforage.removeItem('soft_core_cache_hd').catch(() => {});
+                    }
 
-                        // Se for link compartilhado (?share=ID), baixa SOMENTE a apresentação específica (economia de 13.6MB)
-                        const urlParamsCheck = new URLSearchParams(window.location.search);
-                        const shareIdCheck = urlParamsCheck.get('share');
-                        if (shareIdCheck) {
-                            try {
-                                const shareSnap = await firebase.database().ref('sistema_bonificacao/shares/' + shareIdCheck).once('value');
-                                if (shareSnap.val()) {
-                                    data.shares = { [shareIdCheck]: shareSnap.val() };
-                                }
-                            } catch (e) {}
-                        }
+                    const urlParamsBoot = new URLSearchParams(window.location.search);
+                    const shareIdBoot = urlParamsBoot.get('share');
+                    const pShare = shareIdBoot
+                        ? this._fetchFirebaseNodeFast('sistema_bonificacao/shares/' + shareIdBoot, 500, 15000).then(r => r.ok && r.val ? { [shareIdBoot]: r.val } : null)
+                        : Promise.resolve(null);
 
-                        // Libera login e salva dados
+                    this._phase1Promise = Promise.all([
+                        fetchBatch(phase1Keys, 500, 18000),
+                        pShare
+                    ]).then(([data, shareMap]) => {
+                        if (shareMap) data.shares = shareMap;
+                        this._applyHydratedData(data);
+                        app.syncOperacoesFromSetorial();
+                        app._phase1Loaded = true;
                         app.dataLoaded = true;
-                        
-                        if (data) {
-                            if (data.config) {
-                                app.config = data.config;
+                        console.log("Fase 1 (Auth/Config) carregada com sucesso!");
 
-                                // Mescla backup local imediato para não perder configurações (DE/PARA, metas, ocultos, aliases) ao dar F5
-                                try {
-                                    const localCfgRaw = localStorage.getItem('soft_config_backup');
-                                    if (localCfgRaw) {
-                                        const localCfg = JSON.parse(localCfgRaw);
-                                        if (localCfg && typeof localCfg === 'object') {
-                                            if (localCfg.deParaSetoresVG) app.config.deParaSetoresVG = { ...(app.config.deParaSetoresVG || {}), ...localCfg.deParaSetoresVG };
-                                            if (localCfg.metasSetoresVG) app.config.metasSetoresVG = { ...(app.config.metasSetoresVG || {}), ...localCfg.metasSetoresVG };
-                                            if (localCfg.metaPadraoVG !== undefined) app.config.metaPadraoVG = localCfg.metaPadraoVG;
-                                            if (localCfg.metasSetoresVG_Monitor) app.config.metasSetoresVG_Monitor = { ...(app.config.metasSetoresVG_Monitor || {}), ...localCfg.metasSetoresVG_Monitor };
-                                            if (localCfg.metasSetoresVG_Supervisor) app.config.metasSetoresVG_Supervisor = { ...(app.config.metasSetoresVG_Supervisor || {}), ...localCfg.metasSetoresVG_Supervisor };
-                                            if (localCfg.metaPadraoVG_Monitor !== undefined) app.config.metaPadraoVG_Monitor = localCfg.metaPadraoVG_Monitor;
-                                            if (localCfg.metaPadraoVG_Supervisor !== undefined) app.config.metaPadraoVG_Supervisor = localCfg.metaPadraoVG_Supervisor;
-                                            if (Array.isArray(localCfg.ignoredSetoresRH)) app.config.ignoredSetoresRH = localCfg.ignoredSetoresRH;
-                                            if (localCfg.aliases) app.config.aliases = { ...(app.config.aliases || {}), ...localCfg.aliases };
-                                            if (localCfg.headcountRH && (!app.config.headcountRH || Object.keys(app.config.headcountRH).length === 0)) app.config.headcountRH = localCfg.headcountRH;
-                                            if (!app.config.presetsGruposAcesso && localCfg.presetsGruposAcesso) app.config.presetsGruposAcesso = localCfg.presetsGruposAcesso;
-                                            if (!app.config.regraFeedback && localCfg.regraFeedback) app.config.regraFeedback = localCfg.regraFeedback;
-                                            if (!app.config.regrasFeedbackPorMes && localCfg.regrasFeedbackPorMes) app.config.regrasFeedbackPorMes = localCfg.regrasFeedbackPorMes;
-                                            if (!app.config.supabaseKey && localCfg.supabaseKey) app.config.supabaseKey = localCfg.supabaseKey;
-                                            if (!app.config.supabaseUrl && localCfg.supabaseUrl) app.config.supabaseUrl = localCfg.supabaseUrl;
-                                        }
-                                    }
-                                    if (!app.config.supabaseKey) {
-                                        app.config.supabaseKey = localStorage.getItem('soft_supabase_key') || 'sb_publishable_pIIANNWXN5iPyqb_U4VHEQ_i5rt2DYl';
-                                    }
-                                    if (!app.config.supabaseUrl) {
-                                        app.config.supabaseUrl = localStorage.getItem('soft_supabase_url') || '';
-                                    }
-                                    localStorage.setItem('soft_config_backup', JSON.stringify(app.config));
-                                } catch (e) { console.warn("Aviso ao ler backup local de config:", e); }
-
-                                // Preserva as metas setoriais e gerais legadas do usuário para que nenhuma operação fique com meta 0
-                                if ((!app.config.metasSetoresVG_Monitor || Object.keys(app.config.metasSetoresVG_Monitor).length === 0) && app.config.metasSetoresVG && Object.keys(app.config.metasSetoresVG).length > 0) {
-                                    app.config.metasSetoresVG_Monitor = { ...app.config.metasSetoresVG };
-                                }
-                                if (app.config.metaPadraoVG_Monitor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Monitor)) || parseFloat(app.config.metaPadraoVG_Monitor) <= 0) {
-                                    app.config.metaPadraoVG_Monitor = (app.config.metaPadraoVG !== undefined && parseFloat(app.config.metaPadraoVG) > 0) ? parseFloat(app.config.metaPadraoVG) : 2;
-                                }
-                                if (app.config.metaPadraoVG_Supervisor === undefined || isNaN(parseFloat(app.config.metaPadraoVG_Supervisor)) || parseFloat(app.config.metaPadraoVG_Supervisor) <= 0) {
-                                    app.config.metaPadraoVG_Supervisor = 4;
-                                }
-                                
-                                // Inicialização segura das classificações de aplicadores com cargo 'OPERADOR'
-                                if (!app.config.classificacaoOperadoresCargos || typeof app.config.classificacaoOperadoresCargos !== 'object') {
-                                    try {
-                                        const localClass = localStorage.getItem('soft_classificacao_operadores_backup');
-                                        if (localClass) app.config.classificacaoOperadoresCargos = JSON.parse(localClass);
-                                        else app.config.classificacaoOperadoresCargos = {};
-                                    } catch (e) {
-                                        app.config.classificacaoOperadoresCargos = {};
-                                    }
-                                }
-
-                                // CORREÇÃO: Previne o erro "Ops! Algo quebrou" se as metas estiverem vazias
-                                if (!app.config.goals) app.config.goals = [];
-                                
-                                // Correções dinâmicas de migração do banco
-                                const g3 = app.config.goals.find(g => g.id === 'g3');
-                                if (g3 && g3.type !== 'calibracao') { g3.type = 'calibracao'; g3.title = "Calibragens"; }
-                                const g4 = app.config.goals.find(g => g.id === 'g4');
-                                if (g4 && g4.type !== 'actions') { g4.type = 'actions'; g4.title = "Ações Presenciais"; }
-                                const g6 = app.config.goals.find(g => g.id === 'g6');
-                                if (g6 && g6.type !== 'gestor') { g6.type = 'gestor'; g6.title = "Avaliação Gestor"; }
-                                const g7 = app.config.goals.find(g => g.id === 'g7');
-                                if (g7 && g7.title !== "Ação de Alto Impacto") { g7.title = "Ação de Alto Impacto"; }
-
-                                if (app.config.goals.find(g => g.id === 'g5')) {
-                                    app.config.goals = app.config.goals.filter(g => g.id !== 'g5');
-                                    const updateG6 = app.config.goals.find(g => g.id === 'g6');
-                                    if(updateG6) updateG6.weight = 0.15;
-                                    const updateG7 = app.config.goals.find(g => g.id === 'g7');
-                                    if(updateG7) updateG7.weight = 0.15;
-                                }
-                            }
-                            
-                            if (data.users) {
-                                this._userKeyMap = new Map();
-                                if (!this._plaintextPwdMats) this._plaintextPwdMats = new Set();
-                                const rawEntries = Array.isArray(data.users)
-                                    ? data.users.map((u, idx) => [String(idx), u])
-                                    : Object.entries(data.users);
-                                app.users = [];
-                                rawEntries.forEach(([fbKey, u]) => {
-                                    if (u === null || u === undefined) return;
-                                    if(u.results && typeof u.results !== 'object') {
-                                        u.results = {};
-                                    } else if(u.results && (u.results.g1 || u.results.g2)) {
-                                        const oldData = {...u.results};
-                                        u.results = { "2026-06": oldData };
-                                    }
-                                    if(!u.results) u.results = {};
-                                    
-                                    if (u.operacoes) {
-                                        u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
-                                    } else {
-                                        u.operacoes = [];
-                                    }
-                                    const mKey = this._normalizeMat(u.matricula);
-                                    if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
-                                        if (!String(u.senha).startsWith('enc$v1$') && mKey) {
-                                            this._plaintextPwdMats.add(mKey);
-                                        }
-                                        u.senha = app.utils.encryptPassword(u.senha);
-                                    }
-                                    // Denominação automática dos usuários atuais de Treinamento
-                                    if (String(u.tipoAcesso || '').trim() === 'Treinamento') {
-                                        if (!u.subclasse) {
-                                            const cLower = String(u.cargo || '').toLowerCase();
-                                            const nLower = String(u.nome || '').toLowerCase();
-                                            if (cLower.includes('analista') || nLower.includes('analista')) {
-                                                u.subclasse = 'Analista';
-                                            } else {
-                                                u.subclasse = 'Instrutor';
-                                            }
-                                        }
-                                    }
-                                    if (mKey && !this._userKeyMap.has(mKey)) {
-                                        this._userKeyMap.set(mKey, String(fbKey));
-                                    }
-                                    app.users.push(u);
-                                });
-                            } else {
-                                this._userKeyMap = new Map();
-                                app.users = [];
-                            }
-
-                            try { if (app.users && app.users.length > 0) localStorage.setItem("soft_users_backup", JSON.stringify(app.users)); } catch(e) {}
-                            if (data.actions) app.actionsList = data.actions; else app.actionsList = {};
-                            // Mescla backup local de ações recém-enviadas para nunca sumirem
-                            try {
-                                const localActsRaw = localStorage.getItem('soft_actions_backup');
-                                if (localActsRaw) {
-                                    const localActs = JSON.parse(localActsRaw);
-                                    if (localActs && typeof localActs === 'object') {
-                                        app.actionsList = { ...localActs, ...(app.actionsList || {}) };
-                                    }
-                                }
-                            } catch (e) {}
-                            if (data.notifications) app.notificationsList = data.notifications; else app.notificationsList = {};
-                            if (data.events) app.eventsList = data.events; else app.eventsList = {};
-                            if (data.atas) {
-                                if (Array.isArray(data.atas)) {
-                                    app.atasList = {};
-                                    data.atas.forEach((a, idx) => { if (a) app.atasList[a.id || ('ata_' + idx)] = a; });
-                                } else if (typeof data.atas === 'object') {
-                                    app.atasList = data.atas;
-                                } else {
-                                    app.atasList = {};
-                                }
-                                app._atasLoadedFromCloud = true;
-                                try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
-                                if (typeof localforage !== 'undefined') localforage.setItem('soft_atas_hd', app.atasList).catch(() => {});
-                            } else {
-                                app._atasLoadedFromCloud = true;
-                                try {
-                                    const localAtasRaw = localStorage.getItem('soft_atas_backup');
-                                    if (localAtasRaw) {
-                                        const localAtas = JSON.parse(localAtasRaw);
-                                        if (localAtas && typeof localAtas === 'object') {
-                                            app.atasList = localAtas;
-                                        } else {
-                                            app.atasList = {};
-                                        }
-                                    } else {
-                                        app.atasList = {};
-                                    }
-                                } catch (e) { app.atasList = {}; }
-                            }
-                            if (data.laudos) app.laudos.list = Array.isArray(data.laudos) ? data.laudos.filter(Boolean) : Object.values(data.laudos).filter(Boolean); else app.laudos.list = [];
-                            if (data.apresentacoes) app.apresentacoesList = data.apresentacoes; else app.apresentacoesList = {};
-                            if (data.estoque) app.estoqueItems = data.estoque; else app.estoqueItems = {};
-                            if (data.estoqueLogs) app.estoqueLogs = data.estoqueLogs; else app.estoqueLogs = {};
-                            if (data.impressoes) app.impressoesList = data.impressoes; else app.impressoesList = {};
-                            if (data.impressoesStats) app.impressoesStats = data.impressoesStats; else app.impressoesStats = { arquivos: 0, folhas: 0 };
-                            if (data.diario_bordo) {
-                                if (Array.isArray(data.diario_bordo)) {
-                                    app.diarioBordoList = {};
-                                    data.diario_bordo.forEach((d, idx) => {
-                                        if (d && typeof d === 'object') {
-                                            const key = d.id || ('db_' + idx);
-                                            if (!d.id) d.id = key;
-                                            app.diarioBordoList[key] = d;
-                                        }
-                                    });
-                                } else if (typeof data.diario_bordo === 'object') {
-                                    app.diarioBordoList = data.diario_bordo;
-                                    Object.entries(app.diarioBordoList).forEach(([k, v]) => {
-                                        if (v && typeof v === 'object' && !v.id) v.id = k;
-                                    });
-                                } else {
-                                    app.diarioBordoList = {};
-                                }
-                                try { localStorage.setItem('soft_diario_bordo_backup', JSON.stringify(app.diarioBordoList)); } catch (e) {}
-                                if (typeof localforage !== 'undefined') localforage.setItem('soft_diario_bordo_hd', app.diarioBordoList).catch(() => {});
-                            } else {
-                                try {
-                                    const localDbRaw = localStorage.getItem('soft_diario_bordo_backup');
-                                    if (localDbRaw) {
-                                        const localDb = JSON.parse(localDbRaw);
-                                        if (localDb && typeof localDb === 'object') {
-                                            app.diarioBordoList = localDb;
-                                        } else {
-                                            app.diarioBordoList = {};
-                                        }
-                                    } else {
-                                        app.diarioBordoList = {};
-                                    }
-                                } catch (e) { app.diarioBordoList = {}; }
-                            }
-                            if (data.turmas_treinamento) {
-                                if (typeof data.turmas_treinamento === 'object') {
-                                    app.turmasTreinamentoList = data.turmas_treinamento;
-                                    Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
-                                        if (v && typeof v === 'object' && !v.id) v.id = k;
-                                    });
-                                } else app.turmasTreinamentoList = {};
-                                try { localStorage.setItem('soft_turmas_treinamento_backup', JSON.stringify(app.turmasTreinamentoList)); } catch (e) {}
-                            } else {
-                                try {
-                                    const localT = localStorage.getItem('soft_turmas_treinamento_backup');
-                                    if (localT) {
-                                        app.turmasTreinamentoList = JSON.parse(localT) || {};
-                                        Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
-                                            if (v && typeof v === 'object' && !v.id) v.id = k;
-                                        });
-                                    } else {
-                                        app.turmasTreinamentoList = {};
-                                    }
-                                } catch (e) { app.turmasTreinamentoList = {}; }
-                            }
-                            // Sincronização automática dos logins dos alunos das turmas de treinamento (login = matrícula, senha = CPF)
-                            try {
-                                if (app.diarioBordo && typeof app.diarioBordo.sincronizarLoginsTodasTurmas === 'function') {
-                                    app.diarioBordo.sincronizarLoginsTodasTurmas();
-                                }
-                            } catch(e) {}
-                            try {
-                                if (app.diarioBordo && typeof app.diarioBordo._reconciliarTurmasOrfas === 'function') {
-                                    app.diarioBordo._reconciliarTurmasOrfas();
-                                }
-                            } catch(e) {}
-                            if (data.harmonyDeploy) {
-                                app.harmonyDeployList = data.harmonyDeploy;
-                            } else {
-                                try {
-                                    const localH = localStorage.getItem('soft_harmony_backup');
-                                    if (localH) app.harmonyDeployList = JSON.parse(localH);
-                                    else app.harmonyDeployList = {};
-                                } catch (e) { app.harmonyDeployList = {}; }
-                            }
-                            if (data.csatNpsProvas) {
-                                app.csatNpsProvas = data.csatNpsProvas;
-                            } else {
-                                try {
-                                    const localP = localStorage.getItem('soft_csat_nps_provas');
-                                    if (localP) app.csatNpsProvas = JSON.parse(localP);
-                                    else app.csatNpsProvas = {};
-                                } catch (e) { app.csatNpsProvas = {}; }
-                            }
-                            if (data.reportes) {
-                                app.reportesList = data.reportes;
-                            } else {
-                                try {
-                                    const localR = localStorage.getItem('portal_reportes_list');
-                                    if (localR) app.reportesList = JSON.parse(localR);
-                                    else app.reportesList = {};
-                                } catch (e) { app.reportesList = {}; }
-                            }
-                            if (data.softlingo) {
-                                app.softlingoModulos = data.softlingo.modulos || null;
-                                app.tentativasRespostas = data.softlingo.tentativas_respostas || {};
-                                if (data.softlingo.mascotes && app.duolingo && typeof app.duolingo.mesclarListaMascotes === 'function') {
-                                    app.duolingo.mesclarListaMascotes(Array.isArray(data.softlingo.mascotes) ? data.softlingo.mascotes : Object.values(data.softlingo.mascotes));
-                                }
-                            } else {
-                                try {
-                                    const localSM = localStorage.getItem('softlingo_modulos_backup');
-                                    if (localSM) app.softlingoModulos = JSON.parse(localSM);
-                                    const localTR = localStorage.getItem('softlingo_tentativas_backup');
-                                    if (localTR) app.tentativasRespostas = JSON.parse(localTR);
-                                } catch(e) {}
-                            }
-                            if (data.softlingo_temas && app.duolingo && typeof app.duolingo.normalizeTemas === 'function') {
-                                const fbTemas = app.duolingo.normalizeTemas(data.softlingo_temas);
-                                try {
-                                    const localRaw = localStorage.getItem('softlingo_temas_backup');
-                                    if (localRaw) {
-                                        const localTemas = app.duolingo.normalizeTemas(JSON.parse(localRaw));
-                                        // Preserva o backup local se tiver mais questões/edições recentes ou usa o do Firebase
-                                        if (localTemas.length > 0) {
-                                            app.softlingoTemas = localTemas;
-                                        } else {
-                                            app.softlingoTemas = fbTemas;
-                                            localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
-                                        }
-                                    } else if (fbTemas.length > 0) {
-                                        app.softlingoTemas = fbTemas;
-                                        localStorage.setItem('softlingo_temas_backup', JSON.stringify(fbTemas));
-                                    }
-                                } catch (e) {
-                                    app.softlingoTemas = fbTemas;
-                                }
-                            }
-                            if (data.fcrProvas) {
-                                app.fcrProvas = data.fcrProvas;
-                            } else {
-                                try {
-                                    const localF = localStorage.getItem('portal_fcr_provas');
-                                    if (localF) app.fcrProvas = JSON.parse(localF);
-                                    else app.fcrProvas = {};
-                                } catch (e) { app.fcrProvas = {}; }
-                            }
-                            if (data.biBancoHoras && typeof data.biBancoHoras === 'object') {
-                                app.biBancoHorasData = data.biBancoHoras;
-                                try { localStorage.setItem('portal_bi_banco_horas', JSON.stringify(app.biBancoHorasData)); } catch (e) {}
-                            } else {
-                                try {
-                                    const localBh = localStorage.getItem('portal_bi_banco_horas');
-                                    if (localBh) app.biBancoHorasData = JSON.parse(localBh);
-                                    else app.biBancoHorasData = null;
-                                } catch (e) { app.biBancoHorasData = null; }
-                            }
-                            if (app.ui && typeof app.ui._hydrateBiBancoHorasFromCloud === 'function') {
-                                app.ui._hydrateBiBancoHorasFromCloud();
-                            }
-                            // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
-                            // Visão Geral Setorial
-                            if (data.visaoGeralData && Object.keys(data.visaoGeralData).length > 0) {
-                                const rawVG = data.visaoGeralData;
-                                const isMonthly = Object.keys(rawVG).some(k => /^\d{4}-\d{2}$/.test(k));
-                                if (isMonthly) {
-                                    app.allVisaoGeralData = {};
-                                    Object.entries(rawVG).forEach(([m, mData]) => {
-                                        app.allVisaoGeralData[m] = this.normalizeVisaoGeralKeys(mData);
-                                    });
-                                } else {
-                                    app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(rawVG) };
-                                }
-                                app.visaoGeralData = app.allVisaoGeralData[app.currentMonth] || {};
-                            } else if (!app.visaoGeralData || Object.keys(app.visaoGeralData).length === 0) {
-                                try {
-                                    const localVG = localStorage.getItem('soft_visao_geral_backup');
-                                    if (localVG) {
-                                        const parsed = JSON.parse(localVG);
-                                        const isMonthly = Object.keys(parsed).some(k => /^\d{4}-\d{2}$/.test(k));
-                                        if (isMonthly) {
-                                            app.allVisaoGeralData = parsed;
-                                            app.visaoGeralData = this.normalizeVisaoGeralKeys(app.allVisaoGeralData[app.currentMonth] || {});
-                                        } else {
-                                            app.allVisaoGeralData = { [app.currentMonth]: this.normalizeVisaoGeralKeys(parsed) };
-                                            app.visaoGeralData = app.allVisaoGeralData[app.currentMonth];
-                                        }
-                                    } else {
-                                        app.allVisaoGeralData = {};
-                                        app.visaoGeralData = {};
-                                    }
-                                } catch (e) {
-                                    app.allVisaoGeralData = {};
-                                    app.visaoGeralData = {};
-                                }
-                            }
-
-                            // --- ATUALIZAÇÃO UX/UI: ISOLAMENTO MENSAL DAS IMPORTAÇÕES ---
-                            // Monitorias
-                            if (data.monitorias) {
-                                app.allMonitorias = data.monitorias;
-                                // Migração automática se a base antiga for global
-                                if (app.allMonitorias.ranking || app.allMonitorias.detalhes) {
-                                    const oldData = { ...app.allMonitorias };
-                                    app.allMonitorias = { [app.currentMonth]: oldData };
-                                }
-                                app.monitoriasData = app.allMonitorias[app.currentMonth] || { ranking: [] };
-                            } else {
-                                app.allMonitorias = {};
-                                app.monitoriasData = { ranking: [] };
-                            }
-                            
-                            // Anatel
-                            if (data.anatel) {
-                                app.allAnatel = data.anatel;
-                                // Migração automática
-                                if (app.allAnatel.registros || app.allAnatel.canceladasNovas) {
-                                    const oldAnatel = { ...app.allAnatel };
-                                    app.allAnatel = { [app.currentMonth]: oldAnatel };
-                                }
-                                app.anatelData = app.allAnatel[app.currentMonth] || { registros: [], canceladasNovas: [] };
-                            } else {
-                                app.allAnatel = {};
-                                app.anatelData = { registros: [], canceladasNovas: [] };
-                            }
-                            // ------------------------------------------------------------
-                            
-                            if (data.operacoes) {
-                                app.operacoesList = data.operacoes;
-                            } else {
-                                app.operacoesList = {}; 
-                            }
-                            // Sincroniza todas as listas suspensas de Operações com o relatório da Visão Geral Setorial (incluindo headcount de operadores)
-                            app.syncOperacoesFromSetorial();
-                            
-                            if (app.currentUser && !app.isAdmin) {
-                                const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
-                                if (updatedUser) app.currentUser = updatedUser;
-                                if (app.gtd && typeof app.gtd.syncFromUser === 'function') app.gtd.syncFromUser();
-                            }
-
-                            // --- INTERCEPTAÇÃO: LINK DE COMPARTILHAMENTO DE APRESENTAÇÃO (GUEST) ---
-                            const urlParams = new URLSearchParams(window.location.search);
-                            const shareId = urlParams.get('share');
-                            
-                            if (shareId && data && data.shares && data.shares[shareId]) {
-                                const shareObj = data.shares[shareId];
-                                if (Date.now() > shareObj.expiresAt) {
-                                    alert("Este link de apresentação expirou (prazo de 72h atingido).");
-                                    window.location.href = window.location.pathname; // Remove o param e força login normal
-                                    return;
-                                }
-                                
-                                // Configura a sessão restrita de Visitante
-                                app.isGuest = true;
-                                app.isAdmin = false;
-                                app.currentUser = { nome: "Visitante", matricula: "guest", abasLiberadas: [] };
-                                app.currentTab = 'analise_csv_dinamico';
-                                
-                                try {
-                                    const isCompressed = !shareObj.payloadData.trim().startsWith('{');
-                                    const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(shareObj.payloadData) : shareObj.payloadData;
-                                    app.analiseCSVDinamicoData = JSON.parse(jsonDescompactado);
-                                } catch(e) {
-                                    console.error("Erro ao descompactar dados da Apresentação Compartilhada", e);
-                                }
-                                
-                                document.getElementById('view-login').classList.add('hidden');
-                                document.getElementById('view-app').classList.remove('hidden');
-                    
-                    // Controle de Visibilidade do Botao Firebase Dev (Exclusivo Dev/Admin)
-                    const btnFbDev = document.getElementById('btn-firebase-dev');
-                    if (btnFbDev) {
-                        if (app.isAdmin || app.currentUser?.tipoAcesso === 'Dev') {
-                            btnFbDev.classList.remove('hidden');
-                        } else {
-                            btnFbDev.classList.add('hidden');
+                        if (app.currentUser && !app.isAdmin) {
+                            const updatedUser = app.users.find(u => u.matricula === app.currentUser.matricula);
+                            if (updatedUser) app.currentUser = updatedUser;
+                            if (app.gtd && typeof app.gtd.syncFromUser === 'function') app.gtd.syncFromUser();
                         }
-                    }
-                    if (app.storage && typeof app.storage.iniciarHeartbeatPresenca === 'function') {
-                        app.storage.iniciarHeartbeatPresenca();
-                    }
-                                
-                                // O pulo do gato: Desligamos o editMode e chamamos o Toggle, 
-                                // ele fará toda a mágica de esconder o Header e travar a tela pra gente automaticamente!
-                                app.ui.analiseEditMode = false; 
-                                app.ui.toggleEditModeAnalise(); 
-                                return; // Interrompe o fluxo normal e impede o Login de acontecer
+
+                        // Link compartilhado (Guest)
+                        if (shareIdBoot && data.shares && data.shares[shareIdBoot]) {
+                            const shareObj = data.shares[shareIdBoot];
+                            if (Date.now() > shareObj.expiresAt) {
+                                alert("Este link de apresentação expirou (prazo de 72h atingido).");
+                                window.location.href = window.location.pathname;
+                                return;
                             }
-                            // -----------------------------------------------------------------------
+                            app.isGuest = true;
+                            app.isAdmin = false;
+                            app.currentUser = { nome: "Visitante", matricula: "guest", abasLiberadas: [] };
+                            app.currentTab = 'analise_csv_dinamico';
+                            try {
+                                const isCompressed = !shareObj.payloadData.trim().startsWith('{');
+                                const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(shareObj.payloadData) : shareObj.payloadData;
+                                app.analiseCSVDinamicoData = JSON.parse(jsonDescompactado);
+                            } catch(e) {}
+                            document.getElementById('view-login').classList.add('hidden');
+                            document.getElementById('view-app').classList.remove('hidden');
+                            const btnFbDev = document.getElementById('btn-firebase-dev');
+                            if (btnFbDev) btnFbDev.classList.add('hidden');
+                            if (app.storage && typeof app.storage.iniciarHeartbeatPresenca === 'function') {
+                                app.storage.iniciarHeartbeatPresenca();
+                            }
+                            app.ui.analiseEditMode = false;
+                            app.ui.toggleEditModeAnalise();
+                            return;
+                        }
 
-                            // --- AUTO-LOGIN E RENOVAÇÃO DE TELA ---
-                            const todayStr = new Date().toLocaleDateString('pt-BR');
-                            const savedDate = localStorage.getItem('soft_session_date');
-                            const savedMat = localStorage.getItem('soft_session_mat');
-                            const savedIsAdmin = localStorage.getItem('soft_session_admin') === 'true';
+                        // Auto-login ou atualização suave
+                        const todayStr = new Date().toLocaleDateString('pt-BR');
+                        const savedDate = localStorage.getItem('soft_session_date');
+                        const savedMat = localStorage.getItem('soft_session_mat');
+                        const savedIsAdmin = localStorage.getItem('soft_session_admin') === 'true';
 
-                            if((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
-                                // Se já estiver dentro do sistema, atualiza a barra de navegação e a tela suavemente
-                                app.ui.renderNav();
-                                app.notifications.updateBadge();
-                                const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'impressoes', 'gestao_impressoes'];
-                                if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
-                                    if (this._firebaseRefreshTimer) clearTimeout(this._firebaseRefreshTimer);
-                                    this._firebaseRefreshTimer = setTimeout(() => {
-                                        const viewDiv = document.getElementById('view-container-' + app.currentTab);
-                                        if (viewDiv) {
-                                            if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
-                                            else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
-                                            else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
-                                        }
-                                    }, 350);
-                                }
-                            } else if (savedDate === todayStr && savedMat) {
-                                // Se deu F5 no mesmo dia, entra direto sem pedir senha!
-                                if (savedIsAdmin) {
-                                    app.isAdmin = true;
-                                    app.currentUser = null;
-                                    app.currentTab = localStorage.getItem("soft_session_tab") || "home";
+                        if ((app.currentUser || app.isAdmin) && document.getElementById('view-app').classList.contains('hidden') === false) {
+                            app.ui.renderNav();
+                            app.notifications.updateBadge();
+                            const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'impressoes', 'gestao_impressoes'];
+                            if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
+                                if (this._firebaseRefreshTimer) clearTimeout(this._firebaseRefreshTimer);
+                                this._firebaseRefreshTimer = setTimeout(() => {
+                                    const viewDiv = document.getElementById('view-container-' + app.currentTab);
+                                    if (viewDiv) {
+                                        if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
+                                        else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
+                                        else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
+                                    }
+                                }, 350);
+                            }
+                        } else if (savedDate === todayStr && savedMat) {
+                            if (savedIsAdmin) {
+                                app.isAdmin = true;
+                                app.currentUser = null;
+                                app.currentTab = localStorage.getItem("soft_session_tab") || "home";
+                                const ws = document.getElementById("session-wait-screen");
+                                if (ws) ws.classList.add("hidden");
+                                document.getElementById("view-login").classList.add("hidden");
+                                app.ui.showApp();
+                            } else {
+                                const targetMatNorm = String(savedMat || '').trim().toUpperCase();
+                                const matMatches = (app.users || []).filter(u => u && String(u.matricula || '').trim().toUpperCase() === targetMatNorm);
+                                const userObj = matMatches.length > 1
+                                    ? matMatches.slice().sort((a, b) => {
+                                        const aPersonal = (a.primeiroAcesso === false && a.senha && !(app.utils && app.utils.isDefaultPassword(a.senha))) ? 1 : 0;
+                                        const bPersonal = (b.primeiroAcesso === false && b.senha && !(app.utils && app.utils.isDefaultPassword(b.senha))) ? 1 : 0;
+                                        if (bPersonal !== aPersonal) return bPersonal - aPersonal;
+                                        return Number(b.pwdUpdatedAt || 0) - Number(a.pwdUpdatedAt || 0);
+                                    })[0]
+                                    : (matMatches[0] || null);
+                                if (userObj) {
+                                    app.isAdmin = false;
+                                    app.currentUser = userObj;
+                                    const userTabs = app.ui ? app.ui.getEffectiveUserTabs(userObj) : [];
+                                    const savedTab = localStorage.getItem("soft_session_tab");
+                                    app.currentTab = (savedTab && (userTabs.includes(savedTab) || userTabs.length === 0)) ? savedTab : (userTabs[0] || 'home');
                                     const ws = document.getElementById("session-wait-screen");
                                     if (ws) ws.classList.add("hidden");
                                     document.getElementById("view-login").classList.add("hidden");
-                                    app.ui.showApp();
+                                    app.auth.processAcceptances();
                                 } else {
-                                    const targetMatNorm = String(savedMat || '').trim().toUpperCase();
-                                    const matMatches = (app.users || []).filter(u => u && String(u.matricula || '').trim().toUpperCase() === targetMatNorm);
-                                    const userObj = matMatches.length > 1
-                                        ? matMatches.slice().sort((a, b) => {
-                                            const aPersonal = (a.primeiroAcesso === false && a.senha && !(app.utils && app.utils.isDefaultPassword(a.senha))) ? 1 : 0;
-                                            const bPersonal = (b.primeiroAcesso === false && b.senha && !(app.utils && app.utils.isDefaultPassword(b.senha))) ? 1 : 0;
-                                            if (bPersonal !== aPersonal) return bPersonal - aPersonal;
-                                            return Number(b.pwdUpdatedAt || 0) - Number(a.pwdUpdatedAt || 0);
-                                        })[0]
-                                        : (matMatches[0] || null);
-                                    if (userObj) {
-                                        app.isAdmin = false;
-                                        app.currentUser = userObj;
-                                        const userTabs = app.ui ? app.ui.getEffectiveUserTabs(userObj) : [];
-                                        const savedTab = localStorage.getItem("soft_session_tab");
-                                        app.currentTab = (savedTab && (userTabs.includes(savedTab) || userTabs.length === 0)) ? savedTab : (userTabs[0] || 'home');
-                                        const ws = document.getElementById("session-wait-screen");
-                                        if (ws) ws.classList.add("hidden");
-                                        document.getElementById("view-login").classList.add("hidden");
-                                        app.auth.processAcceptances();
-                                    } else {
-                                        localStorage.removeItem("soft_session_mat");
-                                        localStorage.removeItem("soft_session_date");
-                                        localStorage.removeItem("soft_session_admin");
-                                        const ws = document.getElementById("session-wait-screen");
-                                        if (ws) ws.classList.add("hidden");
-                                        const vl = document.getElementById("view-login");
-                                        if (vl) vl.classList.remove("hidden");
-                                    }
+                                    localStorage.removeItem("soft_session_mat");
+                                    localStorage.removeItem("soft_session_date");
+                                    localStorage.removeItem("soft_session_admin");
+                                    const ws = document.getElementById("session-wait-screen");
+                                    if (ws) ws.classList.add("hidden");
+                                    const vl = document.getElementById("view-login");
+                                    if (vl) vl.classList.remove("hidden");
                                 }
-                            } else {
-                                const ws = document.getElementById("session-wait-screen");
-                                if (ws) ws.classList.add("hidden");
-                                const vl = document.getElementById("view-login");
-                                if (vl) vl.classList.remove("hidden");
                             }
                         } else {
-                            this.saveConfig();
                             const ws = document.getElementById("session-wait-screen");
                             if (ws) ws.classList.add("hidden");
                             const vl = document.getElementById("view-login");
                             if (vl) vl.classList.remove("hidden");
                         }
-                        // Atualiza badge de notificações carregadas via .once('value') (sem listener contínuo .on)
                         try {
                             if (app.notifications && typeof app.notifications.renderBadge === 'function') {
                                 app.notifications.renderBadge();
                             }
                         } catch(e) {}
+
+                        // Fase 2A (nós operacionais médios/leves em background sem travar login)
+                        fetchBatch(wave2AKeys, 800, 25000).then(data2A => {
+                            this._applyHydratedData(data2A);
+                            app.syncOperacoesFromSetorial();
+                            this._refreshCurrentTabSilentlyAfterBgSync(Object.keys(data2A));
+
+                            // Fase 2B (nós pesados de histórico/mídia por último)
+                            return fetchBatch(wave2BKeys, 1200, 35000);
+                        }).then(data2B => {
+                            if (data2B) {
+                                this._applyHydratedData(data2B);
+                                app.syncOperacoesFromSetorial();
+                                this._refreshCurrentTabSilentlyAfterBgSync(Object.keys(data2B));
+                            }
+                            console.log("Carga completa em background finalizada!");
+                        }).catch(errBg => console.warn("Aviso na carga em segundo plano:", errBg));
                     }).catch((error) => {
                         try {
                             const localUsersRaw = localStorage.getItem("soft_users_backup");
@@ -1085,6 +1213,7 @@ storage: {
                                 if (Array.isArray(localUsers) && localUsers.length >= 5) app.users = localUsers;
                             }
                         } catch (e) {}
+                        app._phase1Loaded = true;
                         app.dataLoaded = true;
                         const ws = document.getElementById("session-wait-screen");
                         if (ws) ws.classList.add("hidden");
@@ -1093,7 +1222,7 @@ storage: {
                         console.error("Erro na leitura do Firebase:", error);
                         app.ui.showAlert(
                             "Erro Cr\u00edtico de Conex\u00e3o", 
-                            `O Firebase negou a leitura dos dados. Isso geralmente acontece porque as "Rules" (Regras) do banco expiraram.<br><br><b>Erro:</b> ${error.message}`, 
+                            `O Firebase negou a leitura dos dados. Verifique sua rede ou regras de acesso.<br><br><b>Erro:</b> ${error.message}`, 
                             "error"
                         );
                     });
@@ -1758,12 +1887,52 @@ storage: {
                     app.allAnatel[app.currentMonth] = app.anatelData; 
                     return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
                 },
-                saveHarmony() {
-                    try { localStorage.setItem('soft_harmony_backup', JSON.stringify(app.harmonyDeployList || {})); } catch (e) {}
+                saveHarmony(singleKey = null) {
+                    const list = app.harmonyDeployList || {};
+                    try {
+                        localStorage.setItem('soft_harmony_backup', JSON.stringify(list));
+                        if (singleKey && list[singleKey]) {
+                            const histRaw = localStorage.getItem('soft_harmony_history_backup');
+                            const hist = histRaw ? JSON.parse(histRaw) : {};
+                            if (!Array.isArray(hist[singleKey])) hist[singleKey] = [];
+                            hist[singleKey].unshift({ savedAt: new Date().toISOString(), data: list[singleKey] });
+                            hist[singleKey] = hist[singleKey].slice(0, 4);
+                            localStorage.setItem('soft_harmony_history_backup', JSON.stringify(hist));
+                        }
+                    } catch (e) {}
                     if (typeof firebase !== 'undefined' && firebase.database) {
-                        const sanitized = this.sanitizeFirebaseObject(app.harmonyDeployList || {});
+                        if (singleKey) {
+                            let resolvedKey = singleKey;
+                            if (!Object.prototype.hasOwnProperty.call(list, resolvedKey)) {
+                                const cleanSingle = (app.ui && typeof app.ui._getHarmonyKey === 'function')
+                                    ? app.ui._getHarmonyKey(singleKey)
+                                    : singleKey;
+                                const foundEntry = Object.entries(list).find(([k, v]) =>
+                                    k === cleanSingle || (v && (v.id === singleKey || v.id === cleanSingle))
+                                );
+                                if (foundEntry) resolvedKey = foundEntry[0];
+                                else if (Object.prototype.hasOwnProperty.call(list, cleanSingle)) resolvedKey = cleanSingle;
+                            }
+                            const safePathKey = this.sanitizeFirebaseKey(resolvedKey);
+                            if (safePathKey) {
+                                const item = list[resolvedKey];
+                                if (!item) {
+                                    return firebase.database().ref('sistema_bonificacao/harmonyDeploy/' + safePathKey).remove().catch(err => {
+                                        console.warn("Aviso Firebase remove Harmony:", err);
+                                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover plano na nuvem.", "error");
+                                    });
+                                }
+                                const sanitizedItem = this.sanitizeFirebaseObject(item);
+                                return firebase.database().ref('sistema_bonificacao/harmonyDeploy/' + safePathKey).set(sanitizedItem).catch(err => {
+                                    console.warn("Aviso Firebase saveHarmony:", err);
+                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alteração do Gantt com a nuvem.", "error");
+                                });
+                            }
+                        }
+                        const sanitized = this.sanitizeFirebaseObject(list);
                         return firebase.database().ref('sistema_bonificacao/harmonyDeploy').set(sanitized).catch(err => {
                             console.warn("Aviso Firebase saveHarmony:", err);
+                            if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Gantt com a nuvem.", "error");
                         });
                     }
                     return Promise.resolve();
@@ -9689,19 +9858,136 @@ storage: {
                 });
             },
 
-            _drawPdfTextBoxPaginated(doc, { title, text, startY, marginX, contentWidth, pageHeight, footerReserve = 16, fontSize = 7.5, lineHeight = 3.8 }) {
+            _tokenizeRichPdfParagraph(doc, paragraph) {
+                const tokens = [];
+                const parts = String(paragraph || '').split(/(\s+)/);
+                const urlRegex = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+)/gi;
+
+                parts.forEach(part => {
+                    if (!part) return;
+                    if (/^\s+$/.test(part)) {
+                        tokens.push({ text: part, url: null, isSpace: true });
+                        return;
+                    }
+                    let lastIndex = 0;
+                    let match;
+                    urlRegex.lastIndex = 0;
+                    while ((match = urlRegex.exec(part)) !== null) {
+                        if (match.index > lastIndex) {
+                            tokens.push({ text: part.slice(lastIndex, match.index), url: null, isSpace: false });
+                        }
+                        let rawUrl = match[0];
+                        let trailing = '';
+                        while (rawUrl.length > 0 && /[.,;:!?)\]]/.test(rawUrl[rawUrl.length - 1])) {
+                            const ch = rawUrl[rawUrl.length - 1];
+                            if (ch === ')' && (rawUrl.match(/\(/g) || []).length >= (rawUrl.match(/\)/g) || []).length) break;
+                            trailing = ch + trailing;
+                            rawUrl = rawUrl.slice(0, -1);
+                        }
+                        if (rawUrl) {
+                            const href = /^www\./i.test(rawUrl) ? ('https://' + rawUrl) : rawUrl;
+                            tokens.push({ text: rawUrl, url: href, isSpace: false });
+                        }
+                        if (trailing) {
+                            tokens.push({ text: trailing, url: null, isSpace: false });
+                        }
+                        lastIndex = match.index + match[0].length;
+                    }
+                    if (lastIndex < part.length) {
+                        tokens.push({ text: part.slice(lastIndex), url: null, isSpace: false });
+                    }
+                });
+                return tokens;
+            },
+
+            _wrapRichPdfLines(doc, text, maxWidth) {
+                const lines = [];
+                const paragraphs = String(text || '').split(/\r?\n/);
+
+                paragraphs.forEach(para => {
+                    if (!para.trim()) {
+                        lines.push([{ text: '', url: null }]);
+                        return;
+                    }
+                    const tokens = this._tokenizeRichPdfParagraph(doc, para);
+                    let curLine = [];
+                    let curW = 0;
+
+                    tokens.forEach(tok => {
+                        const tokW = doc.getTextWidth(tok.text);
+                        if (tok.isSpace) {
+                            if (curLine.length === 0) return;
+                            if (curW + tokW <= maxWidth) {
+                                curLine.push(tok);
+                                curW += tokW;
+                            } else {
+                                lines.push(curLine);
+                                curLine = [];
+                                curW = 0;
+                            }
+                            return;
+                        }
+
+                        if (curW + tokW <= maxWidth) {
+                            curLine.push(tok);
+                            curW += tokW;
+                            return;
+                        }
+
+                        if (tokW <= maxWidth) {
+                            if (curLine.length > 0) lines.push(curLine);
+                            curLine = [tok];
+                            curW = tokW;
+                            return;
+                        }
+
+                        // Quebra palavra ou URL longa mantendo o href completo clicável em todas as partes
+                        if (curLine.length > 0) {
+                            lines.push(curLine);
+                            curLine = [];
+                            curW = 0;
+                        }
+                        let chunkStr = '';
+                        for (const ch of Array.from(tok.text)) {
+                            const nextStr = chunkStr + ch;
+                            if (chunkStr && doc.getTextWidth(nextStr) > maxWidth) {
+                                lines.push([{ text: chunkStr, url: tok.url }]);
+                                chunkStr = ch;
+                            } else {
+                                chunkStr = nextStr;
+                            }
+                        }
+                        if (chunkStr) {
+                            curLine = [{ text: chunkStr, url: tok.url }];
+                            curW = doc.getTextWidth(chunkStr);
+                        }
+                    });
+
+                    if (curLine.length > 0) {
+                        while (curLine.length > 0 && curLine[curLine.length - 1].isSpace) {
+                            curLine.pop();
+                        }
+                        if (curLine.length > 0) lines.push(curLine);
+                    }
+                });
+
+                return lines;
+            },
+
+            _drawPdfTextBoxPaginated(doc, { title, text, startY, marginX, contentWidth, pageHeight, footerReserve = 16, fontSize = 7.5, lineHeight = 3.8, accentColor = [16, 185, 129] }) {
                 let y = startY;
                 const cleanText = String(text || '').trim();
                 if (!cleanText) return { page: doc.internal.getNumberOfPages(), finalY: y };
 
                 doc.setFont("helvetica", "normal");
                 doc.setFontSize(fontSize);
-                const allLines = doc.splitTextToSize(cleanText, contentWidth - 8);
+                const maxTextW = contentWidth - 8;
+                const allLines = this._wrapRichPdfLines(doc, cleanText, maxTextW);
                 if (!allLines || allLines.length === 0) return { page: doc.internal.getNumberOfPages(), finalY: y };
 
                 const topPad = 4;
                 const bottomPad = 3.5;
-                const titleStep = title ? 4.5 : 0;
+                const titleStep = title ? 4 : 0;
                 const minChunkNeeded = titleStep + topPad + lineHeight + bottomPad;
 
                 if (y + minChunkNeeded > pageHeight - footerReserve) {
@@ -9718,25 +10004,48 @@ storage: {
                         doc.setFontSize(8);
                         doc.setTextColor(30, 41, 59);
                         doc.text(firstChunk ? title : `${title} (continuação)`, marginX, y);
-                        y += 3.5;
+                        y += 3.2;
                     }
 
                     const availH = (pageHeight - footerReserve) - y;
                     const maxLinesFit = Math.max(1, Math.floor((availH - topPad - bottomPad) / lineHeight));
                     const chunk = allLines.slice(cursorIdx, cursorIdx + maxLinesFit);
-                    const boxH = Math.max(11, (chunk.length * lineHeight) + topPad + bottomPad - 1);
+                    const boxH = Math.max(11, (chunk.length * lineHeight) + topPad + bottomPad - 0.5);
 
                     doc.setFillColor(248, 250, 252);
                     doc.setDrawColor(226, 232, 240);
                     doc.setLineWidth(0.2);
                     doc.roundedRect(marginX, y, contentWidth, boxH, 1, 1, 'FD');
-                    doc.setFillColor(16, 185, 129);
+                    doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
                     doc.rect(marginX, y, 1.5, boxH, 'F');
 
                     doc.setFont("helvetica", "normal");
                     doc.setFontSize(fontSize);
-                    doc.setTextColor(51, 65, 85);
-                    doc.text(chunk, marginX + 4, y + topPad + 0.5);
+                    const textStartX = marginX + 4;
+                    const firstBaselineY = y + topPad + (fontSize * 0.25);
+
+                    chunk.forEach((lineSegs, lineIdx) => {
+                        const baselineY = firstBaselineY + (lineIdx * lineHeight);
+                        let curX = textStartX;
+                        (lineSegs || []).forEach(seg => {
+                            if (!seg || !seg.text) return;
+                            const segW = doc.getTextWidth(seg.text);
+                            if (seg.url) {
+                                doc.setTextColor(37, 99, 235);
+                                doc.text(seg.text, curX, baselineY);
+                                doc.setDrawColor(37, 99, 235);
+                                doc.setLineWidth(0.18);
+                                doc.line(curX, baselineY + 0.65, curX + segW, baselineY + 0.65);
+                                try {
+                                    doc.link(curX, baselineY - (fontSize * 0.35), Math.max(segW, 2), lineHeight, { url: seg.url });
+                                } catch (e) {}
+                            } else {
+                                doc.setTextColor(51, 65, 85);
+                                doc.text(seg.text, curX, baselineY);
+                            }
+                            curX += segW;
+                        });
+                    });
 
                     cursorIdx += chunk.length;
                     y += boxH;
@@ -9784,11 +10093,11 @@ storage: {
                 return diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
             },
 
-            gerarPDF(diarioId = null) {
+            gerarPDF(diarioId = null, overrideDiario = null) {
                 if (!window.jspdf || !window.jspdf.jsPDF) {
                     return app.ui.showAlert("Aviso", "Aguarde o carregamento do gerador de PDF...", "error");
                 }
-                const diario = this._resolveDiarioTargetForExport(diarioId);
+                const diario = overrideDiario || this._resolveDiarioTargetForExport(diarioId);
                 if (!diario) return app.ui.showAlert("Erro", "Nenhum diário selecionado para gerar PDF.", "error");
                 if (!this.canEditDiario(diario)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para visualizar o relatório deste diário.", "warning");
@@ -9839,7 +10148,7 @@ storage: {
 
                 const leftX = marginX + 6;
                 const rightX = temFoto ? (marginX + contentWidth - 23) : (marginX + contentWidth - 6);
-                const leftMaxW = Math.min(118, (rightX - leftX) * 0.48);
+                const leftMaxW = Math.min(130, (rightX - leftX) * 0.50);
                 const rightMaxW = Math.max(60, rightX - leftX - leftMaxW - 8);
 
                 doc.setTextColor(255, 255, 255);
@@ -9879,13 +10188,25 @@ storage: {
                     const temaRec = String(diario.temaReciclagem || (tBasePdf && tBasePdf.temaReciclagem) || '').trim() || 'Não informado';
                     const dinamicaRec = String(diario.dinamicaAtividade || diario.relatoGeral || '').trim() || 'Não informado';
                     const obsRec = String(diario.observacoesReciclagem || (tBasePdf && tBasePdf.observacoesReciclagem) || '').trim();
-                    const qtdPart = P || parseInt(diario.quantidadeParticipantes, 10) || (tBasePdf && parseInt(tBasePdf.quantidadeAlunos, 10)) || 0;
-                    const fotosRec = Array.isArray(diario.fotosReciclagem)
-                        ? diario.fotosReciclagem.filter(f => f && f.data)
-                        : ((tBasePdf && Array.isArray(tBasePdf.fotosReciclagem)) ? tBasePdf.fotosReciclagem.filter(f => f && f.data) : []);
-                    const anexosEv = this.getAnexosTurma(diario).length > 0
-                        ? this.getAnexosTurma(diario)
-                        : (tBasePdf ? this.getAnexosTurma(tBasePdf) : []);
+                    const qtdPart = parseInt(diario.previstosSala, 10) || parseInt(diario.quantidadeParticipantes, 10) || P || (tBasePdf && parseInt(tBasePdf.quantidadeAlunos, 10)) || 0;
+
+                    const fotosRawDiario = this._toArray(diario.fotosReciclagem).filter(f => f && f.data);
+                    const fotosRawTurma = tBasePdf ? this._toArray(tBasePdf.fotosReciclagem).filter(f => f && f.data) : [];
+                    const anexosDiario = this.getAnexosTurma(diario);
+                    const anexosTurma = tBasePdf ? this.getAnexosTurma(tBasePdf) : [];
+                    const anexosEv = anexosDiario.length > 0 ? anexosDiario : anexosTurma;
+
+                    const fotosRec = [...(fotosRawDiario.length > 0 ? fotosRawDiario : fotosRawTurma)];
+                    const seenFotoData = new Set(fotosRec.map(f => String(f.data || '').slice(0, 120)));
+                    anexosEv.forEach(ax => {
+                        if (ax && typeof ax.data === 'string' && ax.data.startsWith('data:image/')) {
+                            const sig = ax.data.slice(0, 120);
+                            if (!seenFotoData.has(sig)) {
+                                seenFotoData.add(sig);
+                                fotosRec.push({ name: ax.name || 'Imagem anexada', data: ax.data });
+                            }
+                        }
+                    });
 
                     // 3 Cards Objetivos
                     const rCardY = 35;
@@ -9909,11 +10230,11 @@ storage: {
                         doc.text(this._fitPdfText(doc, String(sub), rCardW - 8), x + 4, rCardY + 14.5);
                     };
 
-                    drawRecCard(marginX, "PARTICIPANTES PRESENTES", `${qtdPart} colaborador${qtdPart === 1 ? '' : 'es'}`, "Público participante na reciclagem", 245, 243, 255, 221, 214, 254, 109, 40, 217);
-                    drawRecCard(marginX + rCardW + 3, "FOTOS DA ATIVIDADE", `${fotosRec.length} registro${fotosRec.length === 1 ? '' : 's'} fotográfico${fotosRec.length === 1 ? '' : 's'}`, "Evidências visuais da execução", 240, 253, 244, 187, 247, 208, 22, 101, 52);
+                    drawRecCard(marginX, "QUANTIDADE DE PARTICIPANTES", `${qtdPart} colaborador${qtdPart === 1 ? '' : 'es'}`, "Colaboradores presentes na reciclagem", 245, 243, 255, 221, 214, 254, 109, 40, 217);
+                    drawRecCard(marginX + rCardW + 3, "FOTOS DA ATIVIDADE", `${fotosRec.length} registro${fotosRec.length === 1 ? '' : 's'} fotográfico${fotosRec.length === 1 ? '' : 's'}`, "Registros fotográficos da realização", 240, 253, 244, 187, 247, 208, 22, 101, 52);
                     drawRecCard(marginX + (rCardW + 3) * 2, "ANEXOS & EVIDÊNCIAS", `${anexosEv.length} arquivo${anexosEv.length === 1 ? '' : 's'} anexado${anexosEv.length === 1 ? '' : 's'}`, "Materiais, atividades e listas", 239, 246, 255, 191, 219, 254, 29, 78, 216);
 
-                    let curY = rCardY + rCardH + 5;
+                    let curY = rCardY + rCardH + 7;
                     const boxTema = this._drawPdfTextBoxPaginated(doc, {
                         title: "TEMA ABORDADO NA RECICLAGEM",
                         text: temaRec,
@@ -9923,22 +10244,24 @@ storage: {
                         pageHeight,
                         footerReserve: 16,
                         fontSize: 8.5,
-                        lineHeight: 4.2
+                        lineHeight: 4.3,
+                        accentColor: [124, 58, 237]
                     });
-                    curY = boxTema.finalY + 4;
+                    curY = boxTema.finalY + 7;
 
                     const boxDin = this._drawPdfTextBoxPaginated(doc, {
-                        title: "DINÂMICA / ATIVIDADE METODOLÓGICA REALIZADA",
+                        title: "O QUE FOI ABORDADO / DINÂMICA E ATIVIDADE REALIZADA",
                         text: dinamicaRec,
                         startY: curY,
                         marginX,
                         contentWidth,
                         pageHeight,
                         footerReserve: 16,
-                        fontSize: 8,
-                        lineHeight: 4.0
+                        fontSize: 8.2,
+                        lineHeight: 4.2,
+                        accentColor: [124, 58, 237]
                     });
-                    curY = boxDin.finalY + 4;
+                    curY = boxDin.finalY + 7;
 
                     if (obsRec) {
                         const boxObs = this._drawPdfTextBoxPaginated(doc, {
@@ -9950,66 +10273,85 @@ storage: {
                             pageHeight,
                             footerReserve: 16,
                             fontSize: 7.8,
-                            lineHeight: 3.9
+                            lineHeight: 4.0,
+                            accentColor: [124, 58, 237]
                         });
-                        curY = boxObs.finalY + 4;
+                        curY = boxObs.finalY + 7;
                     }
 
-                    // Tabela de Anexos & Evidências (se houver anexos ou para registro formal)
+                    // Tabela de Anexos & Evidências (exibida quando houver anexos)
                     const anexosRows = anexosEv.map((ax, i) => [
                         String(i + 1),
                         ax.name || `Evidência ${i + 1}`,
                         ax.type || 'Documento / Evidência',
                         ax.size ? `${Math.max(1, Math.round(ax.size / 1024))} KB` : 'Anexado'
                     ]);
-                    if (curY + 25 > pageHeight - 16) {
-                        doc.addPage();
-                        curY = 14;
-                    }
-                    doc.autoTable({
-                        startY: curY,
-                        margin: { top: 14, bottom: 16, left: marginX, right: marginX },
-                        tableWidth: contentWidth,
-                        rowPageBreak: 'avoid',
-                        showHead: 'everyPage',
-                        head: [[`ANEXOS E EVIDÊNCIAS DE EXECUÇÃO (${anexosRows.length})`, 'Nome do Arquivo / Material', 'Tipo', 'Tamanho / Status']],
-                        body: anexosRows.length > 0 ? anexosRows : [['-', 'Nenhum arquivo complementar anexado neste registro.', '-', '-']],
-                        theme: 'striped',
-                        headStyles: { fillColor: [91, 33, 182], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
-                        bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
-                        columnStyles: { 0: { cellWidth: 16, halign: 'center' }, 1: { cellWidth: contentWidth - 96 }, 2: { cellWidth: 50 }, 3: { cellWidth: 30, halign: 'center' } }
-                    });
-                    curY = doc.lastAutoTable.finalY + 6;
-
-                    // Galeria de Fotos da Reciclagem
-                    if (fotosRec.length > 0) {
-                        if (curY + 62 > pageHeight - 16) {
+                    if (anexosRows.length > 0) {
+                        if (curY + 25 > pageHeight - 16) {
                             doc.addPage();
                             curY = 14;
+                        }
+                        doc.autoTable({
+                            startY: curY,
+                            margin: { top: 14, bottom: 16, left: marginX, right: marginX },
+                            tableWidth: contentWidth,
+                            rowPageBreak: 'avoid',
+                            showHead: 'everyPage',
+                            head: [[`ANEXOS E EVIDÊNCIAS DE EXECUÇÃO (${anexosRows.length})`, 'Nome do Arquivo / Material', 'Tipo', 'Tamanho / Status']],
+                            body: anexosRows,
+                            theme: 'striped',
+                            headStyles: { fillColor: [91, 33, 182], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2 },
+                            bodyStyles: { fontSize: 7, cellPadding: 1.8, textColor: [30, 41, 59] },
+                            columnStyles: { 0: { cellWidth: 16, halign: 'center' }, 1: { cellWidth: contentWidth - 96 }, 2: { cellWidth: 50 }, 3: { cellWidth: 30, halign: 'center' } }
+                        });
+                        curY = doc.lastAutoTable.finalY + 7;
+                    }
+
+                    // Galeria de Fotos da Reciclagem (com preservação de proporção real)
+                    if (fotosRec.length > 0) {
+                        if (curY + 66 > pageHeight - 16) {
+                            doc.addPage();
+                            curY = 16;
                         }
                         doc.setFont("helvetica", "bold");
                         doc.setFontSize(8.5);
                         doc.setTextColor(91, 33, 182);
                         doc.text(`REGISTROS FOTOGRÁFICOS DA ATIVIDADE (${fotosRec.length})`, marginX, curY);
-                        curY += 3;
+                        curY += 3.5;
 
                         const photoW = (contentWidth - 8) / 2;
                         const photoH = 62;
                         for (let i = 0; i < fotosRec.length; i += 2) {
                             if (curY + photoH + 10 > pageHeight - 16) {
                                 doc.addPage();
-                                curY = 14;
+                                curY = 16;
                             }
                             for (let c = 0; c < 2 && (i + c) < fotosRec.length; c++) {
                                 const fotoObj = fotosRec[i + c];
                                 const px = marginX + c * (photoW + 8);
+                                doc.setFillColor(248, 250, 252);
                                 doc.setDrawColor(203, 213, 225);
                                 doc.setLineWidth(0.25);
-                                doc.roundedRect(px, curY, photoW, photoH + 6, 1.5, 1.5, 'D');
+                                doc.roundedRect(px, curY, photoW, photoH + 6, 1.5, 1.5, 'FD');
                                 try {
                                     const fStr = String(fotoObj.data || '');
-                                    const fFmt = (fStr.indexOf('image/png') !== -1 || fStr.indexOf('image/PNG') !== -1) ? 'PNG' : 'JPEG';
-                                    doc.addImage(fStr, fFmt, px + 2, curY + 2, photoW - 4, photoH - 2);
+                                    const boxInnerW = photoW - 4;
+                                    const boxInnerH = photoH - 2;
+                                    let drawW = boxInnerW;
+                                    let drawH = boxInnerH;
+                                    let fFmt = (fStr.indexOf('image/png') !== -1 || fStr.indexOf('image/PNG') !== -1) ? 'PNG' : (fStr.indexOf('image/webp') !== -1 ? 'WEBP' : 'JPEG');
+                                    try {
+                                        const props = doc.getImageProperties(fStr);
+                                        if (props && props.width && props.height) {
+                                            const scale = Math.min(boxInnerW / props.width, boxInnerH / props.height);
+                                            drawW = props.width * scale;
+                                            drawH = props.height * scale;
+                                        }
+                                        if (props && props.fileType) fFmt = props.fileType;
+                                    } catch (eProp) {}
+                                    const drawX = px + 2 + ((boxInnerW - drawW) / 2);
+                                    const drawY = curY + 1 + ((boxInnerH - drawH) / 2);
+                                    doc.addImage(fStr, fFmt, drawX, drawY, drawW, drawH);
                                 } catch (err) {}
                                 doc.setFont("helvetica", "normal");
                                 doc.setFontSize(7);
@@ -10528,10 +10870,37 @@ storage: {
                 if (!window.jspdf || !window.jspdf.jsPDF) {
                     return app.ui.showAlert("Aviso", "Aguarde o carregamento do gerador de PDF...", "error");
                 }
-                const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
+                const t = this.getTurmaById(turmaId);
                 if (!t) return app.ui.showAlert("Erro", "Turma não encontrada.", "error");
                 if (!this.canEditTurma(t)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar o relatório final desta turma.", "warning");
+                }
+                if (t.tipoTurma === 'reciclagem') {
+                    const diariosRec = this.getDiariosDaTurma(t, false);
+                    const ultimoRec = diariosRec[0] || {};
+                    const diarioRecConsolidado = {
+                        ...ultimoRec,
+                        id: ultimoRec.id || ('rec_' + t.id),
+                        tipoTurma: 'reciclagem',
+                        operacao: ultimoRec.operacao || t.operacao || '',
+                        turma: ultimoRec.turma || t.numeroTurma || '',
+                        turmaBaseId: t.id,
+                        data: ultimoRec.data || t.dataInicio || new Date().toISOString().split('T')[0],
+                        treinadorNome: ultimoRec.treinadorNome || t.treinadorNome || 'Treinador',
+                        treinadorMatricula: ultimoRec.treinadorMatricula || t.treinadorMatricula || '-',
+                        previstosSala: parseInt(ultimoRec.previstosSala, 10) || parseInt(t.quantidadeAlunos, 10) || 0,
+                        temaReciclagem: ultimoRec.temaReciclagem || t.temaReciclagem || '',
+                        dinamicaAtividade: ultimoRec.dinamicaAtividade || ultimoRec.relatoGeral || '',
+                        relatoGeral: ultimoRec.dinamicaAtividade || ultimoRec.relatoGeral || '',
+                        observacoesReciclagem: ultimoRec.observacoesReciclagem || t.observacoesReciclagem || '',
+                        fotosReciclagem: this._toArray(ultimoRec.fotosReciclagem).length > 0
+                            ? this._toArray(ultimoRec.fotosReciclagem)
+                            : this._toArray(t.fotosReciclagem),
+                        anexosListaPresenca: this.getAnexosTurma(ultimoRec).length > 0
+                            ? this.getAnexosTurma(ultimoRec)
+                            : this.getAnexosTurma(t)
+                    };
+                    return this.gerarPDF(null, diarioRecConsolidado);
                 }
 
                 const { jsPDF } = window.jspdf;
@@ -12246,24 +12615,28 @@ storage: {
                     }
 
                     // 3. Se ainda esta sincronizando e o usuario nao foi encontrado no cache:
-                    if (!app.dataLoaded) {
+                    if (!app._phase1Loaded) {
+                        if (this._waitingPhase1Login) return;
+                        this._waitingPhase1Login = true;
                         const loaderScreen = document.getElementById("sync-loader-screen");
                         if (loaderScreen) loaderScreen.classList.remove("hidden");
-                        
+
                         let checkTries = 0;
                         const checkData = setInterval(() => {
                             checkTries++;
-                            if (app.dataLoaded || (app.users && app.users.length > 0)) {
+                            if (app._phase1Loaded) {
                                 clearInterval(checkData);
+                                this._waitingPhase1Login = false;
                                 if (loaderScreen) loaderScreen.classList.add("hidden");
                                 app.auth.login();
-                            } else if (checkTries >= 25) {
+                            } else if (checkTries >= 80) {
                                 clearInterval(checkData);
+                                this._waitingPhase1Login = false;
                                 if (loaderScreen) loaderScreen.classList.add("hidden");
                                 app.ui.showAlert("Conexao Lenta", "Os dados do Firebase estao demorando para responder. Verifique sua conexao a internet e tente novamente.", "warning");
                             }
-                        }, 1000);
-                        
+                        }, 300);
+
                         return;
                     }
 
@@ -27728,8 +28101,14 @@ storage: {
                     const u = app.users.find(x => x.matricula === matriculaSubordinado);
                     if (!u) return;
                     u.gestorMatricula = matriculaGestor || null;
-                    app.storage.saveUsers().then(() => {
-                        app.ui.renderTab('hierarquia', true);
+                    u.atualizadoEm = new Date().toISOString();
+                    app.ui._refreshSpanOrHierarquiaInPlace();
+                    app.storage.saveUserByMatricula(u.matricula, {
+                        gestorMatricula: u.gestorMatricula,
+                        atualizadoEm: u.atualizadoEm
+                    }).catch(err => {
+                        console.error("Erro ao atualizar gestor:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao salvar gestor na nuvem.", "error");
                     });
                 },
 
@@ -27744,8 +28123,16 @@ storage: {
                     if (novoCargo === 'Gerente' || novoCargo === 'Gestor') {
                         u.gestorMatricula = null;
                     }
-                    app.storage.saveUsers().then(() => {
-                        app.ui.renderTab('hierarquia', true);
+                    u.atualizadoEm = new Date().toISOString();
+                    app.ui._refreshSpanOrHierarquiaInPlace();
+                    app.storage.saveUserByMatricula(u.matricula, {
+                        tipoAcesso: u.tipoAcesso,
+                        abasLiberadas: u.abasLiberadas,
+                        gestorMatricula: u.gestorMatricula || null,
+                        atualizadoEm: u.atualizadoEm
+                    }).catch(err => {
+                        console.error("Erro ao alterar cargo:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao salvar cargo na nuvem.", "error");
                     });
                 },
 
@@ -27762,7 +28149,12 @@ storage: {
                     } else {
                         listHtml = opsSetoriais.map(op => {
                             const isChecked = userOpsUpper.includes(op.nome.toUpperCase());
-                            const ResponsaveisAtuais = app.users.filter(x => x.matricula !== u.matricula && (x.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase())).map(x => x.nome.split(' ')[0]);
+                            const ResponsaveisAtuais = app.users
+                                .filter(x => x.matricula !== u.matricula && (app.isUserQualidade(x) || app.isUserTreinamento(x)) && (x.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase()))
+                                .map(x => {
+                                    const pNome = app.utils.fixEncoding(x.nome || '').split(' ')[0];
+                                    return app.isUserTreinamento(x) ? `${pNome} (Trein.)` : pNome;
+                                });
                             return `
                                 <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isChecked ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-indigo-400 transition-all">
                                     <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -27837,11 +28229,19 @@ storage: {
                     if (!u) return;
                     const checks = document.querySelectorAll('.hier-op-check:checked');
                     u.operacoes = Array.from(checks).map(c => c.value);
+                    u.atualizadoEm = new Date().toISOString();
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.storage.saveUsers().then(() => {
-                        app.ui.renderTab('hierarquia', true);
-                        const sp = app.getSpanUsuario(u);
-                        app.ui.showAlert("Span Atualizado!", `<strong>${u.nome}</strong> agora é responsável por <strong>${u.operacoes.length} operações</strong> (Span total: <strong>${sp.totalOperadores} operadores</strong>).`, "success");
+                    app.ui._refreshSpanOrHierarquiaInPlace();
+                    const sp = app.getSpanUsuario(u);
+                    if (app.ui && app.ui.showToast) {
+                        app.ui.showToast(`${app.utils.fixEncoding(u.nome).split(' ')[0]} atualizado(a): ${u.operacoes.length} op. (${sp.totalOperadores} op. de span)`, 'success');
+                    }
+                    app.storage.saveUserByMatricula(u.matricula, {
+                        operacoes: u.operacoes,
+                        atualizadoEm: u.atualizadoEm
+                    }).catch(err => {
+                        console.error("Erro ao salvar span/operações:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar operações na nuvem.", "error");
                     });
                 },
 
@@ -27892,19 +28292,36 @@ storage: {
 
                 salvarEquipeGestorHierarquia(matriculaGestor) {
                     const selecionados = new Set(Array.from(document.querySelectorAll('.hier-membro-check:checked')).map(c => c.value));
+                    const alterados = [];
+                    const nowIso = new Date().toISOString();
                     app.users.forEach(u => {
                         if (['Gerente', 'Gestor'].includes(u.tipoAcesso || 'Qualidade')) return;
                         if (selecionados.has(u.matricula)) {
-                            u.gestorMatricula = matriculaGestor;
+                            if (u.gestorMatricula !== matriculaGestor) {
+                                u.gestorMatricula = matriculaGestor;
+                                u.atualizadoEm = nowIso;
+                                alterados.push(u);
+                            }
                         } else if (u.gestorMatricula === matriculaGestor) {
                             u.gestorMatricula = null;
+                            u.atualizadoEm = nowIso;
+                            alterados.push(u);
                         }
                     });
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.storage.saveUsers().then(() => {
-                        app.ui.renderTab('hierarquia', true);
-                        app.ui.showAlert("Hierarquia Atualizada!", "A equipe do gestor foi atualizada com sucesso.", "success");
-                    });
+                    app.ui._refreshSpanOrHierarquiaInPlace();
+                    if (app.ui && app.ui.showToast) {
+                        app.ui.showToast("Equipe do gestor atualizada!", "success");
+                    }
+                    if (alterados.length > 0) {
+                        Promise.all(alterados.map(u => app.storage.saveUserByMatricula(u.matricula, {
+                            gestorMatricula: u.gestorMatricula || null,
+                            atualizadoEm: u.atualizadoEm
+                        }))).catch(err => {
+                            console.error("Erro ao salvar equipe do gestor:", err);
+                            if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar equipe na nuvem.", "error");
+                        });
+                    }
                 },
 
                 renderView_Operacoes(container) {
@@ -27972,8 +28389,19 @@ storage: {
                         u.subclasse = null;
                     }
                     u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
+                    u.atualizadoEm = new Date().toISOString();
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.storage.saveUsers().then(() => app.ui.renderTab('hierarquia', true));
+                    app.ui._refreshSpanOrHierarquiaInPlace();
+                    app.storage.saveUserByMatricula(u.matricula, {
+                        tipoAcesso: u.tipoAcesso,
+                        abasLiberadas: u.abasLiberadas,
+                        subclasse: u.subclasse || null,
+                        gestorMatricula: u.gestorMatricula || null,
+                        atualizadoEm: u.atualizadoEm
+                    }).catch(err => {
+                        console.error("Erro ao atualizar membro:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alteração na nuvem.", "error");
+                    });
                 },
 
                 filterHierarquiaView(q = '', cargoFiltro = '') {
@@ -27994,6 +28422,48 @@ storage: {
                     });
                 },
 
+                _refreshSpanOrHierarquiaInPlace() {
+                    const activeTab = app.currentTab === 'span_operacoes' ? 'span_operacoes' : (app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia');
+                    const domId = activeTab === 'gestao_equipe' ? 'hierarquia' : activeTab;
+                    const viewDiv = document.getElementById('view-container-' + domId);
+                    if (!viewDiv) {
+                        this.renderTab(activeTab, true);
+                        return;
+                    }
+                    const scrollX = window.scrollX || document.documentElement.scrollLeft || 0;
+                    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+                    const innerOpsScrollEl = viewDiv.querySelector('[data-span-ops-scroll]');
+                    const innerOpsScrollTop = innerOpsScrollEl ? innerOpsScrollEl.scrollTop : 0;
+
+                    const prevMinH = viewDiv.offsetHeight;
+                    if (prevMinH > 0) viewDiv.style.minHeight = prevMinH + 'px';
+                    viewDiv.classList.remove('animate-fade-in');
+
+                    if (activeTab === 'span_operacoes') {
+                        this.renderView_Span(viewDiv);
+                    } else {
+                        this.renderView_Hierarquia(viewDiv);
+                    }
+
+                    const innerRestored = viewDiv.querySelector('[data-span-ops-scroll]');
+                    if (innerRestored) innerRestored.scrollTop = innerOpsScrollTop;
+                    try {
+                        window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                    } catch (e) {
+                        window.scrollTo(scrollX, scrollY);
+                    }
+                    requestAnimationFrame(() => {
+                        const r2 = viewDiv.querySelector('[data-span-ops-scroll]');
+                        if (r2) r2.scrollTop = innerOpsScrollTop;
+                        try {
+                            window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                        } catch (e) {
+                            window.scrollTo(scrollX, scrollY);
+                        }
+                        viewDiv.style.minHeight = '';
+                    });
+                },
+
                 renderView_Span(container) {
                     if (!app.hasAdminAccess('span_operacoes') && !app.hasAdminAccess('hierarquia') && !app.isGestor() && !app.isSuperAdmin()) return;
                     app.syncOperacoesFromSetorial();
@@ -28002,18 +28472,27 @@ storage: {
                     const hcDe = (op) => parseInt(op.headcount) || 0;
 
                     const isGestor = app.isGestor();
-                    const monitores = app.users.filter(u => app.isUserQualidade(u));
+                    const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u));
+                    const equipeTreinamento = app.users.filter(u => app.isUserTreinamento(u));
+                    const responsaveisSpan = app.users.filter(u => app.isUserQualidade(u) || app.isUserTreinamento(u));
 
-                    // Mapa operação -> monitores responsáveis
+                    // Mapa operação -> responsáveis (Qualidade e Treinamento, sem Operadores)
                     const mapaOps = {};
-                    monitores.forEach(m => (m.operacoes || []).forEach(o => {
+                    const mapaOpsTrein = {};
+                    monitoresQualidade.forEach(m => (m.operacoes || []).forEach(o => {
                         const k = String(o).trim().toUpperCase();
                         (mapaOps[k] = mapaOps[k] || []).push(m);
                     }));
+                    equipeTreinamento.forEach(t => (t.operacoes || []).forEach(o => {
+                        const k = String(o).trim().toUpperCase();
+                        (mapaOpsTrein[k] = mapaOpsTrein[k] || []).push(t);
+                    }));
 
                     const linhasOps = ops.map(op => {
-                        const resp = mapaOps[op.nome.toUpperCase()] || [];
-                        return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp };
+                        const k = op.nome.toUpperCase();
+                        const resp = mapaOps[k] || [];
+                        const respTrein = mapaOpsTrein[k] || [];
+                        return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp, respTrein };
                     }).sort((a, b) => b.hc - a.hc);
 
                     const totalHc = linhasOps.reduce((a, o) => a + o.hc, 0);
@@ -28022,10 +28501,11 @@ storage: {
                     const compartilhadas = linhasOps.filter(o => o.resp.length > 1);
                     const pctCobertura = totalHc > 0 ? Math.round(((totalHc - hcDescoberto) / totalHc) * 100) : 100;
 
-                    const spans = monitores.map(m => ({ u: m, nome: app.utils.fixEncoding(m.nome), sp: app.getSpanUsuario(m) }))
+                    const spans = responsaveisSpan.map(m => ({ u: m, isQual: app.isUserQualidade(m), isTrein: app.isUserTreinamento(m), nome: app.utils.fixEncoding(m.nome), sp: app.getSpanUsuario(m) }))
                         .map(x => ({ ...x, total: x.sp.span !== undefined ? x.sp.span : (x.sp.totalOperadores || 0), nOps: (x.sp.detalhes || []).length }))
                         .sort((a, b) => b.total - a.total);
-                    const media = spans.length ? Math.round(spans.reduce((a, s) => a + s.total, 0) / spans.length) : 0;
+                    const spansQual = spans.filter(s => s.isQual);
+                    const media = spansQual.length ? Math.round(spansQual.reduce((a, s) => a + s.total, 0) / spansQual.length) : 0;
                     const maxSpan = Math.max(1, ...spans.map(s => s.total));
                     const limiteAlto = Math.round(media * 1.25);
                     const limiteBaixo = Math.round(media * 0.5);
@@ -28035,7 +28515,7 @@ storage: {
                         if (media > 0 && t < limiteBaixo) return { rotulo: 'Subutilizado', bar: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', icon: 'fa-arrow-trend-down' };
                         return { rotulo: 'Equilibrado', bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', icon: 'fa-circle-check' };
                     };
-                    const sobrecarregados = spans.filter(s => statusSpan(s.total).rotulo === 'Sobrecarga').length;
+                    const sobrecarregados = spansQual.filter(s => statusSpan(s.total).rotulo === 'Sobrecarga').length;
 
                     const kpi = (icon, label, valor, sub, alerta) => `
                         <div class="rounded-2xl border ${alerta ? 'border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} p-4">
@@ -28056,20 +28536,24 @@ storage: {
                         const pct = Math.round((s.total / maxSpan) * 100);
                         const nomesOps = (s.sp.detalhes || []).map(d => {
                             const nome = app.utils.fixEncoding(d.nome);
-                            return d.compartilhado
+                            return (s.isQual && d.compartilhado)
                                 ? `${nome} (div. ${d.qtdMonitores})`
                                 : nome;
                         });
                         const opsTexto = nomesOps.length === 0
                             ? '<span class="text-slate-400">Sem operações</span>'
                             : esc(nomesOps.slice(0, 3).join(' · ')) + (nomesOps.length > 3 ? ` <span class="text-slate-400">+${nomesOps.length - 3}</span>` : '');
+                        const roleBadge = s.isTrein
+                            ? `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">Treinamento${s.u.subclasse ? ' · ' + esc(s.u.subclasse) : ''}</span>`
+                            : `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">Qualidade</span>`;
                         return `
                             <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors bg-white dark:bg-slate-900">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
                                             <span class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(s.nome)}">${esc(s.nome)}</span>
                                             <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">#${s.u.matricula}</span>
+                                            ${roleBadge}
                                             <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge} shrink-0"><i class="fa-solid ${st.icon} text-[9px]"></i>${st.rotulo}</span>
                                         </div>
                                         <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate" title="${esc(nomesOps.join(', '))}">${opsTexto}</div>
@@ -28089,7 +28573,7 @@ storage: {
                                     </div>
                                 </div>
                                 <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                                    <span class="text-[11px] text-slate-400 font-medium">Meta mensal estimada: <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.sp.totalMonitoriasEsperadas || 0} mon.</strong></span>
+                                    <span class="text-[11px] text-slate-400 font-medium">${s.isQual ? `Meta mensal estimada: <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.sp.totalMonitoriasEsperadas || 0} mon.</strong>` : `Treinamento · Responsável por <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.nOps} op.</strong>`}</span>
                                     <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"><i class="fa-solid fa-pen-to-square mr-1"></i>Editar Operações</button>
                                 </div>
                             </div>`;
@@ -28097,7 +28581,9 @@ storage: {
 
                     const linhaOp = (o) => {
                         const n = o.resp.length;
-                        const nomes = o.resp.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]).join(', ');
+                        const nomesQual = o.resp.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]);
+                        const nomesTrein = o.respTrein.map(r => `${app.utils.fixEncoding(r.nome).split(' ')[0]} (Trein.)`);
+                        const todosNomes = [...nomesQual, ...nomesTrein].join(', ');
                         const badge = n === 0
                             ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Sem monitor</span>'
                             : n === 1
@@ -28110,7 +28596,7 @@ storage: {
                                         <span class="font-extrabold text-xs text-slate-800 dark:text-white uppercase truncate" title="${esc(o.nome)}">${esc(o.nome)}</span>
                                         ${badge}
                                     </div>
-                                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">${nomes ? esc(nomes) : '<span class="italic text-slate-400">Ninguém cuidando</span>'}</div>
+                                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" title="${esc(todosNomes)}">${todosNomes ? esc(todosNomes) : '<span class="italic text-slate-400">Ninguém cuidando</span>'}</div>
                                 </div>
                                 <div class="text-right shrink-0">
                                     <div class="text-base font-black text-slate-800 dark:text-white tabular-nums">${o.hc}</div>
@@ -28125,11 +28611,11 @@ storage: {
                                 <div>
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-800">
-                                            <i class="fa-solid fa-chart-pie mr-1"></i> ${isGestor ? 'Equipe Sob Gestão' : 'Operações & Equipe'}
+                                            <i class="fa-solid fa-chart-pie mr-1"></i> ${isGestor ? 'Equipe Sob Gestão' : 'Qualidade & Treinamento'}
                                         </span>
                                     </div>
                                     <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGestor ? 'Span & Cobertura da Minha Equipe' : 'Span & Cobertura de Operações'}</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${isGestor ? 'Equilíbrio da carga operacional e monitorias esperadas dos seus liderados.' : 'Monitore o equilíbrio de carga entre monitores e garanta 100% de cobertura dos operadores do setorial.'}</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${isGestor ? 'Equilíbrio da carga operacional e cobertura de Qualidade & Treinamento.' : 'Monitore a carga de Qualidade e Treinamento e garanta 100% de cobertura das operações.'}</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
                                     <button type="button" onclick="app.ui.renderTab('hierarquia', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-sitemap mr-1.5"></i>Organograma</button>
@@ -28137,8 +28623,8 @@ storage: {
                             </div>
 
                             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                ${kpi('fa-users', isGestor ? 'Monitores na Equipe' : 'Monitores de Qualidade', monitores.length, isGestor ? 'liderados diretos' : `${app.users.length} total colaboradores`, false)}
-                                ${kpi('fa-chart-line', 'Span Médio', media, 'operadores / monitor', sobrecarregados > 0)}
+                                ${kpi('fa-users', 'Qualidade & Treinamento', responsaveisSpan.length, `${monitoresQualidade.length} Qualidade · ${equipeTreinamento.length} Treinamento`, false)}
+                                ${kpi('fa-chart-line', 'Span Médio (Qualidade)', media, 'operadores / monitor', sobrecarregados > 0)}
                                 ${kpi('fa-layer-group', isGestor ? 'Operações da Equipe' : 'Operações Setoriais', linhasOps.length, `${compartilhadas.length} compartilhadas`, false)}
                                 ${kpi('fa-shield-halved', 'Cobertura Setorial', `${pctCobertura}%`, isGestor ? 'da carga da equipe' : `${semCobertura.length} operações descobertas`, semCobertura.length > 0)}
                             </div>
@@ -28148,11 +28634,11 @@ storage: {
                             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                                 <div class="lg:col-span-2 space-y-4">
                                     <div class="flex items-center justify-between">
-                                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-scale-balanced mr-2 text-indigo-500"></i>Carga por Monitor (${spans.length})</h3>
-                                        <span class="text-xs text-slate-400 font-medium">Equilíbrio sugerido: ~${limiteBaixo} a ${limiteAlto} op.</span>
+                                        <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-scale-balanced mr-2 text-indigo-500"></i>Responsabilidade & Span — Qualidade e Treinamento (${spans.length})</h3>
+                                        <span class="text-xs text-slate-400 font-medium">Equilíbrio Qualidade: ~${limiteBaixo} a ${limiteAlto} op.</span>
                                     </div>
                                     <div class="space-y-3">
-                                        ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhum monitor de qualidade cadastrado.</div>'}
+                                        ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhum colaborador de Qualidade ou Treinamento cadastrado.</div>'}
                                     </div>
                                 </div>
 
@@ -28161,7 +28647,7 @@ storage: {
                                         <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-building mr-2 text-indigo-500"></i>Operações (${linhasOps.length})</h3>
                                         <span class="text-xs text-slate-400 font-medium">${totalHc} op. total</span>
                                     </div>
-                                    <div class="space-y-2 max-h-[720px] overflow-y-auto pr-1">
+                                    <div data-span-ops-scroll="1" class="space-y-2 max-h-[720px] overflow-y-auto pr-1">
                                         ${linhasOps.length ? linhasOps.map(linhaOp).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhuma operação importada.</div>'}
                                     </div>
                                 </div>
@@ -28959,7 +29445,7 @@ storage: {
                                     </div>
 
                                     <!-- SEÇÃO RECOLHÍVEL (CLEAN): Diário de Bordo & Planos de Ação Desta Etapa -->
-                                    <details class="group mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                                    <details class="group mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80" data-ia-details="etapa-${esc(p.key)}-${esc(etp.id)}" ${app.ui._iaOpenDetails?.has(`etapa-${p.key}-${etp.id}`) ? 'open' : ''} ontoggle="app.ui._onToggleDetailsIA(this)">
                                         <summary class="cursor-pointer flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300 select-none py-1 hover:text-indigo-600 transition">
                                             <div class="flex flex-wrap items-center gap-2">
                                                 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${attsEtapa.length > 0 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">
@@ -29147,7 +29633,7 @@ storage: {
                                 </div>
 
                                 <!-- Quadro Consolidado de Planos de Ação do Projeto -->
-                                <details class="group mb-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 overflow-hidden">
+                                <details class="group mb-5 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/40 overflow-hidden" data-ia-details="planos-${esc(p.key)}" ${app.ui._iaOpenDetails?.has(`planos-${p.key}`) ? 'open' : ''} ontoggle="app.ui._onToggleDetailsIA(this)">
                                     <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-amber-900 dark:text-amber-200 select-none">
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
@@ -29200,7 +29686,7 @@ storage: {
                                 </details>
 
                                 <!-- Alinhamentos & Comentários do Projeto (Todas as Partes) -->
-                                <details class="group mb-5 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/40 overflow-hidden">
+                                <details class="group mb-5 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/40 overflow-hidden" data-ia-details="coment-${esc(p.key)}" ${app.ui._iaOpenDetails?.has(`coment-${p.key}`) ? 'open' : ''} ontoggle="app.ui._onToggleDetailsIA(this)">
                                     <summary class="cursor-pointer p-3.5 flex items-center justify-between font-bold text-xs text-indigo-900 dark:text-indigo-200 select-none">
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-comments text-indigo-600"></i>
@@ -29316,7 +29802,7 @@ storage: {
                         <div class="flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
                             <div class="flex items-center gap-2 flex-1 min-w-[220px]">
                                 <i class="fa-solid fa-magnifying-glass text-slate-400 ml-2"></i>
-                                <input type="text" id="ia-search-input" oninput="app.ui.pesquisarImplantacaoIA(this.value)" placeholder="Buscar por operação, monitor ou treinador..." class="w-full bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400">
+                                <input type="text" id="ia-search-input" value="${esc(this._iaSearchTerm || '')}" oninput="app.ui.pesquisarImplantacaoIA(this.value)" placeholder="Buscar por operação, monitor ou treinador..." class="w-full bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400">
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <div class="flex items-center gap-1.5 border-r border-slate-200 dark:border-slate-700 pr-2">
@@ -29324,9 +29810,9 @@ storage: {
                                         <i class="fa-solid fa-user-check text-indigo-500"></i> Demanda:
                                     </span>
                                     <select id="ia-filtro-resp" onchange="app.ui.filtrarImplantacaoPorResp(this.value)" class="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-indigo-500 cursor-pointer max-w-[200px] truncate">
-                                        <option value="todos">Todos os Responsáveis</option>
-                                        <option value="minhas">Minhas Demandas (onde sou responsável)</option>
-                                        ${listaResponsaveis.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+                                        <option value="todos" ${(this._filtroRespIA || 'todos') === 'todos' ? 'selected' : ''}>Todos os Responsáveis</option>
+                                        <option value="minhas" ${this._filtroRespIA === 'minhas' ? 'selected' : ''}>Minhas Demandas (onde sou responsável)</option>
+                                        ${listaResponsaveis.map(r => `<option value="${esc(r)}" ${this._filtroRespIA === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
                                     </select>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-1.5" id="ia-filtros-status">
@@ -29337,7 +29823,7 @@ storage: {
                                         ['pausado', 'Em Pausa', opsPausadas.length],
                                         ['pendente', 'Pendentes', opsPendentes.length]
                                     ].map(([k, lbl, count]) => `
-                                        <button type="button" data-k="${k}" onclick="app.ui.filtrarImplantacaoIA('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition border ${k === 'todos' ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
+                                        <button type="button" data-k="${k}" onclick="app.ui.filtrarImplantacaoIA('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition border ${k === (this._filtroStatusIA || 'todos') ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}">
                                             ${lbl} <span class="tabular-nums opacity-75">(${count})</span>
                                         </button>
                                     `).join('')}
@@ -29383,13 +29869,78 @@ storage: {
                                 </div>
                             </div>` : ''}
                     `;
+                    this.aplicarFiltrosImplantacaoIA();
                 },
 
                 _filtroStatusIA: 'todos',
                 _filtroRespIA: 'todos',
+                _iaSearchTerm: '',
+                _iaOpenDetails: new Set(),
+
+                _onToggleDetailsIA(el) {
+                    if (!el) return;
+                    const key = el.getAttribute('data-ia-details');
+                    if (!key) return;
+                    if (!this._iaOpenDetails) this._iaOpenDetails = new Set();
+                    if (el.open) this._iaOpenDetails.add(key);
+                    else this._iaOpenDetails.delete(key);
+                },
+
+                _refreshImplantacaoIAInPlace() {
+                    const viewDiv = document.getElementById('view-container-implantacao_ia');
+                    if (!viewDiv) {
+                        if (app.currentTab === 'implantacao_ia') this.renderTab('implantacao_ia', true);
+                        return;
+                    }
+
+                    const scrollX = window.scrollX || document.documentElement.scrollLeft || 0;
+                    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
+                    if (!this._iaOpenDetails) this._iaOpenDetails = new Set();
+                    viewDiv.querySelectorAll('details[data-ia-details]').forEach(det => {
+                        const key = det.getAttribute('data-ia-details');
+                        if (!key) return;
+                        if (det.open) this._iaOpenDetails.add(key);
+                        else this._iaOpenDetails.delete(key);
+                    });
+
+                    const drafts = {};
+                    viewDiv.querySelectorAll('input[id^="att-input-"], input[id^="coment-input-"]').forEach(inp => {
+                        if (inp.id && inp.value) drafts[inp.id] = inp.value;
+                    });
+
+                    const searchEl = document.getElementById('ia-search-input');
+                    if (searchEl) this._iaSearchTerm = searchEl.value || '';
+
+                    const prevMinH = viewDiv.offsetHeight;
+                    if (prevMinH > 0) viewDiv.style.minHeight = prevMinH + 'px';
+                    viewDiv.classList.remove('animate-fade-in');
+
+                    this.renderView_ImplantacaoIA(viewDiv);
+
+                    Object.entries(drafts).forEach(([id, val]) => {
+                        const restored = document.getElementById(id);
+                        if (restored && !restored.value) restored.value = val;
+                    });
+
+                    try {
+                        window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                    } catch (e) {
+                        window.scrollTo(scrollX, scrollY);
+                    }
+                    requestAnimationFrame(() => {
+                        try {
+                            window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                        } catch (e) {
+                            window.scrollTo(scrollX, scrollY);
+                        }
+                        viewDiv.style.minHeight = '';
+                    });
+                },
 
                 aplicarFiltrosImplantacaoIA() {
-                    const q = String(document.getElementById('ia-search-input')?.value || '').toLowerCase().trim();
+                    const searchEl = document.getElementById('ia-search-input');
+                    const q = String(searchEl ? searchEl.value : (this._iaSearchTerm || '')).toLowerCase().trim();
                     const status = this._filtroStatusIA || 'todos';
                     const resp = this._filtroRespIA || 'todos';
 
@@ -29413,6 +29964,7 @@ storage: {
                 },
 
                 pesquisarImplantacaoIA(term) {
+                    this._iaSearchTerm = String(term || '');
                     this.aplicarFiltrosImplantacaoIA();
                 },
 
@@ -29447,8 +29999,9 @@ storage: {
                         } else {
                             plano.status = 'pausado';
                         }
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showToast(plano.status === 'pausado' ? 'Projeto colocado em PAUSA.' : 'Projeto RETOMADO com sucesso!', 'info');
                         });
                     } catch (err) {
@@ -29478,8 +30031,9 @@ storage: {
                         else if (concluidas > 0) plano.status = 'em_andamento';
                         else plano.status = 'pendente';
 
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                         });
                     } catch (err) {
                         console.error("Erro em toggleEtapaConcluidaIA:", err);
@@ -29498,8 +30052,9 @@ storage: {
                         const [removida] = plano.etapas.splice(idx, 1);
                         plano.etapas.splice(novoIdx, 0, removida);
 
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showToast(`Ordem da etapa "${removida.nome}" atualizada!`, 'info');
                         }).catch(err => {
                             console.error("Erro ao mover etapa Harmony:", err);
@@ -29751,10 +30306,10 @@ storage: {
                             app.storage.saveUsers();
                         }
 
-                        app.storage.saveHarmony().then(() => {
+                        app.storage.saveHarmony(storageKey).then(() => {
                             const gm = document.getElementById('global-modal');
                             if (gm) gm.classList.add('hidden');
-                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showAlert("Plano Salvo", `Implantação do Harmony para <strong>${app.utils.escapeHtml(selOp)}</strong> configurada. Acesso liberado para os responsáveis.`, "success");
                         }).catch(err => {
                             console.error("Erro ao salvar Harmony:", err);
@@ -30043,10 +30598,11 @@ storage: {
                         else if (conc > 0) plano.status = 'em_andamento';
                         else plano.status = 'pendente';
 
-                        app.storage.saveHarmony().then(() => {
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
                             const gm = document.getElementById('global-modal');
                             if (gm) gm.classList.add('hidden');
-                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui._refreshImplantacaoIAInPlace();
                         }).catch(err => {
                             console.error("Erro ao salvar etapa Harmony:", err);
                             app.ui.showAlert("Erro ao Salvar", "Ocorreu um erro ao gravar a etapa.", "error");
@@ -30072,8 +30628,9 @@ storage: {
                             else if (conc > 0) plano.status = 'em_andamento';
                             else plano.status = 'pendente';
 
-                            app.storage.saveHarmony().then(() => {
-                                app.ui.renderTab('implantacao_ia', true);
+                            plano.atualizadoEm = new Date().toISOString();
+                            app.storage.saveHarmony(plano.id || opKey).then(() => {
+                                app.ui._refreshImplantacaoIAInPlace();
                             });
                         }
                     );
@@ -30086,13 +30643,15 @@ storage: {
                         () => {
                             const plano = this._findPlanoIA(opKey);
                             if (plano && app.harmonyDeployList) {
+                                const keysToDel = [];
                                 for (const k of Object.keys(app.harmonyDeployList)) {
                                     if (app.harmonyDeployList[k] === plano || k === opKey || k === plano.id) {
                                         delete app.harmonyDeployList[k];
+                                        keysToDel.push(k);
                                     }
                                 }
-                                app.storage.saveHarmony().then(() => {
-                                    app.ui.renderTab('implantacao_ia', true);
+                                Promise.all(keysToDel.map(k => app.storage.saveHarmony(k))).then(() => {
+                                    app.ui._refreshImplantacaoIAInPlace();
                                     app.ui.showAlert("Plano Removido", "O cronograma desta operação foi excluído.", "info");
                                 });
                             }
@@ -30131,9 +30690,10 @@ storage: {
                         });
 
                         inputEl.value = '';
+                        plano.atualizadoEm = new Date().toISOString();
 
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showAlert("Atualização Registrada", "Registro de andamento adicionado com sucesso.", "success");
                         });
                     } catch (err) {
@@ -30153,8 +30713,9 @@ storage: {
                         "Deseja excluir este registro de andamento?",
                         () => {
                             etapa.atualizacoes = etapa.atualizacoes.filter(a => a.id !== attId);
-                            app.storage.saveHarmony().then(() => {
-                                app.ui.renderTab('implantacao_ia', true);
+                            plano.atualizadoEm = new Date().toISOString();
+                            app.storage.saveHarmony(plano.id || opKey).then(() => {
+                                app.ui._refreshImplantacaoIAInPlace();
                             });
                         }
                     );
@@ -30244,10 +30805,11 @@ storage: {
                             criadoPor: app.currentUser ? app.utils.fixEncoding(app.currentUser.nome) : 'Usuário'
                         });
 
-                        app.storage.saveHarmony().then(() => {
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
                             const gm = document.getElementById('global-modal');
                             if (gm) gm.classList.add('hidden');
-                            app.ui.renderTab('implantacao_ia', true);
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showAlert("Plano de Ação Registrado", "Ação vinculada com responsável e prazo definidos.", "success");
                         });
                     } catch (err) {
@@ -30274,8 +30836,9 @@ storage: {
                             delete pa.concluidoPor;
                         }
 
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        plano.atualizadoEm = new Date().toISOString();
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                         });
                     } catch (err) {
                         console.error("Erro em togglePlanoAcaoConcluidoIA:", err);
@@ -30293,8 +30856,9 @@ storage: {
                         "Deseja remover esta ação da etapa?",
                         () => {
                             etapa.planosAcao = etapa.planosAcao.filter(p => p.id !== paId);
-                            app.storage.saveHarmony().then(() => {
-                                app.ui.renderTab('implantacao_ia', true);
+                            plano.atualizadoEm = new Date().toISOString();
+                            app.storage.saveHarmony(plano.id || opKey).then(() => {
+                                app.ui._refreshImplantacaoIAInPlace();
                             });
                         }
                     );
@@ -30328,9 +30892,10 @@ storage: {
                         });
 
                         inputEl.value = '';
+                        plano.atualizadoEm = new Date().toISOString();
 
-                        app.storage.saveHarmony().then(() => {
-                            app.ui.renderTab('implantacao_ia', true);
+                        app.storage.saveHarmony(plano.id || opKey).then(() => {
+                            app.ui._refreshImplantacaoIAInPlace();
                             app.ui.showAlert("Comentário Enviado", "Alinhamento registrado para a equipe do projeto.", "success");
                         });
                     } catch (err) {
@@ -30348,8 +30913,9 @@ storage: {
                         "Deseja remover este comentário do projeto?",
                         () => {
                             plano.comentarios = plano.comentarios.filter(c => c.id !== comId);
-                            app.storage.saveHarmony().then(() => {
-                                app.ui.renderTab('implantacao_ia', true);
+                            plano.atualizadoEm = new Date().toISOString();
+                            app.storage.saveHarmony(plano.id || opKey).then(() => {
+                                app.ui._refreshImplantacaoIAInPlace();
                             });
                         }
                     );
