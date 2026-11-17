@@ -716,9 +716,18 @@ storage: {
                             if (data.diario_bordo) {
                                 if (Array.isArray(data.diario_bordo)) {
                                     app.diarioBordoList = {};
-                                    data.diario_bordo.forEach((d, idx) => { if (d) app.diarioBordoList[d.id || ('db_' + idx)] = d; });
+                                    data.diario_bordo.forEach((d, idx) => {
+                                        if (d && typeof d === 'object') {
+                                            const key = d.id || ('db_' + idx);
+                                            if (!d.id) d.id = key;
+                                            app.diarioBordoList[key] = d;
+                                        }
+                                    });
                                 } else if (typeof data.diario_bordo === 'object') {
                                     app.diarioBordoList = data.diario_bordo;
+                                    Object.entries(app.diarioBordoList).forEach(([k, v]) => {
+                                        if (v && typeof v === 'object' && !v.id) v.id = k;
+                                    });
                                 } else {
                                     app.diarioBordoList = {};
                                 }
@@ -750,14 +759,25 @@ storage: {
                             } else {
                                 try {
                                     const localT = localStorage.getItem('soft_turmas_treinamento_backup');
-                                    if (localT) app.turmasTreinamentoList = JSON.parse(localT);
-                                    else app.turmasTreinamentoList = {};
+                                    if (localT) {
+                                        app.turmasTreinamentoList = JSON.parse(localT) || {};
+                                        Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
+                                            if (v && typeof v === 'object' && !v.id) v.id = k;
+                                        });
+                                    } else {
+                                        app.turmasTreinamentoList = {};
+                                    }
                                 } catch (e) { app.turmasTreinamentoList = {}; }
                             }
                             // Sincronização automática dos logins dos alunos das turmas de treinamento (login = matrícula, senha = CPF)
                             try {
                                 if (app.diarioBordo && typeof app.diarioBordo.sincronizarLoginsTodasTurmas === 'function') {
                                     app.diarioBordo.sincronizarLoginsTodasTurmas();
+                                }
+                            } catch(e) {}
+                            try {
+                                if (app.diarioBordo && typeof app.diarioBordo._reconciliarTurmasOrfas === 'function') {
+                                    app.diarioBordo._reconciliarTurmasOrfas();
                                 }
                             } catch(e) {}
                             if (data.harmonyDeploy) {
@@ -5093,7 +5113,116 @@ storage: {
                 return String(n || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
             },
 
+            _reconciliarTurmasOrfas() {
+                if (!app.turmasTreinamentoList || typeof app.turmasTreinamentoList !== 'object') {
+                    app.turmasTreinamentoList = {};
+                }
+                const byOpNum = {};
+                Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
+                    if (!v || typeof v !== 'object') return;
+                    if (!v.id) v.id = k;
+                    const opNorm = this._normNomeDb(v.operacao);
+                    const numNorm = this._normNomeDb(v.numeroTurma);
+                    if (opNorm && numNorm) {
+                        const keyOpNum = `${opNorm}____${numNorm}`;
+                        if (!byOpNum[keyOpNum]) byOpNum[keyOpNum] = v;
+                    }
+                });
+
+                const diarios = Object.entries(app.diarioBordoList || {}).filter(([, d]) => d && typeof d === 'object');
+                if (diarios.length === 0) return;
+
+                const orphanGroups = {};
+                diarios.forEach(([dk, d]) => {
+                    if (!d.id) d.id = dk;
+                    if (d.turmaBaseId && app.turmasTreinamentoList[d.turmaBaseId]) {
+                        return;
+                    }
+                    const opNorm = this._normNomeDb(d.operacao);
+                    const numNorm = this._normNomeDb(d.turma);
+                    if (opNorm && numNorm && byOpNum[`${opNorm}____${numNorm}`]) {
+                        d.turmaBaseId = byOpNum[`${opNorm}____${numNorm}`].id;
+                        return;
+                    }
+                    if (!opNorm || !numNorm) return;
+                    const groupKey = (d.turmaBaseId && /^[A-Za-z0-9_-]+$/.test(String(d.turmaBaseId)))
+                        ? String(d.turmaBaseId)
+                        : `${opNorm}____${numNorm}`;
+                    if (!orphanGroups[groupKey]) {
+                        orphanGroups[groupKey] = [];
+                    }
+                    orphanGroups[groupKey].push(d);
+                });
+
+                Object.entries(orphanGroups).forEach(([gKey, list]) => {
+                    if (!Array.isArray(list) || list.length === 0) return;
+                    const sortedAsc = [...list].sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+                    const first = sortedAsc[0];
+                    const last = sortedAsc[sortedAsc.length - 1];
+
+                    const existingBaseId = list.map(x => x.turmaBaseId).find(id => id && /^[A-Za-z0-9_-]+$/.test(String(id)));
+                    const slugOp = this._normNomeDb(first.operacao).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'geral';
+                    const slugTurma = this._normNomeDb(first.turma).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'turma';
+                    let genId = existingBaseId || `turma_recup_${slugOp}_${slugTurma}`;
+                    if (genId.length > 90) genId = genId.slice(0, 90);
+
+                    if (!app.turmasTreinamentoList[genId]) {
+                        const chamadaNominal = this._toArray(last.chamada).filter(c => c && (c.nome || c.matricula));
+                        const colabsRecup = chamadaNominal.map(c => ({
+                            id: c.id || ('colab_' + Date.now() + '_' + Math.floor(Math.random() * 1000)),
+                            matricula: c.matricula || '-',
+                            nome: c.nome || 'Colaborador',
+                            cpf: c.cpf || '',
+                            dataAdmissao: c.dataAdmissao || '',
+                            statusGeral: (c.statusDia === 'T.O' || c.statusDia === 'Declínio' || c.riscado) ? (c.statusDia || 'T.O') : 'Ativo',
+                            remanejado: !!c.remanejado
+                        }));
+                        const prevRef = Math.max(
+                            colabsRecup.length,
+                            ...list.map(x => parseInt(x.previstosSala, 10) || 0),
+                            1
+                        );
+                        const matRef = list.map(x => x.treinadorMatricula || x.criadoPor).find(m => m && m !== '-') || '-';
+                        const nomeRef = list.map(x => x.treinadorNome).find(Boolean) || 'Instrutor(a)';
+                        const criadoPorRef = list.map(x => x.criadoPor || x.treinadorMatricula).find(Boolean) || matRef;
+                        const rec = {
+                            id: genId,
+                            tipoTurma: list.map(x => x.tipoTurma).find(Boolean) || 'treinamento',
+                            operacao: String(first.operacao || 'GERAL').trim().toUpperCase(),
+                            numeroTurma: String(first.turma || '').trim(),
+                            dataInicio: first.data || new Date().toISOString().split('T')[0],
+                            dataInicioOperacao: '',
+                            diasAloAcompanhado: 4,
+                            previsaoEntrega: last.data || first.data || new Date().toISOString().split('T')[0],
+                            horario: '08:00 às 17:00',
+                            quantidadeAlunos: prevRef,
+                            treinadorMatricula: matRef,
+                            treinadorNome: nomeRef,
+                            anexoListaPresenca: null,
+                            anexosListaPresenca: [],
+                            status: 'Em Andamento',
+                            travada: false,
+                            consideracoesFinais: '',
+                            dataEntregaEfetiva: '',
+                            colaboradores: colabsRecup,
+                            criadoEm: first.criadoEm || Date.now(),
+                            atualizadoEm: last.atualizadoEm || Date.now(),
+                            criadoPor: criadoPorRef,
+                            _recuperadaDeDiario: true
+                        };
+                        app.turmasTreinamentoList[genId] = rec;
+                        const opNorm = this._normNomeDb(rec.operacao);
+                        const numNorm = this._normNomeDb(rec.numeroTurma);
+                        if (opNorm && numNorm) byOpNum[`${opNorm}____${numNorm}`] = rec;
+                    }
+                    list.forEach(d => {
+                        d.turmaBaseId = genId;
+                    });
+                });
+            },
+
             _ensureTurmasIds() {
+                this._reconciliarTurmasOrfas();
                 if (!app.turmasTreinamentoList || typeof app.turmasTreinamentoList !== 'object') return [];
                 const list = [];
                 Object.entries(app.turmasTreinamentoList).forEach(([k, v]) => {
@@ -5141,9 +5270,16 @@ storage: {
                 return this.canManageAll() ? all : all.filter(t => this.canEditTurma(t));
             },
 
-            getTurmasParaSelecaoDiario() {
+            getTurmasParaSelecaoDiario(diarioRef = null) {
                 const all = this._ensureTurmasIds();
-                if (this.canManageAll()) return all;
+                const ref = diarioRef || this.diarioEmEdicao || null;
+                const linkedRef = ref ? (this.getTurmaById(ref.turmaBaseId) || this.findTurmaForDiario(ref)) : null;
+
+                if (this.canManageAll()) {
+                    if (linkedRef && !all.some(t => t && t.id === linkedRef.id)) return [linkedRef, ...all];
+                    return all;
+                }
+
                 const minhas = all.filter(t => this.canEditTurma(t));
                 const curOps = Array.isArray(app.currentUser?.operacoes)
                     ? app.currentUser.operacoes.map(o => this._normNomeDb(o)).filter(Boolean)
@@ -5151,7 +5287,18 @@ storage: {
                 const daOperacao = curOps.length > 0
                     ? all.filter(t => !minhas.includes(t) && curOps.includes(this._normNomeDb(t.operacao)))
                     : [];
-                const merged = [...minhas, ...daOperacao];
+
+                const merged = [];
+                const seenIds = new Set();
+                const pushUnique = (t) => {
+                    if (!t || !t.id || seenIds.has(t.id)) return;
+                    seenIds.add(t.id);
+                    merged.push(t);
+                };
+                if (linkedRef) pushUnique(linkedRef);
+                minhas.forEach(pushUnique);
+                daOperacao.forEach(pushUnique);
+
                 return merged.length > 0 ? merged : all;
             },
 
@@ -5213,15 +5360,15 @@ storage: {
                 const t = typeof turmaOrId === 'string' ? this.getTurmaById(turmaOrId) : turmaOrId;
                 if (!t) return [];
                 const canSeeAll = this.canManageAll() || this.canEditTurma(t);
-                const tOp = String(t.operacao || '').trim().toLowerCase();
-                const tNum = String(t.numeroTurma || '').trim().toLowerCase();
+                const tOp = this._normNomeDb(t.operacao);
+                const tNum = this._normNomeDb(t.numeroTurma);
                 const all = Object.values(app.diarioBordoList || {}).filter(d => {
                     if (!d) return false;
                     if (!canSeeAll && !this.canEditDiario(d)) return false;
-                    if (d.turmaBaseId && d.turmaBaseId === t.id) return true;
+                    if (d.turmaBaseId && t.id && d.turmaBaseId === t.id) return true;
                     return tOp && tNum &&
-                        String(d.operacao || '').trim().toLowerCase() === tOp &&
-                        String(d.turma || '').trim().toLowerCase() === tNum;
+                        this._normNomeDb(d.operacao) === tOp &&
+                        this._normNomeDb(d.turma) === tNum;
                 });
                 all.sort((a, b) => {
                     const da = a.data || '';
@@ -5337,7 +5484,8 @@ storage: {
                 const ultimoDiario = diarioResumosDesc[0] || null;
 
                 const colabs = Array.isArray(t.colaboradores) ? t.colaboradores : [];
-                const totalInicial = isReciclagem ? (parseInt(t.quantidadeAlunos, 10) || 0) : colabs.length;
+                const isPorQuantidade = isReciclagem || (colabs.length === 0 && (parseInt(t.quantidadeAlunos, 10) || 0) > 0);
+                const totalInicial = isPorQuantidade ? (parseInt(t.quantidadeAlunos, 10) || 0) : colabs.length;
 
                 let ativos = 0;
                 let toCount = 0;
@@ -5448,12 +5596,12 @@ storage: {
                     totalAltOcorrencias += item.altCount;
                 });
 
-                if (isReciclagem) {
+                if (isPorQuantidade) {
                     toCount = totalDeslOcorrencias;
                     ativos = Math.max(0, totalInicial - toCount);
                 }
 
-                const pctRetencaoAjustado = isReciclagem
+                const pctRetencaoAjustado = isPorQuantidade
                     ? (totalInicial > 0 ? Math.round((ativos / totalInicial) * 100) : null)
                     : pctRetencao;
 
@@ -8161,7 +8309,10 @@ storage: {
 
             novoDiario(turmaId = null) {
                 const turmasCadastradas = this.getTurmasCadastradas();
-                if (turmasCadastradas.length === 0) {
+                const turmasDisp = this.getTurmasParaSelecaoDiario();
+                const tBaseArg = turmaId ? this.getTurmaById(turmaId) : null;
+                const fonteTurmas = turmasCadastradas.length > 0 ? turmasCadastradas : turmasDisp;
+                if (!tBaseArg && fonteTurmas.length === 0) {
                     app.ui.showAlert("Cadastre uma Turma Primeiro", "Para preencher o Diário de Bordo pela lista de chamada dos alunos sem digitação manual, cadastre primeiro sua turma.", "info");
                     return this.novaTurma();
                 }
@@ -8170,7 +8321,7 @@ storage: {
                 const curUser = app.currentUser || {};
                 let targetTurmaId = turmaId;
                 if (!targetTurmaId) {
-                    const ordenadas = [...turmasCadastradas].sort((a, b) => {
+                    const ordenadas = [...fonteTurmas].sort((a, b) => {
                         const aConcl = (a.status === 'Entregue' || a.status === 'Integrados') ? 1 : 0;
                         const bConcl = (b.status === 'Entregue' || b.status === 'Integrados') ? 1 : 0;
                         if (aConcl !== bConcl) return aConcl - bConcl;
@@ -8181,7 +8332,7 @@ storage: {
                     });
                     targetTurmaId = ordenadas[0].id;
                 }
-                const tBase = this.getTurmaById(targetTurmaId);
+                const tBase = tBaseArg || this.getTurmaById(targetTurmaId);
                 if (tBase && !targetTurmaId) targetTurmaId = tBase.id;
                 const finalTurmaId = tBase ? (tBase.id || targetTurmaId) : (targetTurmaId || '');
                 const isRec = tBase && tBase.tipoTurma === 'reciclagem';
@@ -8203,7 +8354,7 @@ storage: {
                 const ativosSala = chamadaInic.filter(c => !c.riscado).length;
                 const prevInic = isRec
                     ? Math.max(1, parseInt(tBase.quantidadeAlunos, 10) || 1)
-                    : (chamadaInic.length > 0 ? Math.max(1, ativosSala) : 20);
+                    : (chamadaInic.length > 0 ? Math.max(1, ativosSala) : Math.max(1, parseInt(tBase?.quantidadeAlunos, 10) || 20));
 
                 this.diarioEmEdicao = {
                     id: 'db_' + Date.now(),
@@ -8246,9 +8397,7 @@ storage: {
                 }
                 const hoje = new Date().toISOString().split('T')[0];
                 const curUser = app.currentUser || {};
-                const tBase = (item.turmaBaseId && app.turmasTreinamentoList && app.turmasTreinamentoList[item.turmaBaseId])
-                    ? app.turmasTreinamentoList[item.turmaBaseId]
-                    : this.findTurmaForDiario(item);
+                const tBase = this.getTurmaById(item.turmaBaseId) || this.findTurmaForDiario(item);
                 const itemChamadaArr = this._toArray(item.chamada);
                 const tBaseColabsArr = tBase ? this._toArray(tBase.colaboradores) : [];
                 const sourceLista = itemChamadaArr.length > 0 ? itemChamadaArr : tBaseColabsArr;
@@ -8299,6 +8448,7 @@ storage: {
                     atualizadoEm: Date.now(),
                     criadoPor: curUser.matricula || 'admin'
                 };
+                this.sincronizarChamadaComMetricas();
                 this.viewMode = 'form';
                 app.ui.renderTab('diario_bordo', true);
                 app.ui.showAlert("Novo Diário Iniciado", `Novo diário em branco para "${item.turma}" (${item.operacao}) criado! Previstos: ${novosPrevistos}.`, "success");
@@ -8405,6 +8555,9 @@ storage: {
                             remanejado: !!c.remanejado
                         };
                     });
+                    if (colaboradores.length === 0 && (parseInt(t.quantidadeAlunos, 10) || 0) > 0) {
+                        this.diarioEmEdicao.previstosSala = Math.max(1, parseInt(t.quantidadeAlunos, 10));
+                    }
                 }
 
                 this.sincronizarChamadaComMetricas();
@@ -8533,10 +8686,8 @@ storage: {
                     badgeTotal.textContent = `${lista.length} matriculados • ${presCount} presentes`;
                 }
 
-                const manualAbsBox = document.getElementById('db-manual-abs-box');
                 const manualDeslBox = document.getElementById('db-manual-desl-box');
                 if (lista.length === 0) {
-                    if (manualAbsBox) manualAbsBox.classList.remove('hidden');
                     if (manualDeslBox) manualDeslBox.classList.remove('hidden');
                 }
 
@@ -8545,7 +8696,7 @@ storage: {
                         <tr>
                             <td colspan="4" class="p-6 text-center text-xs text-slate-400 italic">
                                 <i class="fa-solid fa-users text-2xl text-slate-300 dark:text-slate-600 mb-2 block"></i>
-                                Lista nominal vazia nesta turma. Selecione uma turma acima ou registre faltas / alunos manualmente logo abaixo.
+                                Lista nominal vazia nesta turma. Selecione uma turma acima para carregar a chamada.
                             </td>
                         </tr>
                     `;
@@ -8668,8 +8819,15 @@ storage: {
                 this.diarioEmEdicao.abs = this._toArray(this.diarioEmEdicao.abs);
                 this.diarioEmEdicao.chamada = this._toArray(this.diarioEmEdicao.chamada);
 
-                // Se a lista de chamada veio vazia (registro legado ou turma atualizada depois), hidrata da turma vinculada
-                const tBaseEdit = this.findTurmaForDiario(this.diarioEmEdicao);
+                // Garante vínculo com a turma e hidrata chamada vazia (registro legado ou turma atualizada depois)
+                const tBaseEdit = this.getTurmaById(this.diarioEmEdicao.turmaBaseId) || this.findTurmaForDiario(this.diarioEmEdicao);
+                if (tBaseEdit) {
+                    if (tBaseEdit.id && !this.diarioEmEdicao.turmaBaseId) {
+                        this.diarioEmEdicao.turmaBaseId = tBaseEdit.id;
+                    }
+                    if (!this.diarioEmEdicao.operacao && tBaseEdit.operacao) this.diarioEmEdicao.operacao = tBaseEdit.operacao;
+                    if (!this.diarioEmEdicao.turma && tBaseEdit.numeroTurma) this.diarioEmEdicao.turma = tBaseEdit.numeroTurma;
+                }
                 if (tBaseEdit && this.diarioEmEdicao.tipoTurma !== 'reciclagem' && tBaseEdit.tipoTurma !== 'reciclagem' && this.diarioEmEdicao.chamada.length === 0) {
                     const baseColabs = this._toArray(tBaseEdit.colaboradores);
                     if (baseColabs.length > 0) {
@@ -8693,6 +8851,7 @@ storage: {
                         });
                     }
                 }
+                this.sincronizarChamadaComMetricas();
                 this.viewMode = 'form';
                 app.ui.renderTab('diario_bordo', true);
             },
@@ -8739,13 +8898,22 @@ storage: {
                 if (treinadorNomeEl) d.treinadorNome = treinadorNomeEl.value.trim();
                 if (treinadorMatEl) d.treinadorMatricula = treinadorMatEl.value.trim();
 
+                if (!d.turmaBaseId || !this.getTurmaById(d.turmaBaseId)) {
+                    const tAutoSave = this.findTurmaForDiario(d);
+                    if (tAutoSave && tAutoSave.id) d.turmaBaseId = tAutoSave.id;
+                }
+                const tVinculadaForm = d.turmaBaseId ? this.getTurmaById(d.turmaBaseId) : null;
+                if (tVinculadaForm) {
+                    if (!d.operacao && tVinculadaForm.operacao) d.operacao = tVinculadaForm.operacao;
+                    if (!d.turma && tVinculadaForm.numeroTurma) d.turma = tVinculadaForm.numeroTurma;
+                }
+
                 if (!d.operacao) return app.ui.showAlert("Atenção", "Selecione a operação da turma.", "warning");
                 if (!d.turma) return app.ui.showAlert("Atenção", "Informe o número ou identificação da turma.", "warning");
                 if (!d.data) return app.ui.showAlert("Atenção", "Informe a data do diário de bordo.", "warning");
                 if (d.previstosSala <= 0) return app.ui.showAlert("Atenção", "Informe a quantidade de colaboradores previstos em sala.", "warning");
 
                 // Validação obrigatória: Perfil do Colaborador no Dia para turmas com chamada nominal
-                const tVinculadaForm = (d.turmaBaseId && app.turmasTreinamentoList) ? app.turmasTreinamentoList[d.turmaBaseId] : null;
                 const isReciclagemSave = (d.tipoTurma === 'reciclagem') || (tVinculadaForm && tVinculadaForm.tipoTurma === 'reciclagem');
                 if (!isReciclagemSave && Array.isArray(d.chamada) && d.chamada.length > 0) {
                     document.querySelectorAll('[data-chamada-perfil]').forEach(inp => {
@@ -22891,7 +23059,7 @@ storage: {
                                     ? 'bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-800'
                                     : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800',
                                 responsavel: isInt ? (t.responsavelIntegracaoNome || 'Sem responsável') : (t.treinadorNome || 'Instrutor'),
-                                quadroTxt: isRec
+                                quadroTxt: (isRec || (totalColabs === 0 && (parseInt(t.quantidadeAlunos, 10) || 0) > 0))
                                     ? `${parseInt(t.quantidadeAlunos, 10) || 0} colab.`
                                     : (isInt ? `${presentesInt}/${totalColabs} pres.` : `${ativos}/${totalColabs} ativos`),
                                 dtIniFmt,
@@ -24240,7 +24408,7 @@ storage: {
                         }
 
                         const operacoes = app.diarioBordo.getOperacoesDisponiveis();
-                        const turmasCadastradas = app.diarioBordo.getTurmasParaSelecaoDiario();
+                        const turmasCadastradas = app.diarioBordo.getTurmasParaSelecaoDiario(d);
                         let turmaSelecionada = app.diarioBordo.getTurmaById(d.turmaBaseId) || app.diarioBordo.findTurmaForDiario(d);
                         if (turmaSelecionada && turmaSelecionada.id && !d.turmaBaseId) {
                             d.turmaBaseId = turmaSelecionada.id;
@@ -24317,11 +24485,11 @@ storage: {
                                     </div>
 
                                     <!-- Campos Ocultos para retrocompatibilidade no salvamento -->
-                                    <input type="hidden" id="db-input-op" value="${d.operacao || ''}">
-                                    <input type="hidden" id="db-input-turma" value="${d.turma || ''}">
+                                    <input type="hidden" id="db-input-op" value="${app.diarioBordo._escapeDbHtml(d.operacao || '')}">
+                                    <input type="hidden" id="db-input-turma" value="${app.diarioBordo._escapeDbHtml(d.turma || '')}">
                                     <input type="hidden" id="db-input-previstos" value="${d.previstosSala || 0}">
-                                    <input type="hidden" id="db-input-treinador-nome" value="${d.treinadorNome || ''}">
-                                    <input type="hidden" id="db-input-treinador-mat" value="${d.treinadorMatricula || ''}">
+                                    <input type="hidden" id="db-input-treinador-nome" value="${app.diarioBordo._escapeDbHtml(d.treinadorNome || '')}">
+                                    <input type="hidden" id="db-input-treinador-mat" value="${app.diarioBordo._escapeDbHtml(d.treinadorMatricula || '')}">
 
                                     <!-- Grid de Detalhes da Turma & Foto do Instrutor -->
                                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center pt-1">
@@ -24509,9 +24677,6 @@ storage: {
                                                 </div>
                                             </div>
                                             <div class="flex flex-wrap items-center gap-2">
-                                                <button type="button" onclick="const b = document.getElementById('db-manual-abs-box'); if(b){ b.classList.toggle('hidden'); }" class="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer" title="Lançar Falta (ABS) manualmente por matrícula ou nome">
-                                                    <i class="fa-solid fa-user-xmark text-amber-600"></i> + Lançar Falta (ABS) Manual
-                                                </button>
                                                 <button type="button" onclick="const b = document.getElementById('db-manual-desl-box'); if(b){ b.classList.toggle('hidden'); }" class="px-3 py-1 rounded-full bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer" title="Lançar T.O / Desligamento manualmente por matrícula ou nome">
                                                     <i class="fa-solid fa-user-minus text-rose-600"></i> + Lançar T.O Manual
                                                 </button>
@@ -24536,50 +24701,6 @@ storage: {
                                                     <!-- Injetado via renderTabelaChamada() -->
                                                 </tbody>
                                             </table>
-                                        </div>
-
-                                        <!-- Lançamento Manual de Falta / ABS (Fallback quando chamada vazia ou falta avulsa) -->
-                                        <div id="db-manual-abs-box" class="${(d.chamada || []).length === 0 ? '' : 'hidden'} p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 space-y-3">
-                                            <div class="flex items-center justify-between">
-                                                <h4 class="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                                                    <i class="fa-solid fa-user-xmark"></i> Registro Manual de Falta / ABS
-                                                </h4>
-                                                <span class="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Para incluir falta sem usar a lista acima</span>
-                                            </div>
-                                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                                                <div class="sm:col-span-2">
-                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Matrícula:</label>
-                                                    <input type="text" id="db-add-abs-mat" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('abs', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
-                                                </div>
-                                                <div class="sm:col-span-4">
-                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Colaborador:</label>
-                                                    <input type="text" id="db-add-abs-nome" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none">
-                                                </div>
-                                                <div class="sm:col-span-4">
-                                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo / Ocorrência:</label>
-                                                    <input type="text" id="db-add-abs-mot" placeholder="Ex: ABS, Atestado, Sem retorno..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
-                                                </div>
-                                                <div class="sm:col-span-2">
-                                                    <button type="button" onclick="app.diarioBordo.adicionarAbs()" class="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
-                                                        <i class="fa-solid fa-plus"></i> Add Falta
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div class="overflow-x-auto rounded-xl border border-amber-200/70 dark:border-amber-800/50 bg-white dark:bg-slate-900">
-                                                <table class="w-full text-left border-collapse">
-                                                    <thead>
-                                                        <tr class="bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase border-b border-amber-200/70 dark:border-amber-800/50">
-                                                            <th class="p-2.5 w-28">Matrícula</th>
-                                                            <th class="p-2.5">Colaborador</th>
-                                                            <th class="p-2.5">Motivo da Falta</th>
-                                                            <th class="p-2.5 w-14 text-right">Ação</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="db-tbody-abs">
-                                                        <!-- Injetado via atualizarSecoesFormulario() -->
-                                                    </tbody>
-                                                </table>
-                                            </div>
                                         </div>
 
                                         <!-- Lançamento Manual de Desligamento / T.O -->
