@@ -5272,7 +5272,7 @@ storage: {
             chartInstance: null,
 
             _normMatDb(m) {
-                const raw = String(m || '').trim().toLowerCase();
+                const raw = String(m || '').replace(/^#+/, '').trim().toLowerCase();
                 if (!raw || raw === '-') return '';
                 const noZeros = raw.replace(/^0+/, '');
                 return noZeros || raw;
@@ -5280,6 +5280,80 @@ storage: {
 
             _normNomeDb(n) {
                 return String(n || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+            },
+
+            _aplicarTreinadorDoFormulario(t) {
+                if (!t) return;
+                const matEl = document.getElementById('turma-input-treinador-mat');
+                const nomeEl = document.getElementById('turma-input-treinador-nome');
+                const isNovaTurmaSalva = !(app.turmasTreinamentoList && app.turmasTreinamentoList[t.id]);
+                if (this.canManageAll()) {
+                    const matVal = matEl ? (matEl.value || '').trim().toUpperCase() : '';
+                    let nomeVal = nomeEl ? (nomeEl.value || '').trim().toUpperCase() : '';
+                    if (matVal && matVal !== '-') {
+                        const matchedUser = this.buscarColaboradorPorMatricula(matVal);
+                        const curMat = this._normMatDb(app.currentUser?.matricula);
+                        const curNome = this._normNomeDb(app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario);
+                        if (matchedUser) {
+                            const matchedNome = String(matchedUser.nome || matchedUser.nomeCompleto || matchedUser.usuario || '').trim().toUpperCase();
+                            if (matchedNome && (!nomeVal || (this._normMatDb(matVal) !== curMat && this._normNomeDb(nomeVal) === curNome))) {
+                                nomeVal = matchedNome;
+                            }
+                        }
+                        t.treinadorMatricula = matVal;
+                    }
+                    if (nomeVal) t.treinadorNome = nomeVal;
+                } else if (app.currentUser?.matricula && (isNovaTurmaSalva || !t.treinadorMatricula || t.treinadorMatricula === '-')) {
+                    t.treinadorMatricula = app.currentUser.matricula;
+                    t.treinadorNome = app.currentUser.nome || app.currentUser.nomeCompleto || app.currentUser.usuario || t.treinadorNome;
+                }
+            },
+
+            _renderCamposTreinadorTurma(t, labelNome = 'Nome do Treinador / Instrutor:', labelMat = 'Matrícula do Treinador:') {
+                const canManage = this.canManageAll();
+                const esc = (v) => this._escapeDbHtml(v);
+                const curMat = String(t.treinadorMatricula || app.currentUser?.matricula || '').trim();
+                const curNome = String(t.treinadorNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '').trim();
+                const users = Array.isArray(app.users) ? app.users : [];
+                const datalistOpts = canManage
+                    ? users
+                        .filter(u => u && u.matricula && String(u.tipoAcesso || '') !== 'Operador')
+                        .sort((a, b) => {
+                            const aTr = String(a.tipoAcesso || '').trim() === 'Treinamento' ? 0 : 1;
+                            const bTr = String(b.tipoAcesso || '').trim() === 'Treinamento' ? 0 : 1;
+                            if (aTr !== bTr) return aTr - bTr;
+                            return String(a.nome || '').localeCompare(String(b.nome || ''));
+                        })
+                        .map(u => `<option value="${esc(String(u.matricula).trim().toUpperCase())}">${esc(String(u.nome || '').trim().toUpperCase())} (${esc(u.tipoAcesso || 'Usuário')})</option>`)
+                        .join('')
+                    : '';
+                const matchedUser = canManage && curMat ? this.buscarColaboradorPorMatricula(curMat) : null;
+                const matchedCurSelf = matchedUser && this._normMatDb(matchedUser.matricula) === this._normMatDb(app.currentUser?.matricula);
+                const hintInicial = (canManage && matchedUser && !matchedCurSelf)
+                    ? `<span class="text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-circle-check mr-1"></i>Turma vinculada a <strong>${esc(String(matchedUser.nome || '').trim().toUpperCase())}</strong> — terá acesso automático no login.</span>`
+                    : '';
+
+                return `
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                            <span>${esc(labelNome)}</span>
+                            ${canManage
+                                ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
+                                : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
+                        </label>
+                        <input type="text" id="turma-input-treinador-nome" ${canManage ? '' : 'readonly'} value="${esc(curNome)}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl ${canManage ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                            <span>${esc(labelMat)}</span>
+                            ${canManage
+                                ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
+                                : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
+                        </label>
+                        <input type="text" id="turma-input-treinador-mat" ${canManage ? 'list="turma-treinadores-datalist" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange(\'treinador\', this.value);" onblur="app.diarioBordo.onMatriculaChange(\'treinador\', this.value);"' : 'readonly'} value="${esc(curMat)}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl ${canManage ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
+                        ${canManage ? `<datalist id="turma-treinadores-datalist">${datalistOpts}</datalist><div id="turma-treinador-vinculo-hint" class="mt-1 text-[10px] font-semibold min-h-[14px]">${hintInicial}</div>` : ''}
+                    </div>
+                `;
             },
 
             _reconciliarTurmasOrfas() {
@@ -6589,8 +6663,6 @@ storage: {
                 const diasAloEl = document.getElementById('turma-input-dias-alo');
                 const dtFimEl = document.getElementById('turma-input-fim');
                 const horaEl = document.getElementById('turma-input-horario');
-                const matEl = document.getElementById('turma-input-treinador-mat');
-                const nomeEl = document.getElementById('turma-input-treinador-nome');
                 const respIntNomeEl = document.getElementById('turma-input-resp-int-nome');
                 const respIntMatEl = document.getElementById('turma-input-resp-int-mat');
 
@@ -6607,16 +6679,7 @@ storage: {
                     const hFim = document.getElementById('turma-horario-fim')?.value || '17:00';
                     t.horario = `${hIni} às ${hFim}`;
                 }
-                const isNovaTurmaSalva = !(app.turmasTreinamentoList && app.turmasTreinamentoList[t.id]);
-                if (this.canManageAll()) {
-                    const matVal = matEl ? (matEl.value || '').trim().toUpperCase() : '';
-                    const nomeVal = nomeEl ? (nomeEl.value || '').trim().toUpperCase() : '';
-                    if (matVal && matVal !== '-') t.treinadorMatricula = matVal;
-                    if (nomeVal) t.treinadorNome = nomeVal;
-                } else if (app.currentUser?.matricula && (isNovaTurmaSalva || !t.treinadorMatricula || t.treinadorMatricula === '-')) {
-                    t.treinadorMatricula = app.currentUser.matricula;
-                    t.treinadorNome = app.currentUser.nome || app.currentUser.nomeCompleto || app.currentUser.usuario || t.treinadorNome;
-                }
+                this._aplicarTreinadorDoFormulario(t);
                 if (respIntNomeEl) t.responsavelIntegracaoNome = (respIntNomeEl.value || '').trim().toUpperCase();
                 if (respIntMatEl) t.responsavelIntegracaoMatricula = (respIntMatEl.value || '').trim().toUpperCase();
 
@@ -6680,8 +6743,6 @@ storage: {
                 const qtdEl = document.getElementById('rec-input-qtd');
                 const temaEl = document.getElementById('rec-input-tema');
                 const obsEl = document.getElementById('rec-input-obs');
-                const matEl = document.getElementById('turma-input-treinador-mat');
-                const nomeEl = document.getElementById('turma-input-treinador-nome');
 
                 t.tipoTurma = 'reciclagem';
                 if (opEl) t.operacao = (opEl.value || '').trim().toUpperCase();
@@ -6698,16 +6759,7 @@ storage: {
                 if (temaEl) t.temaReciclagem = (temaEl.value || '').trim();
                 if (obsEl) t.observacoesReciclagem = (obsEl.value || '').trim();
 
-                const isNovaTurmaSalva = !(app.turmasTreinamentoList && app.turmasTreinamentoList[t.id]);
-                if (this.canManageAll()) {
-                    const matVal = matEl ? (matEl.value || '').trim().toUpperCase() : '';
-                    const nomeVal = nomeEl ? (nomeEl.value || '').trim().toUpperCase() : '';
-                    if (matVal && matVal !== '-') t.treinadorMatricula = matVal;
-                    if (nomeVal) t.treinadorNome = nomeVal;
-                } else if (app.currentUser?.matricula && (isNovaTurmaSalva || !t.treinadorMatricula || t.treinadorMatricula === '-')) {
-                    t.treinadorMatricula = app.currentUser.matricula;
-                    t.treinadorNome = app.currentUser.nome || app.currentUser.nomeCompleto || app.currentUser.usuario || t.treinadorNome;
-                }
+                this._aplicarTreinadorDoFormulario(t);
 
                 if (!t.operacao) return app.ui.showAlert("Atenção", "Selecione a operação da reciclagem.", "warning");
                 if (!t.numeroTurma) return app.ui.showAlert("Atenção", "Informe o nome/identificação da turma de reciclagem.", "warning");
@@ -8305,6 +8357,29 @@ storage: {
                 if (dataEl && dataEl.value) t.dataInicio = dataEl.value;
 
                 t.operacao = 'INTEGRAÇÃO GERAL';
+                if (this.canManageAll()) {
+                    const respMatEl = document.getElementById('int-input-resp-mat');
+                    const respNomeEl = document.getElementById('int-input-resp-nome');
+                    const respMatVal = respMatEl ? (respMatEl.value || '').trim().toUpperCase() : '';
+                    let respNomeVal = respNomeEl ? (respNomeEl.value || '').trim().toUpperCase() : '';
+                    if (respMatVal && respMatVal !== '-') {
+                        const matchedResp = this.buscarColaboradorPorMatricula(respMatVal);
+                        const curMat = this._normMatDb(app.currentUser?.matricula);
+                        const curNome = this._normNomeDb(app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario);
+                        if (matchedResp) {
+                            const matchedNome = String(matchedResp.nome || matchedResp.nomeCompleto || matchedResp.usuario || '').trim().toUpperCase();
+                            if (matchedNome && (!respNomeVal || (this._normMatDb(respMatVal) !== curMat && this._normNomeDb(respNomeVal) === curNome))) {
+                                respNomeVal = matchedNome;
+                            }
+                        }
+                        t.responsavelIntegracaoMatricula = respMatVal;
+                        t.treinadorMatricula = respMatVal;
+                    }
+                    if (respNomeVal) {
+                        t.responsavelIntegracaoNome = respNomeVal;
+                        t.treinadorNome = respNomeVal;
+                    }
+                }
                 if (!t.responsavelIntegracaoNome) t.responsavelIntegracaoNome = app.currentUser?.nome || 'Instrutor';
                 if (!t.responsavelIntegracaoMatricula || t.responsavelIntegracaoMatricula === '-') t.responsavelIntegracaoMatricula = app.currentUser?.matricula || '-';
                 if (!t.treinadorNome) t.treinadorNome = t.responsavelIntegracaoNome;
@@ -9278,9 +9353,12 @@ storage: {
             },
 
             buscarColaboradorPorMatricula(mat) {
-                if (!mat || !app.users) return null;
+                if (!mat || !Array.isArray(app.users)) return null;
                 const clean = String(mat).trim().toLowerCase();
-                return app.users.find(u => String(u.matricula).trim().toLowerCase() === clean) || null;
+                const norm = this._normMatDb(mat);
+                return app.users.find(u => String(u.matricula || '').trim().toLowerCase() === clean)
+                    || (norm ? app.users.find(u => this._normMatDb(u.matricula) === norm) : null)
+                    || null;
             },
 
             onMatriculaChange(tipo, valor) {
@@ -9339,8 +9417,17 @@ storage: {
                 }
 
                 const user = this.buscarColaboradorPorMatricula(valor);
-                if (!user) return;
+                const hintEl = (tipo === 'treinador') ? document.getElementById('turma-treinador-vinculo-hint') : null;
+                if (!user) {
+                    if (hintEl) {
+                        hintEl.innerHTML = clean && clean !== '-'
+                            ? '<span class="text-amber-600 dark:text-amber-400"><i class="fa-solid fa-circle-info mr-1"></i>Matrícula não localizada nos usuários — preencha também o nome exato do treinador para vincular.</span>'
+                            : '';
+                    }
+                    return;
+                }
                 let inputNome = null;
+                const isDirectAssign = (tipo === 'treinador' || tipo === 'resp_int');
                 if (tipo === 'treinador') inputNome = document.getElementById('turma-input-treinador-nome');
                 else if (tipo === 'resp_int') {
                     inputNome = document.getElementById('turma-input-resp-int-nome') || document.getElementById('int-input-resp-nome');
@@ -9349,8 +9436,15 @@ storage: {
                 else if (tipo === 'abs') inputNome = document.getElementById('db-add-abs-nome');
                 else if (tipo === 'desl') inputNome = document.getElementById('db-add-desl-nome');
                 else if (tipo === 'alt') inputNome = document.getElementById('db-add-alt-nome');
-                if (inputNome && !inputNome.value) {
-                    inputNome.value = String(user.nome || '').trim().toUpperCase();
+                const userNome = String(user.nome || user.nomeCompleto || user.usuario || '').trim().toUpperCase();
+                if (inputNome && (isDirectAssign || !inputNome.value) && userNome) {
+                    inputNome.value = userNome;
+                }
+                if (hintEl) {
+                    const isSelf = this._normMatDb(user.matricula) === this._normMatDb(app.currentUser?.matricula);
+                    hintEl.innerHTML = (!isSelf && userNome)
+                        ? `<span class="text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-circle-check mr-1"></i>Turma vinculada a <strong>${this._escapeDbHtml(userNome)}</strong> — terá acesso automático no login.</span>`
+                        : '';
                 }
             },
 
@@ -23732,22 +23826,26 @@ storage: {
                                                 <input type="date" id="int-input-data" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
                                             </div>
 
-                                            <!-- Matrícula do Responsável (Fixo) -->
+                                            <!-- Matrícula do Responsável -->
                                             <div>
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                                                     <span><i class="fa-solid fa-id-card text-sky-600 mr-1"></i> Matrícula do Responsável:</span>
-                                                    <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                                    ${app.diarioBordo.canManageAll()
+                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
+                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
                                                 </label>
-                                                <input type="text" id="int-input-resp-mat" readonly value="${t.responsavelIntegracaoMatricula || app.currentUser?.matricula || ''}" placeholder="Matrícula..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
+                                                <input type="text" id="int-input-resp-mat" ${app.diarioBordo.canManageAll() ? 'oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange(\'resp_int\', this.value);" onblur="app.diarioBordo.onMatriculaChange(\'resp_int\', this.value);"' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoMatricula || app.currentUser?.matricula || '')}" placeholder="Matrícula..." class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
                                             </div>
 
-                                            <!-- Nome do Responsável (Fixo) -->
+                                            <!-- Nome do Responsável -->
                                             <div>
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                                                     <span><i class="fa-solid fa-user-tie text-sky-600 mr-1"></i> Responsável pela Integração:</span>
-                                                    <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>
+                                                    ${app.diarioBordo.canManageAll()
+                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
+                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
                                                 </label>
-                                                <input type="text" id="int-input-resp-nome" readonly value="${t.responsavelIntegracaoNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || ''}" placeholder="Nome do Responsável" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-500 dark:text-slate-400 cursor-not-allowed outline-none select-none">
+                                                <input type="text" id="int-input-resp-nome" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '')}" placeholder="Nome do Responsável" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
                                             </div>
                                         </div>
                                     </div>
@@ -23960,24 +24058,7 @@ storage: {
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Previsão Término:</label>
                                                 <input type="date" id="turma-input-fim" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.previsaoEntrega || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
                                             </div>
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span>Treinador / Instrutor:</span>
-                                                    ${app.diarioBordo.canManageAll()
-                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
-                                                </label>
-                                                <input type="text" id="turma-input-treinador-nome" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.treinadorNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '')}" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span>Matrícula:</span>
-                                                    ${app.diarioBordo.canManageAll()
-                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
-                                                </label>
-                                                <input type="text" id="turma-input-treinador-mat" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.treinadorMatricula || app.currentUser?.matricula || '')}" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
-                                            </div>
+                                            ${app.diarioBordo._renderCamposTreinadorTurma(t, 'Treinador / Instrutor:', 'Matrícula:')}
                                         </div>
                                     </div>
 
@@ -24162,27 +24243,8 @@ storage: {
                                             <input type="date" id="turma-input-fim" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.previsaoEntrega || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                                         </div>
 
-                                        <!-- Treinador Responsável -->
-                                        <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                <span>Nome do Treinador / Instrutor:</span>
-                                                ${app.diarioBordo.canManageAll()
-                                                    ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                    : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
-                                            </label>
-                                            <input type="text" id="turma-input-treinador-nome" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.treinadorNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '')}" placeholder="Nome do Instrutor" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
-                                        </div>
-
-                                        <!-- Matrícula -->
-                                        <div>
-                                            <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                <span>Matrícula do Treinador:</span>
-                                                ${app.diarioBordo.canManageAll()
-                                                    ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                    : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
-                                            </label>
-                                            <input type="text" id="turma-input-treinador-mat" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.treinadorMatricula || app.currentUser?.matricula || '')}" placeholder="Matrícula" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
-                                        </div>
+                                        <!-- Treinador Responsável & Matrícula -->
+                                        ${app.diarioBordo._renderCamposTreinadorTurma(t, 'Nome do Treinador / Instrutor:', 'Matrícula do Treinador:')}
                                     </div>
 
                                     <!-- Bloco Específico: Treinamento Regular / Alô Acompanhado 4 dias -->
