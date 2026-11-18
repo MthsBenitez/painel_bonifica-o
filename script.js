@@ -783,6 +783,34 @@ storage: {
                         }
                     }
 
+                    if (has('harmonyChecklist')) {
+                        const remoteMap = (data.harmonyChecklist && typeof data.harmonyChecklist === 'object') ? { ...data.harmonyChecklist } : null;
+                        let localParsed = null;
+                        try {
+                            const localHc = localStorage.getItem('soft_harmony_checklist_backup');
+                            if (localHc) localParsed = JSON.parse(localHc);
+                        } catch (e) {}
+                        if (remoteMap) {
+                            app.harmonyChecklistList = remoteMap;
+                            if (localParsed && typeof localParsed === 'object') {
+                                Object.entries(localParsed).forEach(([lk, lp]) => {
+                                    if (!lp || typeof lp !== 'object') return;
+                                    const rp = app.harmonyChecklistList[lk];
+                                    const lMs = Number(lp.atualizadoEm) || Date.parse(lp.atualizadoEm || '') || 0;
+                                    const rMs = rp ? (Number(rp.atualizadoEm) || Date.parse(rp.atualizadoEm || '') || 0) : 0;
+                                    if (!rp || lMs > rMs) {
+                                        app.harmonyChecklistList[lk] = lp;
+                                    }
+                                });
+                            }
+                        } else if (localParsed && typeof localParsed === 'object') {
+                            app.harmonyChecklistList = localParsed;
+                        } else {
+                            app.harmonyChecklistList = {};
+                        }
+                        try { localStorage.setItem('soft_harmony_checklist_backup', JSON.stringify(app.harmonyChecklistList || {})); } catch (e) {}
+                    }
+
                     if (has('csatNpsProvas')) {
                         if (data.csatNpsProvas) app.csatNpsProvas = data.csatNpsProvas;
                         else {
@@ -941,6 +969,10 @@ storage: {
                         app.ui._refreshImplantacaoIAInPlace();
                         return;
                     }
+                    if (tab === 'harmony' && loadedKeys.includes('harmonyChecklist') && app.ui?._refreshHarmonyInPlace) {
+                        app.ui._refreshHarmonyInPlace();
+                        return;
+                    }
                     if ((tab === 'span_operacoes' || tab === 'hierarquia' || tab === 'gestao_equipe') && app.ui?._refreshSpanOrHierarquiaInPlace) {
                         app.ui._refreshSpanOrHierarquiaInPlace();
                         return;
@@ -1007,6 +1039,8 @@ storage: {
                         if (localT) app.turmasTreinamentoList = JSON.parse(localT) || {};
                         const localH = localStorage.getItem('soft_harmony_backup');
                         if (localH) app.harmonyDeployList = JSON.parse(localH) || {};
+                        const localHc = localStorage.getItem('soft_harmony_checklist_backup');
+                        if (localHc) app.harmonyChecklistList = JSON.parse(localHc) || {};
                     } catch (e) {}
 
                     if (typeof localforage !== 'undefined') {
@@ -1041,7 +1075,7 @@ storage: {
                     }
 
                     const phase1Keys = ['config', 'users', 'operacoes', 'notifications'];
-                    const wave2AKeys = ['visaoGeralData', 'harmonyDeploy', 'laudos', 'atas', 'diario_bordo', 'turmas_treinamento', 'estoque', 'estoqueLogs', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'softlingo', 'softlingo_temas', 'anatel', 'biBancoHoras'];
+                    const wave2AKeys = ['visaoGeralData', 'harmonyDeploy', 'harmonyChecklist', 'laudos', 'atas', 'diario_bordo', 'turmas_treinamento', 'estoque', 'estoqueLogs', 'impressoesStats', 'csatNpsProvas', 'fcrProvas', 'reportes', 'softlingo', 'softlingo_temas', 'anatel', 'biBancoHoras'];
                     const wave2BKeys = ['events', 'impressoes', 'monitorias', 'apresentacoes'];
 
                     const fetchBatch = async (keysList, restDelayMs = 600, timeoutMs = 20000) => {
@@ -1937,6 +1971,49 @@ storage: {
                     }
                     return Promise.resolve();
                 },
+                saveHarmonyChecklist(singleId = null) {
+                    const list = app.harmonyChecklistList || {};
+                    try {
+                        localStorage.setItem('soft_harmony_checklist_backup', JSON.stringify(list));
+                        if (singleId && list[singleId]) {
+                            const histRaw = localStorage.getItem('soft_harmony_checklist_history');
+                            const hist = histRaw ? JSON.parse(histRaw) : {};
+                            if (!Array.isArray(hist[singleId])) hist[singleId] = [];
+                            hist[singleId].unshift({ savedAt: new Date().toISOString(), data: list[singleId] });
+                            hist[singleId] = hist[singleId].slice(0, 4);
+                            localStorage.setItem('soft_harmony_checklist_history', JSON.stringify(hist));
+                        }
+                    } catch (e) {}
+                    if (typeof firebase !== 'undefined' && firebase.database) {
+                        if (singleId) {
+                            const safePathKey = this.sanitizeFirebaseKey(singleId);
+                            if (safePathKey) {
+                                const item = list[singleId];
+                                if (!item) {
+                                    return firebase.database().ref('sistema_bonificacao/harmonyChecklist/' + safePathKey).remove().catch(err => {
+                                        console.warn("Aviso Firebase remove HarmonyChecklist:", err);
+                                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover projeto Harmony na nuvem.", "error");
+                                        throw err;
+                                    });
+                                }
+                                const sanitizedItem = this.sanitizeFirebaseObject(item);
+                                return firebase.database().ref('sistema_bonificacao/harmonyChecklist/' + safePathKey).set(sanitizedItem).catch(err => {
+                                    console.warn("Aviso Firebase saveHarmonyChecklist:", err);
+                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alterações da aba Harmony com a nuvem (cópia local mantida).", "error");
+                                    throw err;
+                                });
+                            }
+                        }
+                        if (Object.keys(list).length === 0) return Promise.resolve();
+                        const sanitized = this.sanitizeFirebaseObject(list);
+                        return firebase.database().ref('sistema_bonificacao/harmonyChecklist').set(sanitized).catch(err => {
+                            console.warn("Aviso Firebase saveHarmonyChecklist:", err);
+                            if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Harmony com a nuvem.", "error");
+                            throw err;
+                        });
+                    }
+                    return Promise.resolve();
+                },
                 saveCsatNpsProvas() {
                     try { localStorage.setItem('soft_csat_nps_provas', JSON.stringify(app.csatNpsProvas || {})); } catch (e) {}
                     if (typeof firebase !== 'undefined' && firebase.database) {
@@ -2020,6 +2097,9 @@ storage: {
                     });
                     if (isResp) return true;
                 }
+                if (tabId === 'harmony') {
+                    return this.isAdmin || tipo === 'Dev' || userAbas.includes('harmony');
+                }
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
@@ -2037,6 +2117,7 @@ storage: {
             estoqueItems: {},
             estoqueLogs: {},
             harmonyDeployList: {},
+            harmonyChecklistList: {},
             reportesList: {},
             fcrProvas: {},
             biBancoHorasData: null,
@@ -15118,7 +15199,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -15135,7 +15216,7 @@ storage: {
                         'Treinamento': [...new Set(['home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
-                        'Gerente': allIds
+                        'Gerente': allIds.filter(id => id !== 'harmony')
                     };
 
                     if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
@@ -15243,7 +15324,7 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
                         if (tipo !== 'Dev') {
                             savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
                         } else if (!savedTabs.includes('bi_banco_horas')) {
@@ -16073,6 +16154,7 @@ storage: {
                             data: { labels: ms.map(s => s.nome), datasets: [{ data: ms.map(s => parseFloat(s.pct) || 0), backgroundColor: cores, borderWidth: 0, borderRadius: 8, spacing: 3, hoverOffset: 8 }] },
                             options: {
                                 responsive: true, maintainAspectRatio: false, cutout: '62%',
+                                onHover: (e, els) => { if (e?.native?.target) e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
                                 onClick: (e, els) => { if (els.length) app.ui.openMaturidadeModal(els[0].index); },
                                 plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10, font: { size: 10, weight: 'bold' } } }, tooltip: { ...tt, callbacks: { label: x => ' ' + x.label + ': ' + x.parsed + '% dos operadores' } } }
                             }
@@ -16102,6 +16184,8 @@ storage: {
                             options: {
                                 animation: false,
                                 responsive: true, maintainAspectRatio: false,
+                                onHover: (e, els) => { if (e?.native?.target) e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+                                onClick: (e, els) => { if (els.length) app.ui.openMaturidadeModal(els[0].index); },
                                 plugins: {
                                     legend: { display: false },
                                     tooltip: { ...tt, filter: x => x.datasetIndex === 1, callbacks: { label: x => ' Média: ' + x.parsed.y.toFixed(1) + '%', afterLabel: x => ' ' + ms[x.dataIndex].qtd + ' operadores (' + ms[x.dataIndex].pct + '%)' } }
@@ -16347,25 +16431,34 @@ storage: {
                     }, 'tmaDispersao');
                 },
 
-                openMaturidadeModal(idx) {
+                openMaturidadeModal(idxOrNome) {
                     const data = app.analiseCSVDinamicoData?.consolidado;
-                    if (!data || !data.matConfig) return;
+                    if (!data || !data.matConfig || data.matConfig.length === 0) return;
                     const cfg = data.matConfig;
+                    const idx = (typeof idxOrNome === 'number')
+                        ? idxOrNome
+                        : (/^\d+$/.test(String(idxOrNome)) ? parseInt(idxOrNome, 10) : cfg.findIndex(c => String(c.nome || '').toLowerCase() === String(idxOrNome || '').toLowerCase()));
                     const nivel = cfg[idx];
                     if (!nivel) return;
+                    const prevMax = idx > 0 ? cfg[idx - 1].maxDias : -1;
+                    const faixaDesc = idx === 0
+                        ? `Até ${nivel.maxDias} dias`
+                        : (idx === cfg.length - 1 ? `Mais de ${prevMax} dias` : `De ${prevMax + 1} a ${nivel.maxDias} dias`);
                     const hexList = ['#f97316', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#ec4899'];
                     const colorMap = { slate: '#64748b', blue: '#3b82f6', emerald: '#10b981', orange: '#f97316', red: '#ef4444', purple: '#a855f7', teal: '#14b8a6', pink: '#ec4899' };
                     const hex = colorMap[nivel.cor] || hexList[idx % hexList.length];
-                    const lista = data.rankOperadores.filter(op => this._nivelMaturidade(op.nome, cfg) === idx);
-                    const mediaGrupo = lista.length > 0 ? (lista.reduce((a, o) => a + parseFloat(o.media), 0) / lista.length).toFixed(1) : '0.0';
+                    const lista = (data.rankOperadores || [])
+                        .filter(op => this._nivelMaturidade(op.nome, cfg) === idx)
+                        .sort((a, b) => (parseFloat(b.media) || 0) - (parseFloat(a.media) || 0));
+                    const mediaGrupo = lista.length > 0 ? (lista.reduce((a, o) => a + (parseFloat(o.media) || 0), 0) / lista.length).toFixed(1) : '0.0';
                     const meses = data.mesesDisponiveis || [];
                     const labels = meses.map(m => app.ui.formatMonthLabel(m).substring(0, 3));
                     const serie = meses.map(mes => {
                         let ativos = 0, doNivel = 0;
-                        data.rankOperadores.forEach(op => {
+                        (data.rankOperadores || []).forEach(op => {
                             const n = this._nivelMaturidade(op.nome, cfg);
                             if (n < 0) return;
-                            const d = data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes];
+                            const d = data.operadoresEvolutivo && data.operadoresEvolutivo[op.nome] && data.operadoresEvolutivo[op.nome][mes];
                             if (!d || !(d.count > 0)) return;
                             ativos++;
                             if (n === idx) doNivel++;
@@ -16377,7 +16470,7 @@ storage: {
                             <h4 class="text-[10px] uppercase font-bold text-slate-400 mb-2">Evolução % de Operadores neste Nível</h4>
                             <div class="w-full h-32 relative"><canvas id="maturidade-chart-canvas"></canvas></div>
                         </div>` : '';
-                    let htmlList = `<div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
+                    let htmlList = `<div class="space-y-3 max-h-[45vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
                     if (lista.length === 0) {
                         htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador neste nível de maturidade.</div>`;
                     } else {
@@ -16401,14 +16494,14 @@ storage: {
                     }
                     htmlList += `</div>`;
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-seedling mr-2" style="color:${hex}"></i> Maturidade: ${nivel.nome}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-seedling mr-2" style="color:${hex}"></i> N${idx + 1} · Maturidade: ${nivel.nome}`;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
-                            <p class="text-sm text-slate-600 dark:text-slate-400">Média do grupo: <strong style="color:${hex}">${mediaGrupo}</strong></p>
-                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.length}</p>
+                        <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Faixa: <strong style="color:${hex}">${faixaDesc}</strong> · Média do grupo: <strong style="color:${hex}">${mediaGrupo}</strong></p>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total: ${lista.length} operador(es)</p>
                         </div>
                         ${chartHtml}${htmlList}`;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl','max-w-4xl','max-w-5xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
                     const modalBox = document.querySelector('#global-modal > div');
                     modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
                     modalBox.classList.add('max-w-2xl');
@@ -17828,7 +17921,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -18079,6 +18172,7 @@ storage: {
                             else if(tabId === 'hierarquia' || tabId === 'operacoes') this.renderView_Hierarquia(viewDiv);
                             else if(tabId === 'span_operacoes') this.renderView_Span(viewDiv);
                             else if(tabId === 'implantacao_ia') this.renderView_ImplantacaoIA(viewDiv);
+                            else if(tabId === 'harmony') this.renderView_Harmony(viewDiv);
                             else if(tabId === 'cadastros') this.renderView_Cadastros(viewDiv);
                             else if(tabId === 'configuracoes') this.renderView_Config(viewDiv);
                             else if(tabId === 'calculadora') this.renderView_Calculadora(viewDiv);
@@ -21903,6 +21997,7 @@ storage: {
                         { id: 'impressoes', path: 'sistema_bonificacao/impressoes', desc: 'Fila e histórico de solicitações de impressão', data: app.impressoesList },
                         { id: 'impressoesStats', path: 'sistema_bonificacao/impressoesStats', desc: 'Estatísticas de arquivos e folhas gastas em impressão', data: app.impressoesStats },
                         { id: 'harmonyDeploy', path: 'sistema_bonificacao/harmonyDeploy', desc: 'Implantação de Inteligência Artificial nas operações', data: app.harmonyDeployList },
+                        { id: 'harmonyChecklist', path: 'sistema_bonificacao/harmonyChecklist', desc: 'Controle de perguntas Soft, Datalakes, prompts e versões Harmony', data: app.harmonyChecklistList },
                         { id: 'csatNpsProvas', path: 'sistema_bonificacao/csatNpsProvas', desc: 'Tentativas de prova, notas e certificações oficiais CSAT & NPS', data: app.csatNpsProvas },
                         { id: 'laudos', path: 'sistema_bonificacao/laudos', desc: 'Laudos técnicos e estudos especializados de Qualidade', data: app.laudosList },
                         { id: 'apresentacoes', path: 'sistema_bonificacao/apresentacoes', desc: 'Apresentações executivas salvas na nuvem', data: app.apresentacoesList },
@@ -34084,43 +34179,146 @@ storage: {
                     });
                     htmlList += `</div>`;
                 
-                    // Geração de Identificador Único para o Canvas Principal
-                    const uniqueCanvasId = 'canvas-falha-global-' + Date.now();
+                    // --- CÁLCULO DE DISTRIBUIÇÃO POR MATURIDADE NESTE QUESITO ---
+                    const matCfgRaw = (Array.isArray(data.matConfig) && data.matConfig.length > 0)
+                        ? data.matConfig
+                        : [
+                            { id: 'm1', nome: (app.ui?.getMatCfg?.().nomeM1) || 'BABY', maxDias: (app.ui?.getMatCfg?.().m1) || 90, cor: 'orange' },
+                            { id: 'm2', nome: (app.ui?.getMatCfg?.().nomeM2) || 'Júnior', maxDias: (app.ui?.getMatCfg?.().m2) || 180, cor: 'emerald' },
+                            { id: 'm3', nome: (app.ui?.getMatCfg?.().nomeM3) || 'Pleno', maxDias: (app.ui?.getMatCfg?.().m3) || 365, cor: 'blue' },
+                            { id: 'm4', nome: (app.ui?.getMatCfg?.().nomeM4) || 'Veterano', maxDias: 99999, cor: 'purple' }
+                        ];
+                    const matHexList = ['#f97316', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#ec4899'];
+                    const matColorMap = { slate: '#64748b', blue: '#3b82f6', emerald: '#10b981', orange: '#f97316', red: '#ef4444', purple: '#a855f7', teal: '#14b8a6', pink: '#ec4899' };
+                    const matErros = matCfgRaw.map((c, idx) => ({
+                        idx,
+                        label: `N${idx + 1} · ${c.nome}`,
+                        cor: matColorMap[c.cor] || matHexList[idx % matHexList.length],
+                        qtdErros: 0,
+                        qtdOps: 0
+                    }));
+                    let semRhErros = 0;
+                    falhaObj.operadores.forEach(op => {
+                        const lvl = app.ui._nivelMaturidade(op.nome, matCfgRaw);
+                        const qErr = Number(op.qtd) || 0;
+                        if (lvl >= 0 && matErros[lvl]) {
+                            matErros[lvl].qtdErros += qErr;
+                            matErros[lvl].qtdOps += 1;
+                        } else {
+                            semRhErros += qErr;
+                        }
+                    });
+                    const totalErrosMat = matErros.reduce((acc, m) => acc + m.qtdErros, 0);
+                    const topMat = matErros.reduce((best, cur) => (cur.qtdErros > best.qtdErros ? cur : best), matErros[0] || { label: '-', qtdErros: 0, cor: '#64748b' });
+                    const topMatPct = totalErrosMat > 0 ? ((topMat.qtdErros / totalErrosMat) * 100).toFixed(1) : '0.0';
+
+                    // Geração de Identificadores Únicos para os Canvases
+                    const tsModal = Date.now();
+                    const uniqueCanvasId = 'canvas-falha-global-' + tsModal;
+                    const uniqueMatCanvasId = 'canvas-falha-maturidade-' + tsModal;
 
                     document.getElementById('modal-title').innerHTML = ``;
                     document.getElementById('modal-content').innerHTML = `
-                        <div class="text-center mb-6 bg-slate-50 dark:bg-slate-800/30 p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
-                            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full ${type === 'critica' ? 'bg-red-100 text-red-500' : 'bg-orange-100 text-orange-500'} mb-4 text-3xl shadow-inner">
+                        <div class="text-center mb-5 bg-slate-50 dark:bg-slate-800/30 p-5 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
+                            <div class="inline-flex items-center justify-center w-14 h-14 rounded-full ${type === 'critica' ? 'bg-red-100 text-red-500' : 'bg-orange-100 text-orange-500'} mb-3 text-2xl shadow-inner">
                                 <i class="fa-solid ${type === 'critica' ? 'fa-circle-exclamation' : 'fa-layer-group'}"></i>
                             </div>
-                            <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-3">Histórico Global da Falha:</h2>
+                            <h2 class="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight mb-2">Histórico Global da Falha:</h2>
                             <div class="text-sm font-bold ${type === 'critica' ? 'text-red-500' : 'text-orange-500'} w-full line-clamp-3 leading-relaxed px-4 mb-4" title="${decodedNome}">"${decodedNome}"</div>
-                            
-                            <div class="text-[10px] uppercase font-bold tracking-widest text-slate-400 mt-4 mb-2 text-left">Variação % vs mês anterior (taxa por ligação monitorada)</div><div class="w-full h-64 relative bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-                                <canvas id="${uniqueCanvasId}"></canvas>
+
+                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 text-left">
+                                <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                    <div class="text-[10px] uppercase font-bold tracking-widest text-slate-400 mb-2">Variação % vs mês anterior (taxa por ligação monitorada)</div>
+                                    <div class="w-full h-56 relative flex-1"><canvas id="${uniqueCanvasId}"></canvas></div>
+                                </div>
+                                <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                                    <div class="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+                                        <span class="text-[10px] uppercase font-bold tracking-widest text-slate-400"><i class="fa-solid fa-seedling text-teal-500 mr-1"></i>Maturidade no Quesito</span>
+                                        ${totalErrosMat > 0 ? `<span class="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style="background:${topMat.cor}">Mais erra: ${topMat.label} (${topMatPct}%)</span>` : ''}
+                                    </div>
+                                    ${totalErrosMat > 0
+                                        ? `<div class="w-full h-52 relative flex-1"><canvas id="${uniqueMatCanvasId}"></canvas></div>
+                                           <div class="text-[10px] text-slate-400 mt-1.5 flex items-center justify-between">
+                                               <span>Maior ofensor: <strong style="color:${topMat.cor}">${topMat.label}</strong> (${topMat.qtdErros}x · ${topMat.qtdOps} op.)</span>
+                                               ${semRhErros > 0 ? `<span>Sem RH: ${semRhErros}x</span>` : ''}
+                                           </div>`
+                                        : `<div class="flex-1 min-h-[180px] flex flex-col items-center justify-center text-center p-4 text-xs text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">Sem tempo de casa (base de RH) vinculado aos operadores deste desvio.</div>`
+                                    }
+                                </div>
                             </div>
                         </div>
                         <div class="text-[10px] uppercase font-bold text-slate-400 tracking-widest mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 ml-1"><i class="fa-solid fa-users text-blue-500"></i> Operadores Mapeados (${falhaObj.operadores.length})</div>
                         ${htmlList}
                     `;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.replace('max-w-4xl', 'max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
-                    
+                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-5xl','max-w-4xl','max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-8 py-3.5 bg-slate-800 hover:bg-black text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-bold text-sm shadow-md transition-all w-full md:w-auto mt-2">Fechar Histórico</button>`;
+
                     const modalBox = document.querySelector('#global-modal > div');
-                    modalBox.classList.remove('max-w-lg', 'max-w-5xl'); 
-                    modalBox.classList.add('max-w-4xl');
+                    modalBox.classList.remove('max-w-lg', 'max-w-2xl', 'max-w-4xl');
+                    modalBox.classList.add('max-w-5xl');
                     document.getElementById('global-modal').classList.remove('hidden');
 
                     setTimeout(() => {
                         const ctxGlobal = document.getElementById(uniqueCanvasId);
                         if (ctxGlobal) {
                             if (window.chartFalhaGlobal) window.chartFalhaGlobal.destroy();
-                            let cColor = type === 'critica' ? '#ef4444' : '#f97316';
                             let valsF = chartDataValuesGlobal.slice();
                             if (!usarModoDiario && valsF.length === buckets.length && somaTotalGrafico > 0) {
                                 valsF = buckets.map((m, i) => { const L = ((data.mesesEvolutivo || {})[m] || {}).totalLinhas || 0; return L > 0 ? (chartDataValuesGlobal[i] / L) * 100 : 0; });
                             }
                             const varsF = valsF.map((v, i) => (i === 0 || !(valsF[i - 1] > 0)) ? 0 : parseFloat((((v - valsF[i - 1]) / valsF[i - 1]) * 100).toFixed(1)));
                             window.chartFalhaGlobal = app.ui.buildVarChart(ctxGlobal, labelsMeses, { vals: valsF, vars: varsF }, type === 'critica' ? 'falhasCriticas' : 'desviosTotais');
+                        }
+
+                        const ctxMat = document.getElementById(uniqueMatCanvasId);
+                        if (ctxMat && totalErrosMat > 0) {
+                            if (window.chartFalhaMaturidade) window.chartFalhaMaturidade.destroy();
+                            const isDark = document.documentElement.classList.contains('dark');
+                            const txtColor = isDark ? '#cbd5e1' : '#334155';
+                            const gridCor = isDark ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.22)';
+                            const pctsMat = matErros.map(m => parseFloat(((m.qtdErros / totalErrosMat) * 100).toFixed(1)));
+                            window.chartFalhaMaturidade = new Chart(ctxMat, {
+                                type: 'bar',
+                                data: {
+                                    labels: matErros.map(m => m.label),
+                                    datasets: [{
+                                        data: pctsMat,
+                                        backgroundColor: matErros.map(m => m.cor + 'dd'),
+                                        borderColor: matErros.map(m => m.cor),
+                                        borderWidth: 1.5,
+                                        borderRadius: 8,
+                                        barThickness: 22
+                                    }]
+                                },
+                                options: {
+                                    animation: false,
+                                    indexAxis: 'y',
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: { display: false },
+                                        tooltip: {
+                                            callbacks: {
+                                                label: (c) => {
+                                                    const m = matErros[c.dataIndex];
+                                                    return ` ${c.parsed.x}% dos erros (${m.qtdErros}x · ${m.qtdOps} operador(es))`;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: {
+                                            min: 0,
+                                            max: 100,
+                                            ticks: { color: txtColor, font: { size: 10 }, callback: v => v + '%' },
+                                            grid: { color: gridCor }
+                                        },
+                                        y: {
+                                            ticks: { color: txtColor, font: { size: 11, weight: 'bold' } },
+                                            grid: { display: false }
+                                        }
+                                    }
+                                }
+                            });
                         }
                     }, 300);
                 },
@@ -37483,74 +37681,6 @@ storage: {
                             }
 
                         }, 300);
-                },
-
-                openMaturidadeModal(nivel) {
-                    const data = app.analiseCSVDinamicoData?.consolidado;
-                    if(!data || !data.matConfig) return;
-
-                    let lista = [];
-                    let cor = ''; let bg = ''; let desc = ''; let icon = '';
-
-                    const cfgIndex = data.matConfig.findIndex(c => c.nome === nivel);
-                    if (cfgIndex > -1) {
-                        const cfg = data.matConfig[cfgIndex];
-                        const prevMax = cfgIndex > 0 ? data.matConfig[cfgIndex-1].maxDias : -1;
-                        
-                        data.rankOperadores.forEach(op => {
-                            let diasCasa = app.utils.getTempoCasaDoOperador(op.nome);
-                            if (diasCasa !== null) {
-                                // Se for o último nível, engloba tudo que for maior que o nível anterior
-                                if (cfgIndex === data.matConfig.length - 1 && diasCasa > prevMax) {
-                                    lista.push(op);
-                                } else if (diasCasa > prevMax && diasCasa <= cfg.maxDias) {
-                                    lista.push(op);
-                                }
-                            }
-                        });
-
-                        cor = `text-${cfg.cor}-500`;
-                        bg = `bg-${cfg.cor}-100 dark:bg-${cfg.cor}-900/30`;
-                        desc = cfgIndex === 0 ? `Até ${cfg.maxDias} dias` : (cfgIndex === data.matConfig.length - 1 ? `Mais de ${prevMax} dias` : `De ${prevMax + 1} a${cfg.maxDias} dias`);
-                        icon = cfg.icone;
-                    }
-
-                    let htmlList = `<div class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2 mt-4">`;
-                    if(lista.length === 0) {
-                        htmlList += `<div class="text-center text-slate-400 italic p-6 border border-slate-200 dark:border-slate-700 border-dashed rounded-xl">Nenhum operador neste nível de maturidade.</div>`;
-                    } else {
-                        // Ordena os operadores por nota
-                        lista.sort((a,b) => parseFloat(b.media) - parseFloat(a.media)).forEach((op, i) => {
-                            htmlList += `
-                                <div onclick="document.getElementById('global-modal').classList.add('hidden'); setTimeout(() => app.ui.openOperadorAnaliseModal('${encodeURIComponent(op.nome)}'), 300)" class="flex justify-between items-center bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
-                                    <div class="flex items-center gap-4">
-                                        <div class="w-10 h-10 rounded-full ${bg}${cor} flex items-center justify-center font-black text-sm shrink-0 border border-slate-200/50 shadow-sm">${i+1}</div>
-                                        <div class="font-bold text-slate-700 dark:text-slate-200 group-hover:${cor} transition-colors">${op.nome}</div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-0.5">Média Base</div>
-                                        <div class="font-black ${cor} text-xl">${op.media}</div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                    }
-                    htmlList += `</div>`;
-
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid ${icon}${cor}"></i> Nível de Maturidade: ${nivel}`;
-                    document.getElementById('modal-content').innerHTML = `
-                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-2">
-                            <p class="text-sm text-slate-600 dark:text-slate-400">Classificação: <strong class="${cor}">${desc}</strong></p>
-                            <p class="text-sm text-slate-600 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">Total de Operadores: ${lista.length}</p>
-                        </div>
-                        ${htmlList}
-                    `;
-                    document.getElementById('modal-actions').innerHTML = `<button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-2xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 rounded-xl font-bold text-sm transition-colors shadow-sm w-full md:w-auto">Fechar</button>`;
-
-                    const modalBox = document.querySelector('#global-modal > div');
-                    modalBox.classList.remove('max-w-3xl', 'max-w-5xl', 'max-w-4xl', 'max-w-lg');
-                    modalBox.classList.add('max-w-2xl');
-                    document.getElementById('global-modal').classList.remove('hidden');
                 },
 
                 exportOperadorAnaliseXLSX(nomeEncoded) {
@@ -47204,18 +47334,33 @@ storage: {
                 },
                 exportarAnalisePDF() {
                     document.getElementById('global-modal').classList.add('hidden');
-                    app.ui.showAlert("Preparando PDF Oficial...", "A janela de impressão do seu computador será aberta. Certifique-se de selecionar a opção <b>'Salvar como PDF'</b>. O documento terá paginação perfeita, sem cortes e com texto selecionável!", "success");
+                    app.ui.showAlert("Preparando PDF Oficial...", "A janela de impressão do seu computador será aberta. Certifique-se de selecionar a opção <b>'Salvar como PDF'</b> (Paisagem / A4) para preservar exatamente a mesma resolução da página!", "success");
 
-                    const oldMode = app.ui.analiseEditMode;
-                    if (!oldMode) app.ui.toggleEditModeAnalise();
+                    const oldMode = !!app.ui.analiseEditMode;
+                    const headerEl = document.querySelector('header');
+                    if (!oldMode) {
+                        app.ui.analiseEditMode = true;
+                        if (headerEl) headerEl.style.display = 'none';
+                        app.ui.renderTab('analise_csv_dinamico', true);
+                    }
 
                     setTimeout(() => {
                         window.scrollTo(0, 0);
                         const area = document.getElementById('view-container-analise_csv_dinamico');
                         if (!area) return;
-                        area.classList.add('pdf-clean-mode');
+
                         const wasDark = document.documentElement.classList.contains('dark');
                         if (wasDark) document.documentElement.classList.remove('dark');
+
+                        const prevStyles = {
+                            width: area.style.width,
+                            maxWidth: area.style.maxWidth,
+                            margin: area.style.margin
+                        };
+                        area.classList.add('pdf-clean-mode');
+                        area.style.width = '1360px';
+                        area.style.maxWidth = '1360px';
+                        area.style.margin = '0 auto';
 
                         const detailsOpened = [];
                         area.querySelectorAll('details:not([open])').forEach(d => {
@@ -47225,38 +47370,111 @@ storage: {
                         area.querySelectorAll('.scroll-reveal-card, .reveal-item').forEach(el => {
                             el.classList.add('is-visible', 'show-item');
                         });
-                        
+
+                        const oldStyle = document.getElementById('pdf-fix-styles-analise');
+                        if (oldStyle) oldStyle.remove();
                         const style = document.createElement('style');
                         style.id = 'pdf-fix-styles-analise';
                         style.innerHTML = `
                             @media print {
-                                @page { size: A4 landscape; margin: 10mm; }
-                                html, body { background: #ffffff !important; color: #0f172a !important; height: auto !important; max-height: none !important; overflow: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                                #view-app, main, #content-container, #view-container-analise_csv_dinamico { position: static !important; display: block !important; padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; height: auto !important; max-height: none !important; overflow: visible !important; visibility: visible !important; opacity: 1 !important; transform: none !important; }
+                                @page { size: A4 landscape; margin: 8mm; }
+                                html, body { background: #ffffff !important; color: #0f172a !important; width: auto !important; height: auto !important; max-height: none !important; overflow: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                                #view-app, main, #content-container { position: static !important; display: block !important; padding: 0 !important; margin: 0 !important; max-width: none !important; width: 100% !important; height: auto !important; max-height: none !important; overflow: visible !important; transform: none !important; }
+                                #view-container-analise_csv_dinamico, #view-container-analise_csv_dinamico.pdf-clean-mode {
+                                    position: static !important;
+                                    display: block !important;
+                                    width: 1360px !important;
+                                    max-width: 1360px !important;
+                                    margin: 0 auto !important;
+                                    padding: 0 8px !important;
+                                    zoom: 0.72 !important;
+                                    height: auto !important;
+                                    max-height: none !important;
+                                    overflow: visible !important;
+                                    visibility: visible !important;
+                                    opacity: 1 !important;
+                                    transform: none !important;
+                                }
+                                .pdf-clean-mode .chapter-marker,
+                                .pdf-clean-mode .hideable-box,
+                                .chapter-marker,
+                                .hideable-box {
+                                    content-visibility: visible !important;
+                                    contain-intrinsic-size: auto !important;
+                                    contain: none !important;
+                                    visibility: visible !important;
+                                    opacity: 1 !important;
+                                    overflow: visible !important;
+                                    max-height: none !important;
+                                }
                                 .pdf-clean-mode .scroll-reveal-card, .pdf-clean-mode .reveal-item, .scroll-reveal-card, .reveal-item { opacity: 1 !important; transform: none !important; visibility: visible !important; transition: none !important; }
-                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], #btn-sair-apresentacao, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
-                                .pdf-clean-mode .hideable-box { visibility: visible !important; opacity: 1 !important; overflow: visible !important; max-height: none !important; }
+                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .btn-hide-chapter, #btn-sair-apresentacao, #particles-js, #story-dynamic-bg, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
                                 .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
-                                .pdf-clean-mode .glass-card, .chapter-marker, details { box-shadow: none !important; border: 1px solid rgba(203, 213, 225, 0.9) !important; background: #ffffff !important; color: #0f172a !important; page-break-inside: avoid !important; break-inside: avoid !important; display: block !important; margin-bottom: 18px !important; }
-                                .pdf-clean-mode canvas { max-width: 100% !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+                                .pdf-clean-mode .chapter-marker {
+                                    margin-top: 24px !important;
+                                    margin-bottom: 14px !important;
+                                    page-break-inside: avoid !important;
+                                    break-inside: avoid !important;
+                                    page-break-after: avoid !important;
+                                    break-after: avoid !important;
+                                }
+                                .pdf-clean-mode .glass-card,
+                                .pdf-clean-mode .rounded-2xl,
+                                .pdf-clean-mode .rounded-3xl,
+                                .pdf-clean-mode .hideable-box .grid > div,
+                                .pdf-clean-mode details,
+                                .pdf-clean-mode table tr {
+                                    box-shadow: none !important;
+                                    page-break-inside: avoid !important;
+                                    break-inside: avoid !important;
+                                }
+                                .pdf-clean-mode canvas {
+                                    max-width: 100% !important;
+                                    page-break-inside: avoid !important;
+                                    break-inside: avoid !important;
+                                }
                                 body .pdf-clean-mode .hidden-in-print, body .hidden-in-print { display: none !important; opacity: 0 !important; visibility: hidden !important; }
                                 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                             }
                         `;
                         document.head.appendChild(style);
-                        
+
+                        try {
+                            if (window.Chart && window.Chart.instances) {
+                                Object.values(window.Chart.instances).forEach(inst => {
+                                    if (inst && typeof inst.resize === 'function') inst.resize();
+                                });
+                            }
+                            window.dispatchEvent(new Event('resize'));
+                        } catch (e) {}
+
                         setTimeout(() => {
                             window.print();
                             setTimeout(() => {
                                 area.classList.remove('pdf-clean-mode');
+                                area.style.width = prevStyles.width;
+                                area.style.maxWidth = prevStyles.maxWidth;
+                                area.style.margin = prevStyles.margin;
                                 detailsOpened.forEach(d => d.removeAttribute('open'));
                                 if (wasDark) document.documentElement.classList.add('dark');
                                 const fixStyle = document.getElementById('pdf-fix-styles-analise');
                                 if (fixStyle) fixStyle.remove();
-                                if (!oldMode) app.ui.toggleEditModeAnalise();
-                            }, 1000);
-                        }, 600);
-                    }, 500);
+                                if (!oldMode) {
+                                    app.ui.analiseEditMode = false;
+                                    if (headerEl) headerEl.style.display = '';
+                                    app.ui.renderTab('analise_csv_dinamico', true);
+                                } else {
+                                    try {
+                                        if (window.Chart && window.Chart.instances) {
+                                            Object.values(window.Chart.instances).forEach(inst => {
+                                                if (inst && typeof inst.resize === 'function') inst.resize();
+                                            });
+                                        }
+                                    } catch (e) {}
+                                }
+                            }, 800);
+                        }, 300);
+                    }, 850);
                 },
 
                 confirmarNomeCSV() {
@@ -54325,6 +54543,16 @@ Object.assign(app.ui, {
                                 desc: 'Cronograma interativo de implantação, fases, marcos, troca de posições e extração em PDF executivo.'
                             },
                             {
+                                id: 'harmony',
+                                title: 'Harmony (Perguntas & Prompts)',
+                                cat: 'gestao',
+                                catLabel: 'Dev & Governança IA',
+                                icon: 'fa-robot',
+                                badge: 'Harmony',
+                                iconBg: 'bg-gradient-to-br from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30',
+                                desc: 'Controle de perguntas Soft por operação e datalake, pesos, flags Harmony, prompts V1..Vn e auditoria de insights.'
+                            },
+                            {
                                 id: 'treinamentos',
                                 title: 'Treinamentos & Avaliações',
                                 cat: 'treinamento',
@@ -57741,7 +57969,1667 @@ Object.assign(app.ui, {
 
                         setupCwEvents();
                     },
+
+                    renderView_Harmony(container) {
+                        if (!container) {
+                            container = document.getElementById('view-container-harmony') || document.getElementById('content-container');
+                        }
+                        if (!container) return;
+                        if (!app.hasAdminAccess('harmony')) {
+                            container.innerHTML = `
+                                <div class="max-w-xl mx-auto my-12 p-10 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center text-2xl">
+                                        <i class="fa-solid fa-lock"></i>
+                                    </div>
+                                    <h3 class="text-lg font-extrabold text-slate-800 dark:text-white">Acesso Exclusivo Dev / Autorizados</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                                        A aba <strong>Harmony</strong> é liberada inicialmente para o perfil <strong>Dev</strong> e para usuários autorizados nas permissões de acesso.
+                                    </p>
+                                </div>`;
+                            return;
+                        }
+                        if (app.harmonyCtrl && typeof app.harmonyCtrl.render === 'function') {
+                            app.harmonyCtrl.render(container);
+                        }
+                    },
+
+                    _refreshHarmonyInPlace() {
+                        const viewDiv = document.getElementById('view-container-harmony');
+                        if (!viewDiv) {
+                            if (app.currentTab === 'harmony') this.renderTab('harmony', true);
+                            return;
+                        }
+                        const scrollX = window.scrollX || document.documentElement.scrollLeft || 0;
+                        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+                        if (app.harmonyCtrl) {
+                            viewDiv.querySelectorAll('details[data-hproj-details]').forEach(det => {
+                                const pid = det.getAttribute('data-hproj-details');
+                                if (pid) app.harmonyCtrl.openProjects[pid] = !!det.open;
+                            });
+                            viewDiv.querySelectorAll('details[data-hop-details]').forEach(det => {
+                                const op = det.getAttribute('data-hop-details');
+                                if (op) app.harmonyCtrl.openOps[op] = !!det.open;
+                            });
+                        }
+                        const prevMinH = viewDiv.offsetHeight;
+                        if (prevMinH > 0) viewDiv.style.minHeight = prevMinH + 'px';
+                        viewDiv.classList.remove('animate-fade-in');
+                        this.renderView_Harmony(viewDiv);
+                        try {
+                            window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                        } catch (e) {
+                            window.scrollTo(scrollX, scrollY);
+                        }
+                        requestAnimationFrame(() => {
+                            try {
+                                window.scrollTo({ left: scrollX, top: scrollY, behavior: 'instant' });
+                            } catch (e) {
+                                window.scrollTo(scrollX, scrollY);
+                            }
+                            viewDiv.style.minHeight = '';
+                        });
+                    }
 });
+
+// =========================================================================
+// MÓDULO HARMONY: CONTROLE DE PERGUNTAS SOFT, DATALAKES, PROMPTS V1..VN & AUDITORIA
+// =========================================================================
+app.harmonyCtrl = {
+    filtroOperacao: 'TODAS',
+    filtroFlag: 'TODAS',
+    filtroBusca: '',
+    openOps: {},
+    openProjects: {},
+    viewingVersions: {},
+    _debounceTimers: {},
+
+    _esc(val) {
+        if (app.utils && typeof app.utils.escapeHtml === 'function') {
+            return app.utils.escapeHtml(val == null ? '' : String(val));
+        }
+        return String(val == null ? '' : val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    _normStr(s) {
+        return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    },
+
+    _genId(prefix = 'hid') {
+        return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    },
+
+    _ensureList() {
+        if (!app.harmonyChecklistList || typeof app.harmonyChecklistList !== 'object') {
+            app.harmonyChecklistList = {};
+        }
+        return app.harmonyChecklistList;
+    },
+
+    _getProjetos() {
+        const list = this._ensureList();
+        return Object.entries(list)
+            .filter(([, p]) => p && typeof p === 'object')
+            .map(([k, p]) => {
+                if (!p.id) p.id = k;
+                if (!Array.isArray(p.perguntas)) p.perguntas = [];
+                return p;
+            })
+            .sort((a, b) => {
+                const opCmp = String(a.operacao || 'GERAL').localeCompare(String(b.operacao || 'GERAL'));
+                if (opCmp !== 0) return opCmp;
+                return String(a.nomeProjeto || a.nomeDatalake || '').localeCompare(String(b.nomeProjeto || b.nomeDatalake || ''));
+            });
+    },
+
+    _getProj(projId) {
+        const list = this._ensureList();
+        const p = list[projId];
+        if (!p) return null;
+        if (!p.id) p.id = projId;
+        if (!Array.isArray(p.perguntas)) p.perguntas = [];
+        return p;
+    },
+
+    _getQuestion(projId, qId) {
+        const p = this._getProj(projId);
+        if (!p) return { p: null, q: null, idx: -1 };
+        const idx = p.perguntas.findIndex(item => item && item.id === qId);
+        return { p, q: idx >= 0 ? p.perguntas[idx] : null, idx };
+    },
+
+    _ensureVersions(q) {
+        if (!q) return [];
+        if (!Array.isArray(q.versoes)) q.versoes = [];
+        q.versoes = q.versoes
+            .filter(v => v && typeof v === 'object')
+            .map(v => ({
+                versao: Math.max(1, parseInt(v.versao, 10) || 1),
+                dataRegistro: v.dataRegistro || new Date().toISOString().split('T')[0],
+                statusVersao: v.statusVersao || 'Em validação',
+                promptTexto: v.promptTexto || '',
+                notasEvolucao: v.notasEvolucao || '',
+                problemasInsight: Array.isArray(v.problemasInsight) ? v.problemasInsight.filter(Boolean) : []
+            }))
+            .sort((a, b) => a.versao - b.versao);
+
+        const vAtual = Math.max(1, parseInt(q.versaoAtual, 10) || 1);
+        q.versaoAtual = vAtual;
+        if (q.versoes.length === 0) {
+            q.versoes.push({
+                versao: 1,
+                dataRegistro: new Date().toISOString().split('T')[0],
+                statusVersao: 'Em validação',
+                promptTexto: '',
+                notasEvolucao: '',
+                problemasInsight: []
+            });
+        }
+        if (!q.versoes.some(v => v.versao === vAtual)) {
+            q.versoes.push({
+                versao: vAtual,
+                dataRegistro: new Date().toISOString().split('T')[0],
+                statusVersao: 'Em validação',
+                promptTexto: '',
+                notasEvolucao: '',
+                problemasInsight: []
+            });
+            q.versoes.sort((a, b) => a.versao - b.versao);
+        }
+        return q.versoes;
+    },
+
+    _getViewVersionNum(q) {
+        const versoes = this._ensureVersions(q);
+        const saved = parseInt(this.viewingVersions[q.id], 10);
+        if (saved && versoes.some(v => v.versao === saved)) return saved;
+        return Math.max(1, parseInt(q.versaoAtual, 10) || 1);
+    },
+
+    _getOperacoesSistema() {
+        const opsSet = new Set();
+        try {
+            if (typeof app.getOperacoesSetoriais === 'function') {
+                (app.getOperacoesSetoriais() || []).forEach(o => {
+                    const nome = typeof o === 'string' ? o : o?.nome;
+                    if (nome) opsSet.add(String(nome).trim().toUpperCase());
+                });
+            }
+            if (app.operacoesList) {
+                Object.values(app.operacoesList).forEach(op => {
+                    if (op && op.nome) opsSet.add(String(op.nome).trim().toUpperCase());
+                });
+            }
+            this._getProjetos().forEach(p => {
+                if (p.operacao) opsSet.add(String(p.operacao).trim().toUpperCase());
+            });
+        } catch (e) {}
+        return Array.from(opsSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    },
+
+    _setSyncBadge(projId, state) {
+        const el = document.getElementById('harmony-sync-badge-' + projId);
+        if (!el) return;
+        if (state === 'saving') {
+            el.className = 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-800';
+            el.innerHTML = '<i class="fa-solid fa-rotate fa-spin mr-1"></i>Salvando...';
+        } else if (state === 'error') {
+            el.className = 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800';
+            el.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i>Erro nuvem (salvo local)';
+        } else {
+            el.className = 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800';
+            el.innerHTML = '<i class="fa-solid fa-cloud-check mr-1"></i>Salvo';
+        }
+    },
+
+    _saveProjLocal(proj) {
+        if (!proj) return;
+        proj.atualizadoEm = Date.now();
+        try {
+            localStorage.setItem('soft_harmony_checklist_backup', JSON.stringify(this._ensureList()));
+        } catch (e) {}
+    },
+
+    _saveProjDebounced(projId, delayMs = 650) {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        this._saveProjLocal(proj);
+        this._setSyncBadge(projId, 'saving');
+        if (this._debounceTimers[projId]) {
+            clearTimeout(this._debounceTimers[projId]);
+        }
+        this._debounceTimers[projId] = setTimeout(() => {
+            delete this._debounceTimers[projId];
+            this._persistToCloud(projId);
+        }, delayMs);
+    },
+
+    _saveProjNow(projId) {
+        const proj = this._getProj(projId);
+        if (this._debounceTimers[projId]) {
+            clearTimeout(this._debounceTimers[projId]);
+            delete this._debounceTimers[projId];
+        }
+        if (proj) this._saveProjLocal(proj);
+        return this._persistToCloud(projId);
+    },
+
+    _persistToCloud(projId) {
+        this._setSyncBadge(projId, 'saving');
+        if (app.storage && typeof app.storage.saveHarmonyChecklist === 'function') {
+            return app.storage.saveHarmonyChecklist(projId).then(() => {
+                this._setSyncBadge(projId, 'saved');
+            }).catch(() => {
+                this._setSyncBadge(projId, 'error');
+            });
+        }
+        return Promise.resolve();
+    },
+
+    _calcStats(projetos) {
+        let totalPerguntas = 0;
+        let naoEntrou = 0;
+        let metadados = 0;
+        let inclusa = 0;
+        let minutagem = 0;
+        let minutagemResolvida = 0;
+        let errosPendentes = 0;
+
+        projetos.forEach(p => {
+            (p.perguntas || []).forEach(q => {
+                if (!q) return;
+                totalPerguntas++;
+                if (q.flag === 'nao_entrou') naoEntrou++;
+                else if (q.flag === 'metadados') metadados++;
+                else if (q.flag === 'minutagem') {
+                    minutagem++;
+                    if (q.minutagemResolvida) minutagemResolvida++;
+                } else {
+                    inclusa++;
+                }
+                if (Array.isArray(q.versoes)) {
+                    q.versoes.forEach(v => {
+                        if (Array.isArray(v.problemasInsight)) {
+                            errosPendentes += v.problemasInsight.filter(pr => pr && !pr.resolvido).length;
+                        }
+                    });
+                }
+            });
+        });
+
+        const pctInclusa = totalPerguntas > 0 ? Math.round((inclusa / totalPerguntas) * 100) : 0;
+        return {
+            totalProjetos: projetos.length,
+            totalPerguntas,
+            naoEntrou,
+            metadados,
+            inclusa,
+            pctInclusa,
+            minutagem,
+            minutagemResolvida,
+            errosPendentes
+        };
+    },
+
+    _getFlagMeta(flag) {
+        const map = {
+            nao_entrou: {
+                label: 'NÃO ENTROU NA HARMONY',
+                badgeClass: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+                selectClass: 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200',
+                icon: 'fa-ban'
+            },
+            metadados: {
+                label: 'META DADOS',
+                badgeClass: 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800',
+                selectClass: 'bg-violet-50 dark:bg-violet-950/40 border-violet-300 dark:border-violet-700 text-violet-800 dark:text-violet-200',
+                icon: 'fa-tags'
+            },
+            inclusa: {
+                label: 'INCLUSA NA HARMONY',
+                badgeClass: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                selectClass: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200',
+                icon: 'fa-circle-check'
+            },
+            minutagem: {
+                label: 'MINUTAGEM',
+                badgeClass: 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+                selectClass: 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200',
+                icon: 'fa-stopwatch'
+            }
+        };
+        return map[flag] || map.inclusa;
+    },
+
+    _getProblemTypeMeta(tipo) {
+        if (tipo === 'problema_transcricao') {
+            return {
+                label: 'Problema na Transcrição',
+                selectClass: 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200'
+            };
+        }
+        if (tipo === 'calibracao_prompt') {
+            return {
+                label: 'Calibração de Prompt',
+                selectClass: 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-200'
+            };
+        }
+        return {
+            label: 'Não classificado',
+            selectClass: 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+        };
+    },
+
+    _renderKpisHtml(allProjetos) {
+        const st = this._calcStats(allProjetos);
+        return `
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Datalakes / Form.</span><i class="fa-solid fa-database text-indigo-500"></i>
+                    </div>
+                    <div class="text-xl font-black text-slate-800 dark:text-white tabular-nums mt-1">${st.totalProjetos}</div>
+                    <div class="text-[10px] text-slate-400 tabular-nums">${st.totalPerguntas} pergunta(s)</div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 shadow-xs">
+                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Inclusas Harmony</span><i class="fa-solid fa-circle-check text-emerald-500"></i>
+                    </div>
+                    <div class="text-xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums mt-1">${st.inclusa} <span class="text-xs font-bold opacity-75">(${st.pctInclusa}%)</span></div>
+                    <div class="text-[10px] text-slate-400">Com prompt &amp; versão</div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-violet-200/80 dark:border-violet-800/60 shadow-xs">
+                    <div class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Meta Dados</span><i class="fa-solid fa-tags text-violet-500"></i>
+                    </div>
+                    <div class="text-xl font-black text-violet-700 dark:text-violet-300 tabular-nums mt-1">${st.metadados}</div>
+                    <div class="text-[10px] text-slate-400">Via metadado mapeado</div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-sky-200/80 dark:border-sky-800/60 shadow-xs">
+                    <div class="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Minutagem</span><i class="fa-solid fa-stopwatch text-sky-500"></i>
+                    </div>
+                    <div class="text-xl font-black text-sky-700 dark:text-sky-300 tabular-nums mt-1">${st.minutagemResolvida}<span class="text-xs font-bold opacity-75">/${st.minutagem}</span></div>
+                    <div class="text-[10px] text-slate-400">Entregues pela Harmony</div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-rose-200/80 dark:border-rose-800/60 shadow-xs">
+                    <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Não Entrou</span><i class="fa-solid fa-ban text-rose-500"></i>
+                    </div>
+                    <div class="text-xl font-black text-rose-700 dark:text-rose-300 tabular-nums mt-1">${st.naoEntrou}</div>
+                    <div class="text-[10px] text-slate-400">Com justificativa</div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border ${st.errosPendentes > 0 ? 'border-amber-300 dark:border-amber-700' : 'border-slate-200 dark:border-slate-700'} shadow-xs">
+                    <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Erros Insight</span><i class="fa-solid fa-bug text-amber-500"></i>
+                    </div>
+                    <div class="text-xl font-black ${st.errosPendentes > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200'} tabular-nums mt-1">${st.errosPendentes}</div>
+                    <div class="text-[10px] text-slate-400">Pendentes de ajuste</div>
+                </div>
+            </div>
+        `;
+    },
+
+    _renderProjSummaryBadgeHtml(proj) {
+        const list = Array.isArray(proj.perguntas) ? proj.perguntas : [];
+        const inc = list.filter(q => q && q.flag === 'inclusa').length;
+        const meta = list.filter(q => q && q.flag === 'metadados').length;
+        const minOk = list.filter(q => q && q.flag === 'minutagem' && q.minutagemResolvida).length;
+        const minTot = list.filter(q => q && q.flag === 'minutagem').length;
+        const nao = list.filter(q => q && q.flag === 'nao_entrou').length;
+        let pendErr = 0;
+        list.forEach(q => {
+            if (q && Array.isArray(q.versoes)) {
+                q.versoes.forEach(v => {
+                    if (Array.isArray(v.problemasInsight)) pendErr += v.problemasInsight.filter(pr => pr && !pr.resolvido).length;
+                });
+            }
+        });
+        return `
+            <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-extrabold tabular-nums">${list.length} perg.</span>
+            <span class="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold tabular-nums">${inc} inclusas</span>
+            ${meta > 0 ? `<span class="px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 text-[10px] font-bold tabular-nums">${meta} metadados</span>` : ''}
+            ${minTot > 0 ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[10px] font-bold tabular-nums">${minOk}/${minTot} minut.</span>` : ''}
+            ${nao > 0 ? `<span class="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[10px] font-bold tabular-nums">${nao} fora</span>` : ''}
+            ${pendErr > 0 ? `<span class="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-extrabold tabular-nums"><i class="fa-solid fa-bug mr-1"></i>${pendErr} erro(s)</span>` : ''}
+        `;
+    },
+
+    _renderQuestionConditionalHtml(proj, q) {
+        const esc = (v) => this._esc(v);
+        const pid = esc(proj.id);
+        const qid = esc(q.id);
+        const flag = q.flag || 'inclusa';
+
+        if (flag === 'nao_entrou') {
+            return `
+                <div class="p-3.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/70 space-y-2">
+                    <label class="block text-[11px] font-extrabold text-rose-800 dark:text-rose-300 uppercase tracking-wider">
+                        <i class="fa-solid fa-circle-exclamation mr-1"></i> Motivo / Explicação (Por que não entrou na Harmony)
+                    </label>
+                    <textarea rows="2"
+                        oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'motivoNaoEntrou', this.value)"
+                        onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                        placeholder="Explique detalhadamente por que esta pergunta da Soft não entrou na Harmony (ex: análise de tela, regra sistêmica externa, fora do escopo de áudio)..."
+                        class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500 resize-y">${esc(q.motivoNaoEntrou || '')}</textarea>
+                </div>
+            `;
+        }
+
+        if (flag === 'metadados') {
+            return `
+                <div class="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800/70 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] font-extrabold text-violet-800 dark:text-violet-300 uppercase tracking-wider mb-1">
+                            <i class="fa-solid fa-tags mr-1"></i> Qual Metadado?
+                        </label>
+                        <input type="text"
+                            value="${esc(q.qualMetadado || '')}"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'qualMetadado', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Ex: Campo URA_MOTIVO, CPF_VALIDADO, TABULACAO_FINAL..."
+                            class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-800 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-violet-500">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider mb-1">
+                            Origem / Observação do Metadado
+                        </label>
+                        <input type="text"
+                            value="${esc(q.metadadoDetalhe || '')}"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'metadadoDetalhe', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Ex: Integrado via API CTI / Telefonia..."
+                            class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-violet-500">
+                    </div>
+                </div>
+            `;
+        }
+
+        if (flag === 'minutagem') {
+            const entregue = !!q.minutagemResolvida;
+            return `
+                <div class="p-3.5 rounded-2xl bg-sky-50/70 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/70 space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                        <div class="md:col-span-5">
+                            <label class="block text-[11px] font-extrabold text-sky-800 dark:text-sky-300 uppercase tracking-wider mb-1">
+                                <i class="fa-solid fa-stopwatch mr-1"></i> Status na Harmony (Minutagem)
+                            </label>
+                            <select onchange="app.harmonyCtrl.setMinutagemStatus('${pid}', '${qid}', this.value === 'true')"
+                                class="w-full px-3 py-2 rounded-xl border text-xs font-extrabold outline-none cursor-pointer ${entregue ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'}">
+                                <option value="false" ${!entregue ? 'selected' : ''}>Pendente — Harmony ainda não resolveu/entregou</option>
+                                <option value="true" ${entregue ? 'selected' : ''}>Resolvido — Harmony já resolveu e entregou</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-[11px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider mb-1">
+                                Data Entrega / Previsão
+                            </label>
+                            <input type="date"
+                                value="${esc(q.minutagemDataEntrega || '')}"
+                                oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'minutagemDataEntrega', this.value)"
+                                onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-800 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500">
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-[11px] font-bold text-sky-700 dark:text-sky-300 uppercase tracking-wider mb-1">
+                                Detalhe / Regra da Minutagem
+                            </label>
+                            <input type="text"
+                                value="${esc(q.minutagemObservacao || '')}"
+                                oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'minutagemObservacao', this.value)"
+                                onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                placeholder="Ex: Tolerância de 45s de silêncio ou saudação até 10s..."
+                                class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-sky-200 dark:border-sky-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-sky-500">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Default: INCLUSA NA HARMONY (Como ficou + Versão V1..V∞ + Evolução de Prompts & Problemas por Ligação)
+        const versoes = this._ensureVersions(q);
+        const vAtual = Math.max(1, parseInt(q.versaoAtual, 10) || 1);
+        const vView = this._getViewVersionNum(q);
+        const vObj = versoes.find(v => v.versao === vView) || versoes[0];
+        const maxV = Math.max(vAtual, versoes.reduce((acc, v) => Math.max(acc, v.versao || 1), 1));
+        const selectMax = maxV + 2;
+        const versionOptions = [];
+        for (let n = 1; n <= selectMax; n++) {
+            versionOptions.push(`<option value="${n}" ${vAtual === n ? 'selected' : ''}>V${n}</option>`);
+        }
+
+        const totalErrVersao = Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.length : 0;
+        const pendErrVersao = Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.filter(pr => pr && !pr.resolvido).length : 0;
+        const calibCount = Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.filter(pr => pr && pr.tipoProblema === 'calibracao_prompt').length : 0;
+        const transcCount = Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.filter(pr => pr && pr.tipoProblema === 'problema_transcricao').length : 0;
+
+        const versionTabsHtml = versoes.map(v => {
+            const isViewing = (v.versao === vView);
+            const isCurrentActive = (v.versao === vAtual);
+            const errCount = Array.isArray(v.problemasInsight) ? v.problemasInsight.filter(pr => pr && !pr.resolvido).length : 0;
+            return `
+                <button type="button" onclick="app.harmonyCtrl.selectViewVersion('${pid}', '${qid}', ${v.versao})"
+                    class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1.5 cursor-pointer border ${isViewing
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                    <span>V${v.versao}</span>
+                    ${isCurrentActive ? `<span class="px-1 py-0.2 rounded text-[9px] font-black ${isViewing ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'}">ATIVA</span>` : ''}
+                    ${errCount > 0 ? `<span class="px-1.5 py-0.2 rounded-full text-[9px] font-black tabular-nums ${isViewing ? 'bg-amber-300 text-slate-900' : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'}">${errCount}</span>` : ''}
+                </button>
+            `;
+        }).join('');
+
+        const problemasHtml = totalErrVersao === 0
+            ? `<div class="p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-[11px] text-slate-400">Nenhum erro/problema de insight registrado na V${vObj.versao}. Use os campos abaixo para listar IDs de ligação com divergência antes de evoluir para a V${vObj.versao + 1}.</div>`
+            : `<div class="space-y-1.5">
+                ${vObj.problemasInsight.map(pr => {
+                    const prid = esc(pr.id);
+                    const res = !!pr.resolvido;
+                    const tipoProb = pr.tipoProblema || '';
+                    const tMeta = this._getProblemTypeMeta(tipoProb);
+                    return `
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-2 rounded-xl border ${res ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60' : 'bg-white dark:bg-slate-900 border-amber-200/90 dark:border-amber-800/70'}">
+                            <div class="flex items-center gap-2 shrink-0">
+                                <label class="inline-flex items-center gap-1.5 cursor-pointer select-none" title="Marcar se este problema já foi resolvido">
+                                    <input type="checkbox" ${res ? 'checked' : ''} onchange="app.harmonyCtrl.toggleProblemResolved('${pid}', '${qid}', ${vObj.versao}, '${prid}', this.checked)" class="w-4 h-4 rounded accent-emerald-600 cursor-pointer">
+                                    <span class="text-[10px] font-extrabold uppercase ${res ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}">${res ? 'Resolvido' : 'Pendente'}</span>
+                                </label>
+                            </div>
+                            <div class="sm:w-40 shrink-0">
+                                <input type="text" value="${esc(pr.idLigacao || '')}"
+                                    oninput="app.harmonyCtrl.updateProblemField('${pid}', '${qid}', ${vObj.versao}, '${prid}', 'idLigacao', this.value)"
+                                    onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                    placeholder="ID da ligação..."
+                                    class="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 ${res ? 'line-through opacity-70' : ''}">
+                            </div>
+                            <div class="sm:w-48 shrink-0">
+                                <select onchange="app.harmonyCtrl.changeProblemType('${pid}', '${qid}', ${vObj.versao}, '${prid}', this.value)"
+                                    class="w-full px-2.5 py-1.5 rounded-lg border text-[11px] font-extrabold outline-none cursor-pointer ${tMeta.selectClass}" title="Classificar origem do erro deste ID">
+                                    ${!tipoProb ? '<option value="" selected>Classificar causa...</option>' : ''}
+                                    <option value="calibracao_prompt" ${tipoProb === 'calibracao_prompt' ? 'selected' : ''}>Calibração de Prompt</option>
+                                    <option value="problema_transcricao" ${tipoProb === 'problema_transcricao' ? 'selected' : ''}>Problema na Transcrição</option>
+                                </select>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <input type="text" value="${esc(pr.erroEncontrado || '')}"
+                                    oninput="app.harmonyCtrl.updateProblemField('${pid}', '${qid}', ${vObj.versao}, '${prid}', 'erroEncontrado', this.value)"
+                                    onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                    placeholder="Qual erro foi encontrado neste insight..."
+                                    class="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 ${res ? 'line-through opacity-70' : ''}">
+                            </div>
+                            <button type="button" onclick="app.harmonyCtrl.removeProblem('${pid}', '${qid}', ${vObj.versao}, '${prid}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center shrink-0 cursor-pointer" title="Remover registro de erro">
+                                <i class="fa-solid fa-trash text-[11px]"></i>
+                            </button>
+                        </div>
+                    `;
+                }).join('')}
+               </div>`;
+
+        return `
+            <div class="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/15 border border-emerald-200/90 dark:border-emerald-800/60 space-y-3">
+                <!-- Como ficou na Harmony + Seleção de Versão (V1..V∞) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+                    <div class="lg:col-span-8">
+                        <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider mb-1">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Como ficou na Harmony
+                        </label>
+                        <textarea rows="2"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'comoFicouHarmony', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Descreva como o critério/pergunta foi estruturado dentro da Harmony..."
+                            class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500 resize-y">${esc(q.comoFicouHarmony || '')}</textarea>
+                    </div>
+                    <div class="lg:col-span-4 space-y-1.5">
+                        <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                            <i class="fa-solid fa-code-branch mr-1"></i> Versão na Harmony (V1 até infinito)
+                        </label>
+                        <div class="flex items-center gap-1.5">
+                            <select onchange="app.harmonyCtrl.onVersionSelectChange('${pid}', '${qid}', this.value)"
+                                class="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-xs font-black text-emerald-800 dark:text-emerald-200 outline-none cursor-pointer">
+                                ${versionOptions.join('')}
+                                <option value="__custom__">Outra versão (digitar nº)...</option>
+                            </select>
+                            <button type="button" onclick="app.harmonyCtrl.evolveNextVersion('${pid}', '${qid}', ${vView})"
+                                class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shadow-xs transition flex items-center gap-1 shrink-0 cursor-pointer"
+                                title="Criar V${maxV + 1} herdando o prompt atual para evoluir sem perder o histórico">
+                                <i class="fa-solid fa-plus"></i> V${maxV + 1}
+                            </button>
+                        </div>
+                        <div class="text-[10px] text-slate-500 dark:text-slate-400">
+                            Versão ativa: <strong class="text-emerald-700 dark:text-emerald-300">V${vAtual}</strong> · Histórico com <strong class="tabular-nums">${versoes.length}</strong> versão(ões)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Painel de Evolução de Prompts & Problemas do Insight por Versão -->
+                <div class="p-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-900/60 border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="text-[11px] font-black text-indigo-800 dark:text-indigo-300 uppercase tracking-wider mr-1">
+                                <i class="fa-solid fa-terminal mr-1"></i> Evolução de Prompts:
+                            </span>
+                            ${versionTabsHtml}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select onchange="app.harmonyCtrl.updateVersionField('${pid}', '${qid}', ${vObj.versao}, 'statusVersao', this.value, true)"
+                                class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                <option value="Em validação" ${vObj.statusVersao === 'Em validação' ? 'selected' : ''}>V${vObj.versao}: Em validação</option>
+                                <option value="Com problemas no insight" ${vObj.statusVersao === 'Com problemas no insight' ? 'selected' : ''}>V${vObj.versao}: Com problemas no insight</option>
+                                <option value="Aprovada / Estável" ${vObj.statusVersao === 'Aprovada / Estável' ? 'selected' : ''}>V${vObj.versao}: Aprovada / Estável</option>
+                                <option value="Substituída" ${vObj.statusVersao === 'Substituída' ? 'selected' : ''}>V${vObj.versao}: Substituída</option>
+                            </select>
+                            <button type="button" onclick="app.harmonyCtrl.copyPrompt('${pid}', '${qid}', ${vObj.versao})"
+                                class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 cursor-pointer transition flex items-center gap-1" title="Copiar Prompt da V${vObj.versao}">
+                                <i class="fa-regular fa-copy text-indigo-500"></i> Copiar Prompt
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Prompt da Versão Selecionada -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                                Prompt da Versão V${vObj.versao}
+                            </label>
+                            <span class="text-[10px] text-slate-400">
+                                Alterar aqui mantém as versões anteriores preservadas
+                            </span>
+                        </div>
+                        <textarea rows="3"
+                            oninput="app.harmonyCtrl.updateVersionField('${pid}', '${qid}', ${vObj.versao}, 'promptTexto', this.value, false)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Cole ou escreva o prompt exato usado na V${vObj.versao} para esta pergunta na Harmony..."
+                            class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 resize-y leading-relaxed">${esc(vObj.promptTexto || '')}</textarea>
+                    </div>
+
+                    <!-- Problemas / Erros encontrados no Insight nesta Versão (ID da Ligação + Erro Encontrado) -->
+                    <div class="space-y-2 pt-1">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-[11px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex flex-wrap items-center gap-1.5">
+                                <i class="fa-solid fa-bug text-amber-500"></i> Problemas do Insight na V${vObj.versao} (ID da Ligação &amp; Causa)
+                                ${totalErrVersao > 0 ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 text-[10px] font-black tabular-nums">${pendErrVersao} pendente(s) / ${totalErrVersao} total</span>` : ''}
+                                ${calibCount > 0 ? `<span class="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-200 text-[10px] font-extrabold tabular-nums">${calibCount} calibração</span>` : ''}
+                                ${transcCount > 0 ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 text-[10px] font-extrabold tabular-nums">${transcCount} transcrição</span>` : ''}
+                            </div>
+                            <button type="button" onclick="app.harmonyCtrl.evolveNextVersion('${pid}', '${qid}', ${vObj.versao})"
+                                class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold transition flex items-center gap-1 cursor-pointer">
+                                <i class="fa-solid fa-arrow-up-right-dots"></i> Evoluir da V${vObj.versao} para V${maxV + 1}
+                            </button>
+                        </div>
+
+                        ${problemasHtml}
+
+                        <!-- Linha rápida para adicionar ID da Ligação + Causa (Calibração vs Transcrição) + Erro Encontrado -->
+                        <div class="flex flex-col sm:flex-row gap-2 pt-1">
+                            <input type="text" id="hprob-id-${pid}-${qid}"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault(); document.getElementById('hprob-erro-${pid}-${qid}')?.focus();}"
+                                placeholder="ID da ligação (ex: CALL-123456)..."
+                                class="sm:w-44 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                            <select id="hprob-tipo-${pid}-${qid}"
+                                class="sm:w-52 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+                                <option value="calibracao_prompt">Calibração de Prompt</option>
+                                <option value="problema_transcricao">Problema na Transcrição</option>
+                            </select>
+                            <input type="text" id="hprob-erro-${pid}-${qid}"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault(); app.harmonyCtrl.addProblemFromInputs('${pid}', '${qid}', ${vObj.versao});}"
+                                placeholder="Descreva qual erro encontrou nesse insight..."
+                                class="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                            <button type="button" onclick="app.harmonyCtrl.addProblemFromInputs('${pid}', '${qid}', ${vObj.versao})"
+                                class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-xs">
+                                <i class="fa-solid fa-plus"></i> Registrar Erro
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    _renderQuestionCardHtml(proj, q, idx, total) {
+        const esc = (v) => this._esc(v);
+        const pid = esc(proj.id);
+        const qid = esc(q.id);
+        const flag = q.flag || 'inclusa';
+        const fMeta = this._getFlagMeta(flag);
+
+        return `
+            <div id="hq-card-${pid}-${qid}" class="bg-white dark:bg-slate-800/95 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                <!-- Linha Principal: Ordem + Pergunta Soft + Peso + Flag -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+                    <div class="lg:col-span-6 space-y-1">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 tabular-nums">
+                                <i class="fa-solid fa-list-ol mr-1 text-indigo-500"></i>Pergunta #${idx + 1} (Formulário Soft)
+                            </span>
+                            <div class="flex items-center gap-1">
+                                <button type="button" ${idx === 0 ? 'disabled' : ''} onclick="app.harmonyCtrl.moveQuestion('${pid}', '${qid}', -1)" class="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]" title="Subir ordem">
+                                    <i class="fa-solid fa-arrow-up"></i>
+                                </button>
+                                <button type="button" ${idx >= total - 1 ? 'disabled' : ''} onclick="app.harmonyCtrl.moveQuestion('${pid}', '${qid}', 1)" class="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 disabled:opacity-30 flex items-center justify-center cursor-pointer text-[10px]" title="Descer ordem">
+                                    <i class="fa-solid fa-arrow-down"></i>
+                                </button>
+                                <button type="button" onclick="app.harmonyCtrl.duplicateQuestion('${pid}', '${qid}')" class="w-6 h-6 rounded-md bg-slate-100 hover:bg-indigo-100 dark:bg-slate-700 dark:hover:bg-indigo-950/60 text-slate-600 hover:text-indigo-600 dark:text-slate-300 flex items-center justify-center cursor-pointer text-[10px]" title="Duplicar pergunta">
+                                    <i class="fa-regular fa-clone"></i>
+                                </button>
+                                <button type="button" onclick="app.harmonyCtrl.deleteQuestion('${pid}', '${qid}')" class="w-6 h-6 rounded-md bg-slate-100 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-rose-950/60 text-slate-500 hover:text-rose-600 dark:text-slate-300 flex items-center justify-center cursor-pointer text-[10px]" title="Excluir pergunta">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <textarea rows="2"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'perguntaSoft', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Digite a pergunta do formulário Soft (campo totalmente editável)..."
+                            class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 resize-y">${esc(q.perguntaSoft || '')}</textarea>
+                    </div>
+
+                    <div class="lg:col-span-2 space-y-1">
+                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            <i class="fa-solid fa-scale-balanced mr-1 text-amber-500"></i>Peso
+                        </label>
+                        <input type="text"
+                            value="${esc(q.peso || '')}"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'peso', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Ex: 10, NCG..."
+                            class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-extrabold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums">
+                    </div>
+
+                    <div class="lg:col-span-4 space-y-1">
+                        <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            <i class="fa-solid ${fMeta.icon} mr-1"></i>Flag / Situação Harmony
+                        </label>
+                        <select onchange="app.harmonyCtrl.changeQuestionFlag('${pid}', '${qid}', this.value)"
+                            class="w-full px-3 py-2.5 rounded-xl border text-xs font-black uppercase outline-none cursor-pointer ${fMeta.selectClass}">
+                            <option value="nao_entrou" ${flag === 'nao_entrou' ? 'selected' : ''}>NÃO ENTROU NA HARMONY</option>
+                            <option value="metadados" ${flag === 'metadados' ? 'selected' : ''}>META DADOS</option>
+                            <option value="inclusa" ${flag === 'inclusa' ? 'selected' : ''}>INCLUSA NA HARMONY</option>
+                            <option value="minutagem" ${flag === 'minutagem' ? 'selected' : ''}>MINUTAGEM</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Bloco Dinâmico da Flag Selecionada -->
+                ${this._renderQuestionConditionalHtml(proj, q)}
+            </div>
+        `;
+    },
+
+    _renderProjectBodyHtml(proj) {
+        const esc = (v) => this._esc(v);
+        const pid = esc(proj.id);
+        const perguntas = Array.isArray(proj.perguntas) ? proj.perguntas : [];
+        const fFlag = this.filtroFlag || 'TODAS';
+        const qTerm = this._normStr(this.filtroBusca || '');
+
+        const filtradas = perguntas.filter(q => {
+            if (!q) return false;
+            if (fFlag !== 'TODAS' && (q.flag || 'inclusa') !== fFlag) return false;
+            if (!qTerm) return true;
+            const projHay = this._normStr(`${proj.operacao} ${proj.nomeProjeto} ${proj.nomeDatalake}`);
+            if (projHay.includes(qTerm)) return true;
+            const versoesTxt = Array.isArray(q.versoes)
+                ? q.versoes.map(v => `v${v.versao} ${v.promptTexto || ''} ${(v.problemasInsight || []).map(pr => `${pr.idLigacao || ''} ${this._getProblemTypeMeta(pr.tipoProblema).label} ${pr.erroEncontrado || ''}`).join(' ')}`).join(' ')
+                : '';
+            const hay = this._normStr(`${q.perguntaSoft} ${q.peso} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`);
+            return hay.includes(qTerm);
+        });
+
+        return `
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+                <div class="text-xs text-slate-500 dark:text-slate-400">
+                    <span class="font-bold text-slate-700 dark:text-slate-200">Datalake / Formulário:</span> ${esc(proj.nomeDatalake || '-')}
+                    ${proj.descricao ? ` · <span>${esc(proj.descricao)}</span>` : ''}
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" onclick="app.harmonyCtrl.abrirModalImportarPerguntas('${pid}')"
+                        class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-solid fa-file-import text-indigo-500"></i> Colar / Importar Lote
+                    </button>
+                    <button type="button" onclick="app.harmonyCtrl.addQuestion('${pid}')"
+                        class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-solid fa-plus"></i> Nova Pergunta Soft
+                    </button>
+                </div>
+            </div>
+
+            ${filtradas.length === 0 ? `
+                <div class="p-8 text-center rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 space-y-2.5">
+                    <div class="text-sm font-bold text-slate-600 dark:text-slate-300">
+                        ${perguntas.length === 0 ? 'Nenhuma pergunta cadastrada neste Datalake ainda.' : 'Nenhuma pergunta encontrada neste filtro.'}
+                    </div>
+                    <p class="text-xs text-slate-400 max-w-md mx-auto">
+                        Adicione perguntas individualmente ou cole direto do Excel/formulário Soft usando o botão de importação em lote.
+                    </p>
+                </div>
+            ` : `
+                <div class="space-y-3">
+                    ${filtradas.map((q) => {
+                        const realIdx = perguntas.indexOf(q);
+                        return this._renderQuestionCardHtml(proj, q, realIdx >= 0 ? realIdx : 0, perguntas.length);
+                    }).join('')}
+                </div>
+            `}
+        `;
+    },
+
+    render(container) {
+        const esc = (v) => this._esc(v);
+        const allProjetos = this._getProjetos();
+        const opsDisponiveis = [...new Set(allProjetos.map(p => String(p.operacao || 'GERAL').trim().toUpperCase()))].sort((a, b) => a.localeCompare(b));
+        const opFiltro = this.filtroOperacao || 'TODAS';
+        const fFlag = this.filtroFlag || 'TODAS';
+        const qTerm = this._normStr(this.filtroBusca || '');
+
+        const projetosFiltrados = allProjetos.filter(p => {
+            const pOp = String(p.operacao || 'GERAL').trim().toUpperCase();
+            if (opFiltro !== 'TODAS' && pOp !== opFiltro) return false;
+            const list = Array.isArray(p.perguntas) ? p.perguntas : [];
+            if (fFlag !== 'TODAS') {
+                if (!list.some(q => q && (q.flag || 'inclusa') === fFlag)) return false;
+            }
+            if (!qTerm) return true;
+            const projHay = this._normStr(`${pOp} ${p.nomeProjeto} ${p.nomeDatalake} ${p.descricao}`);
+            if (projHay.includes(qTerm)) return true;
+            return list.some(q => {
+                if (!q) return false;
+                const versoesTxt = Array.isArray(q.versoes)
+                    ? q.versoes.map(v => `v${v.versao} ${v.promptTexto || ''} ${(v.problemasInsight || []).map(pr => `${pr.idLigacao || ''} ${this._getProblemTypeMeta(pr.tipoProblema).label} ${pr.erroEncontrado || ''}`).join(' ')}`).join(' ')
+                    : '';
+                return this._normStr(`${q.perguntaSoft} ${q.peso} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`).includes(qTerm);
+            });
+        });
+
+        // Agrupa projetos filtrados por Operação
+        const gruposOp = {};
+        projetosFiltrados.forEach(p => {
+            const op = String(p.operacao || 'GERAL').trim().toUpperCase();
+            if (!gruposOp[op]) gruposOp[op] = [];
+            gruposOp[op].push(p);
+        });
+        const opsListRender = Object.keys(gruposOp).sort((a, b) => a.localeCompare(b));
+
+        const opPillsHtml = [
+            `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('TODAS')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${opFiltro === 'TODAS' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Todas (${allProjetos.length})</button>`,
+            ...opsDisponiveis.map(op => {
+                const count = allProjetos.filter(p => String(p.operacao || 'GERAL').trim().toUpperCase() === op).length;
+                return `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('${esc(op)}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${opFiltro === op ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">${esc(op)} (${count})</button>`;
+            })
+        ].join('');
+
+        const gruposHtml = opsListRender.length === 0
+            ? `
+                <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
+                    <div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <h3 class="text-base font-extrabold text-slate-800 dark:text-white">
+                        ${allProjetos.length === 0 ? 'Nenhum projeto / datalake cadastrado na aba Harmony ainda' : 'Nenhum projeto corresponde ao filtro selecionado'}
+                    </h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
+                        ${allProjetos.length === 0
+                            ? 'Comece criando um projeto separado por Operação com o nome do Datalake (formulário Soft) para organizar perguntas, pesos, flags e evolução de prompts V1, V2, V3...'
+                            : 'Limpe os filtros de busca ou operação para visualizar todos os datalakes cadastrados.'}
+                    </p>
+                    <div>
+                        ${allProjetos.length === 0
+                            ? `<button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition inline-flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-plus"></i> Criar Primeiro Projeto / Datalake</button>`
+                            : `<button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">Limpar Filtros</button>`}
+                    </div>
+                </div>
+            `
+            : opsListRender.map(op => {
+                const projs = gruposOp[op];
+                const opOpen = this.openOps[op] !== false;
+                const totPergOp = projs.reduce((s, p) => s + ((p.perguntas || []).length), 0);
+
+                const projsCardsHtml = projs.map(proj => {
+                    const pid = esc(proj.id);
+                    const isOpen = this.openProjects[proj.id] !== undefined ? !!this.openProjects[proj.id] : (allProjetos.length <= 3);
+                    return `
+                        <details data-hproj-details="${pid}" ${isOpen ? 'open' : ''} ontoggle="app.harmonyCtrl.onToggleProject('${pid}', this.open)"
+                            class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                            <summary class="px-5 py-4 cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-900/40 hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition list-none">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                                        <i class="fa-solid fa-database"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase">${esc(proj.operacao || 'GERAL')}</span>
+                                            <h4 class="text-sm font-black text-slate-800 dark:text-white truncate">${esc(proj.nomeProjeto || 'Projeto Harmony')}</h4>
+                                        </div>
+                                        <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                            <i class="fa-solid fa-table-list text-emerald-500 mr-1"></i> Datalake / Formulário: <strong class="text-slate-700 dark:text-slate-200">${esc(proj.nomeDatalake || '-')}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2" onclick="event.stopPropagation()">
+                                    <div id="harmony-proj-summary-${pid}" class="flex flex-wrap items-center gap-1.5">
+                                        ${this._renderProjSummaryBadgeHtml(proj)}
+                                    </div>
+                                    <span id="harmony-sync-badge-${pid}" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                        <i class="fa-solid fa-cloud-check mr-1"></i>Salvo
+                                    </span>
+                                    <button type="button" onclick="app.harmonyCtrl.exportarCSVProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Exportar CSV deste Datalake">
+                                        <i class="fa-solid fa-file-csv text-xs text-emerald-600"></i>
+                                    </button>
+                                    <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Editar Operação / Projeto / Datalake">
+                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                    </button>
+                                    <button type="button" onclick="app.harmonyCtrl.excluirProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer" title="Excluir Projeto / Datalake">
+                                        <i class="fa-solid fa-trash text-xs"></i>
+                                    </button>
+                                </div>
+                            </summary>
+
+                            <div id="harmony-proj-body-${pid}" class="p-4 sm:p-5 space-y-4 border-t border-slate-100 dark:border-slate-700/80">
+                                ${this._renderProjectBodyHtml(proj)}
+                            </div>
+                        </details>
+                    `;
+                }).join('');
+
+                return `
+                    <details data-hop-details="${esc(op)}" ${opOpen ? 'open' : ''} ontoggle="app.harmonyCtrl.onToggleOp('${esc(op)}', this.open)" class="space-y-3">
+                        <summary class="px-4 py-3 rounded-2xl bg-gradient-to-r from-slate-800 via-indigo-900 to-slate-900 text-white shadow-sm cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 list-none">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-solid fa-building-shield text-cyan-300"></i>
+                                <span class="text-sm font-black uppercase tracking-wide">${esc(op)}</span>
+                                <span class="px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold tabular-nums">${projs.length} projeto(s) · ${totPergOp} pergunta(s)</span>
+                            </div>
+                            <span class="text-[11px] text-indigo-200 font-semibold"><i class="fa-solid fa-chevron-down mr-1"></i> Expandir / Recolher Operação</span>
+                        </summary>
+                        <div class="space-y-4 pt-2 pl-0 sm:pl-2">
+                            ${projsCardsHtml}
+                        </div>
+                    </details>
+                `;
+            }).join('');
+
+        container.innerHTML = `
+            <div class="max-w-[1920px] mx-auto pb-20 space-y-4 animate-fade-in">
+                <!-- Cabeçalho Executivo -->
+                <div class="bg-gradient-to-r from-indigo-700 via-slate-800 to-cyan-800 rounded-3xl p-5 sm:p-6 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div class="flex items-start gap-3.5 min-w-0">
+                        <div class="w-11 h-11 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-cyan-200 text-xl shrink-0">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="text-xl sm:text-2xl font-black tracking-tight">Harmony — Governança de Perguntas &amp; Prompts</h2>
+                                <span class="px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold uppercase tracking-wider text-cyan-100">Controle Soft × Harmony</span>
+                            </div>
+                            <p class="text-xs text-indigo-100/90 mt-1 max-w-3xl">
+                                Organize projetos por operação e datalake (formulário Soft), controle pesos e flags, acompanhe prompts V1, V2, V3... e audite erros por ID de ligação antes de evoluir de versão.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <button type="button" onclick="app.harmonyCtrl.exportarCSVTodos()" class="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-file-csv"></i> Exportar Tudo CSV
+                        </button>
+                        <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                            <i class="fa-solid fa-plus"></i> Novo Projeto / Datalake
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPIs Consolidados -->
+                <div id="harmony-kpis-bar">
+                    ${this._renderKpisHtml(allProjetos)}
+                </div>
+
+                <!-- Filtros por Operação, Flag & Busca -->
+                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-[11px] font-black uppercase tracking-wider text-slate-400 mr-1"><i class="fa-solid fa-layer-group mr-1"></i>Operação:</span>
+                        ${opPillsHtml}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-700">
+                        <div class="relative flex-1 min-w-[220px]">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input id="harmony-search-input" type="text" value="${esc(this.filtroBusca || '')}"
+                                oninput="app.harmonyCtrl.onSearchInput(this.value)"
+                                placeholder="Buscar por projeto, datalake, pergunta Soft, metadado, prompt ou ID da ligação..."
+                                class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <select onchange="app.harmonyCtrl.setFiltroFlag(this.value)"
+                            class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                            <option value="TODAS" ${fFlag === 'TODAS' ? 'selected' : ''}>Todas as Flags</option>
+                            <option value="nao_entrou" ${fFlag === 'nao_entrou' ? 'selected' : ''}>NÃO ENTROU NA HARMONY</option>
+                            <option value="metadados" ${fFlag === 'metadados' ? 'selected' : ''}>META DADOS</option>
+                            <option value="inclusa" ${fFlag === 'inclusa' ? 'selected' : ''}>INCLUSA NA HARMONY</option>
+                            <option value="minutagem" ${fFlag === 'minutagem' ? 'selected' : ''}>MINUTAGEM</option>
+                        </select>
+                        ${(opFiltro !== 'TODAS' || fFlag !== 'TODAS' || this.filtroBusca) ? `
+                            <button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+                                Limpar
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+
+                <!-- Projetos Agrupados por Operação -->
+                <div id="harmony-groups-container" class="space-y-4">
+                    ${gruposHtml}
+                </div>
+            </div>
+        `;
+    },
+
+    onToggleProject(projId, isOpen) {
+        if (projId) this.openProjects[projId] = !!isOpen;
+    },
+
+    onToggleOp(op, isOpen) {
+        if (op) this.openOps[op] = !!isOpen;
+    },
+
+    setFiltroOperacao(op) {
+        this.filtroOperacao = op || 'TODAS';
+        app.ui._refreshHarmonyInPlace();
+    },
+
+    setFiltroFlag(flag) {
+        this.filtroFlag = flag || 'TODAS';
+        app.ui._refreshHarmonyInPlace();
+    },
+
+    onSearchInput(val) {
+        this.filtroBusca = val || '';
+        const inputEl = document.getElementById('harmony-search-input');
+        const selStart = inputEl ? inputEl.selectionStart : null;
+        const selEnd = inputEl ? inputEl.selectionEnd : null;
+        app.ui._refreshHarmonyInPlace();
+        const restored = document.getElementById('harmony-search-input');
+        if (restored) {
+            restored.focus();
+            if (selStart !== null && selEnd !== null) {
+                try { restored.setSelectionRange(selStart, selEnd); } catch (e) {}
+            }
+        }
+    },
+
+    limparFiltros() {
+        this.filtroOperacao = 'TODAS';
+        this.filtroFlag = 'TODAS';
+        this.filtroBusca = '';
+        app.ui._refreshHarmonyInPlace();
+    },
+
+    _refreshBadgesAndKpis(projId) {
+        const kpiBar = document.getElementById('harmony-kpis-bar');
+        if (kpiBar) kpiBar.innerHTML = this._renderKpisHtml(this._getProjetos());
+        const proj = this._getProj(projId);
+        const sumEl = document.getElementById('harmony-proj-summary-' + projId);
+        if (proj && sumEl) sumEl.innerHTML = this._renderProjSummaryBadgeHtml(proj);
+    },
+
+    rerenderQuestionCard(projId, qId) {
+        const { p, q, idx } = this._getQuestion(projId, qId);
+        if (!p || !q) return;
+        const card = document.getElementById(`hq-card-${projId}-${qId}`);
+        if (card) {
+            card.outerHTML = this._renderQuestionCardHtml(p, q, idx, p.perguntas.length);
+            this._refreshBadgesAndKpis(projId);
+        } else {
+            this.rerenderProjectBody(projId);
+        }
+    },
+
+    rerenderProjectBody(projId) {
+        const p = this._getProj(projId);
+        if (!p) return;
+        const body = document.getElementById('harmony-proj-body-' + projId);
+        if (body) {
+            body.innerHTML = this._renderProjectBodyHtml(p);
+            this._refreshBadgesAndKpis(projId);
+        } else {
+            app.ui._refreshHarmonyInPlace();
+        }
+    },
+
+    abrirModalProjeto(projId = null) {
+        const proj = projId ? this._getProj(projId) : null;
+        const ops = this._getOperacoesSistema();
+        const curOp = proj ? String(proj.operacao || '').trim().toUpperCase() : (this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : (ops[0] || ''));
+        const opInList = ops.includes(curOp);
+
+        const titleEl = document.getElementById('modal-title');
+        const contentEl = document.getElementById('modal-content');
+        const actionsEl = document.getElementById('modal-actions');
+        const modalEl = document.getElementById('global-modal');
+        if (!titleEl || !contentEl || !actionsEl || !modalEl) return;
+
+        titleEl.innerHTML = `<i class="fa-solid fa-database text-indigo-600"></i> ${proj ? 'Editar Projeto / Datalake' : 'Novo Projeto / Datalake Harmony'}`;
+        contentEl.innerHTML = `
+            <div class="space-y-3 text-left">
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Operação:</label>
+                    <select id="hm-proj-op-select" onchange="const wrap = document.getElementById('hm-proj-op-custom-wrap'); if(wrap) wrap.classList.toggle('hidden', this.value !== '__custom__');"
+                        class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                        ${ops.map(op => `<option value="${this._esc(op)}" ${op === curOp ? 'selected' : ''}>${this._esc(op)}</option>`).join('')}
+                        <option value="__custom__" ${!opInList ? 'selected' : ''}>Outra Operação (digitar manualmente)...</option>
+                    </select>
+                </div>
+                <div id="hm-proj-op-custom-wrap" class="${opInList ? 'hidden' : ''}">
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome da Operação:</label>
+                    <input type="text" id="hm-proj-op-custom" value="${this._esc(!opInList ? curOp : '')}" oninput="this.value = this.value.toUpperCase();" placeholder="Ex: DENTAL UNI, COPEL..."
+                        class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Projeto:</label>
+                    <input type="text" id="hm-proj-nome" value="${this._esc(proj ? proj.nomeProjeto : '')}" placeholder="Ex: Projeto Qualidade IA / Calibração Q4"
+                        class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Datalake (Nome do Formulário Soft):</label>
+                    <input type="text" id="hm-proj-datalake" value="${this._esc(proj ? proj.nomeDatalake : '')}" placeholder="Ex: FORMULÁRIO SAC / RETENÇÃO DENTAL UNI"
+                        class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição / Escopo (Opcional):</label>
+                    <textarea id="hm-proj-desc" rows="2" placeholder="Observações gerais sobre este formulário na Soft / Harmony..."
+                        class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none">${this._esc(proj ? (proj.descricao || '') : '')}</textarea>
+                </div>
+            </div>
+        `;
+        actionsEl.innerHTML = `
+            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
+            <button type="button" onclick="app.harmonyCtrl.salvarModalProjeto('${this._esc(projId || '')}')" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer">
+                <i class="fa-solid fa-floppy-disk mr-1"></i> ${proj ? 'Salvar Alterações' : 'Criar Projeto'}
+            </button>
+        `;
+        modalEl.classList.remove('hidden');
+        setTimeout(() => document.getElementById('hm-proj-datalake')?.focus(), 50);
+    },
+
+    salvarModalProjeto(projId = '') {
+        const opSel = document.getElementById('hm-proj-op-select')?.value || '';
+        const opCustom = document.getElementById('hm-proj-op-custom')?.value || '';
+        const operacao = (opSel === '__custom__' ? opCustom : opSel).trim().toUpperCase();
+        const nomeProjeto = (document.getElementById('hm-proj-nome')?.value || '').trim();
+        const nomeDatalake = (document.getElementById('hm-proj-datalake')?.value || '').trim();
+        const descricao = (document.getElementById('hm-proj-desc')?.value || '').trim();
+
+        if (!operacao) return app.ui.showAlert("Atenção", "Selecione ou informe a Operação do projeto.", "warning");
+        if (!nomeDatalake) return app.ui.showAlert("Atenção", "Informe o nome do Datalake (nome do formulário Soft).", "warning");
+
+        const list = this._ensureList();
+        const finalId = projId || this._genId('hproj');
+        const existing = projId ? list[projId] : null;
+        const projObj = existing ? { ...existing } : {
+            id: finalId,
+            perguntas: [],
+            criadoEm: Date.now(),
+            criadoPor: app.currentUser?.matricula || (app.isAdmin ? 'admin' : 'dev')
+        };
+
+        projObj.operacao = operacao;
+        projObj.nomeProjeto = nomeProjeto || nomeDatalake;
+        projObj.nomeDatalake = nomeDatalake;
+        projObj.descricao = descricao;
+        projObj.atualizadoEm = Date.now();
+
+        list[finalId] = projObj;
+        this.openOps[operacao] = true;
+        this.openProjects[finalId] = true;
+
+        document.getElementById('global-modal')?.classList.add('hidden');
+        this._saveProjNow(finalId);
+        app.ui._refreshHarmonyInPlace();
+        if (app.ui && app.ui.showToast) app.ui.showToast(existing ? "Projeto atualizado!" : "Projeto/Datalake criado!", "success");
+    },
+
+    excluirProjeto(projId) {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        const qtd = (proj.perguntas || []).length;
+        app.ui.showConfirm(
+            "Excluir Projeto / Datalake",
+            `Deseja excluir permanentemente <strong>${this._esc(proj.nomeProjeto)}</strong> (${this._esc(proj.nomeDatalake)}) com <strong>${qtd}</strong> pergunta(s)?`,
+            () => {
+                delete app.harmonyChecklistList[projId];
+                try { localStorage.setItem('soft_harmony_checklist_backup', JSON.stringify(app.harmonyChecklistList || {})); } catch (e) {}
+                this._persistToCloud(projId);
+                app.ui._refreshHarmonyInPlace();
+            },
+            true
+        );
+    },
+
+    _createDefaultQuestion(perguntaSoft = '', peso = '') {
+        return {
+            id: this._genId('hq'),
+            perguntaSoft: perguntaSoft || '',
+            peso: peso || '',
+            flag: 'inclusa',
+            motivoNaoEntrou: '',
+            qualMetadado: '',
+            metadadoDetalhe: '',
+            comoFicouHarmony: '',
+            versaoAtual: 1,
+            versoes: [
+                {
+                    versao: 1,
+                    dataRegistro: new Date().toISOString().split('T')[0],
+                    statusVersao: 'Em validação',
+                    promptTexto: '',
+                    notasEvolucao: '',
+                    problemasInsight: []
+                }
+            ],
+            minutagemResolvida: false,
+            minutagemDataEntrega: '',
+            minutagemObservacao: '',
+            atualizadoEm: Date.now()
+        };
+    },
+
+    addQuestion(projId, initialText = '', initialPeso = '') {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        const q = this._createDefaultQuestion(initialText, initialPeso);
+        proj.perguntas.push(q);
+        this.viewingVersions[q.id] = 1;
+        this.openProjects[projId] = true;
+        this.rerenderProjectBody(projId);
+        this._saveProjNow(projId);
+    },
+
+    deleteQuestion(projId, qId) {
+        const { p, q, idx } = this._getQuestion(projId, qId);
+        if (!p || !q) return;
+        app.ui.showConfirm(
+            "Excluir Pergunta",
+            `Remover a pergunta <strong>"${this._esc((q.perguntaSoft || 'Sem texto').slice(0, 80))}"</strong> deste Datalake?`,
+            () => {
+                p.perguntas.splice(idx, 1);
+                this.rerenderProjectBody(projId);
+                this._saveProjNow(projId);
+            },
+            true
+        );
+    },
+
+    duplicateQuestion(projId, qId) {
+        const { p, q, idx } = this._getQuestion(projId, qId);
+        if (!p || !q) return;
+        const clone = JSON.parse(JSON.stringify(q));
+        clone.id = this._genId('hq');
+        clone.perguntaSoft = (clone.perguntaSoft || '') + ' (Cópia)';
+        clone.atualizadoEm = Date.now();
+        p.perguntas.splice(idx + 1, 0, clone);
+        this.viewingVersions[clone.id] = clone.versaoAtual || 1;
+        this.rerenderProjectBody(projId);
+        this._saveProjNow(projId);
+    },
+
+    moveQuestion(projId, qId, dir) {
+        const { p, idx } = this._getQuestion(projId, qId);
+        if (!p || idx < 0) return;
+        const targetIdx = idx + dir;
+        if (targetIdx < 0 || targetIdx >= p.perguntas.length) return;
+        const temp = p.perguntas[idx];
+        p.perguntas[idx] = p.perguntas[targetIdx];
+        p.perguntas[targetIdx] = temp;
+        this.rerenderProjectBody(projId);
+        this._saveProjNow(projId);
+    },
+
+    updateQuestionField(projId, qId, field, value) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        q[field] = value;
+        q.atualizadoEm = Date.now();
+        this._saveProjDebounced(projId);
+    },
+
+    changeQuestionFlag(projId, qId, newFlag) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        q.flag = newFlag || 'inclusa';
+        if (q.flag === 'inclusa') this._ensureVersions(q);
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    setMinutagemStatus(projId, qId, resolved) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        q.minutagemResolvida = !!resolved;
+        if (q.minutagemResolvida && !q.minutagemDataEntrega) {
+            q.minutagemDataEntrega = new Date().toISOString().split('T')[0];
+        }
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    selectViewVersion(projId, qId, versaoNum) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        this.viewingVersions[q.id] = Math.max(1, parseInt(versaoNum, 10) || 1);
+        this.rerenderQuestionCard(projId, qId);
+    },
+
+    onVersionSelectChange(projId, qId, val) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        let targetV = 1;
+        if (val === '__custom__') {
+            const raw = prompt('Informe o número da versão (ex: 5 para V5, 12 para V12):', String((q.versaoAtual || 1) + 1));
+            if (raw === null) {
+                this.rerenderQuestionCard(projId, qId);
+                return;
+            }
+            const parsed = parseInt(String(raw).replace(/\D/g, ''), 10);
+            if (!parsed || parsed < 1) {
+                if (app.ui && app.ui.showToast) app.ui.showToast("Informe um número de versão válido (1 ou maior).", "warning");
+                this.rerenderQuestionCard(projId, qId);
+                return;
+            }
+            targetV = parsed;
+        } else {
+            targetV = Math.max(1, parseInt(val, 10) || 1);
+        }
+
+        const versoes = this._ensureVersions(q);
+        if (!versoes.some(v => v.versao === targetV)) {
+            const prevV = versoes.find(v => v.versao === q.versaoAtual) || versoes[versoes.length - 1];
+            q.versoes.push({
+                versao: targetV,
+                dataRegistro: new Date().toISOString().split('T')[0],
+                statusVersao: 'Em validação',
+                promptTexto: prevV ? (prevV.promptTexto || '') : '',
+                notasEvolucao: '',
+                problemasInsight: []
+            });
+        }
+        q.versaoAtual = targetV;
+        this.viewingVersions[q.id] = targetV;
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    evolveNextVersion(projId, qId, baseVersionNum = null) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const versoes = this._ensureVersions(q);
+        const maxV = versoes.reduce((acc, v) => Math.max(acc, v.versao || 1), Math.max(1, parseInt(q.versaoAtual, 10) || 1));
+        const nextV = maxV + 1;
+        const refNum = baseVersionNum || q.versaoAtual || maxV;
+        const baseObj = versoes.find(v => v.versao === refNum) || versoes[versoes.length - 1];
+
+        if (baseObj && baseObj.statusVersao === 'Em validação') {
+            baseObj.statusVersao = 'Substituída';
+        }
+        q.versoes.push({
+            versao: nextV,
+            dataRegistro: new Date().toISOString().split('T')[0],
+            statusVersao: 'Em validação',
+            promptTexto: baseObj ? (baseObj.promptTexto || '') : '',
+            notasEvolucao: '',
+            problemasInsight: []
+        });
+        q.versaoAtual = nextV;
+        this.viewingVersions[q.id] = nextV;
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+        if (app.ui && app.ui.showToast) app.ui.showToast(`Versão V${nextV} criada a partir da V${refNum}!`, "success");
+    },
+
+    updateVersionField(projId, qId, versaoNum, field, value, immediate = false) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const versoes = this._ensureVersions(q);
+        const vObj = versoes.find(v => v.versao === versaoNum);
+        if (!vObj) return;
+        vObj[field] = value;
+        q.atualizadoEm = Date.now();
+        if (immediate) {
+            this.rerenderQuestionCard(projId, qId);
+            this._saveProjNow(projId);
+        } else {
+            this._saveProjDebounced(projId);
+        }
+    },
+
+    copyPrompt(projId, qId, versaoNum) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const versoes = this._ensureVersions(q);
+        const vObj = versoes.find(v => v.versao === versaoNum);
+        const txt = vObj ? (vObj.promptTexto || '') : '';
+        if (!txt.trim()) {
+            if (app.ui && app.ui.showToast) app.ui.showToast("O prompt desta versão ainda está vazio.", "warning");
+            return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(() => {
+                if (app.ui && app.ui.showToast) app.ui.showToast(`Prompt da V${versaoNum} copiado!`, "success");
+            }).catch(() => {});
+        }
+    },
+
+    addProblemFromInputs(projId, qId, versaoNum) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const idEl = document.getElementById(`hprob-id-${projId}-${qId}`);
+        const tipoEl = document.getElementById(`hprob-tipo-${projId}-${qId}`);
+        const erroEl = document.getElementById(`hprob-erro-${projId}-${qId}`);
+        const idLigacao = (idEl?.value || '').trim();
+        const tipoProblema = tipoEl?.value || 'calibracao_prompt';
+        const erroEncontrado = (erroEl?.value || '').trim();
+        if (!idLigacao && !erroEncontrado) {
+            if (app.ui && app.ui.showToast) app.ui.showToast("Informe o ID da ligação e/ou o erro encontrado.", "warning");
+            return;
+        }
+        const versoes = this._ensureVersions(q);
+        const vObj = versoes.find(v => v.versao === versaoNum);
+        if (!vObj) return;
+        if (!Array.isArray(vObj.problemasInsight)) vObj.problemasInsight = [];
+        vObj.problemasInsight.push({
+            id: this._genId('hprob'),
+            idLigacao: idLigacao || '-',
+            tipoProblema,
+            erroEncontrado: erroEncontrado || 'Divergência no insight',
+            resolvido: false,
+            registradoEm: Date.now()
+        });
+        if (vObj.statusVersao === 'Em validação') vObj.statusVersao = 'Com problemas no insight';
+        this.viewingVersions[q.id] = versaoNum;
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+        setTimeout(() => document.getElementById(`hprob-id-${projId}-${qId}`)?.focus(), 30);
+    },
+
+    changeProblemType(projId, qId, versaoNum, probId, newTipo) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const vObj = this._ensureVersions(q).find(v => v.versao === versaoNum);
+        const pr = vObj && Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.find(x => x && x.id === probId) : null;
+        if (!pr) return;
+        pr.tipoProblema = newTipo || 'calibracao_prompt';
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    updateProblemField(projId, qId, versaoNum, probId, field, value) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const vObj = this._ensureVersions(q).find(v => v.versao === versaoNum);
+        const pr = vObj && Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.find(x => x && x.id === probId) : null;
+        if (!pr) return;
+        pr[field] = value;
+        q.atualizadoEm = Date.now();
+        this._saveProjDebounced(projId);
+    },
+
+    toggleProblemResolved(projId, qId, versaoNum, probId, checked) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const vObj = this._ensureVersions(q).find(v => v.versao === versaoNum);
+        const pr = vObj && Array.isArray(vObj.problemasInsight) ? vObj.problemasInsight.find(x => x && x.id === probId) : null;
+        if (!pr) return;
+        pr.resolvido = !!checked;
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    removeProblem(projId, qId, versaoNum, probId) {
+        const { q } = this._getQuestion(projId, qId);
+        if (!q) return;
+        const vObj = this._ensureVersions(q).find(v => v.versao === versaoNum);
+        if (!vObj || !Array.isArray(vObj.problemasInsight)) return;
+        vObj.problemasInsight = vObj.problemasInsight.filter(x => x && x.id !== probId);
+        q.atualizadoEm = Date.now();
+        this.rerenderQuestionCard(projId, qId);
+        this._saveProjNow(projId);
+    },
+
+    abrirModalImportarPerguntas(projId) {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        const titleEl = document.getElementById('modal-title');
+        const contentEl = document.getElementById('modal-content');
+        const actionsEl = document.getElementById('modal-actions');
+        const modalEl = document.getElementById('global-modal');
+        if (!titleEl || !contentEl || !actionsEl || !modalEl) return;
+
+        titleEl.innerHTML = `<i class="fa-solid fa-file-import text-indigo-600"></i> Importar Perguntas em Lote`;
+        contentEl.innerHTML = `
+            <div class="space-y-3 text-left">
+                <p class="text-xs text-slate-600 dark:text-slate-300">
+                    Cole abaixo as perguntas do formulário Soft para o Datalake <strong>${this._esc(proj.nomeDatalake)}</strong> (uma pergunta por linha). Se copiar do Excel com coluna de <strong>Peso</strong> ao lado (separada por TAB ou <code class="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800">;</code>), o peso também será importado automaticamente.
+                </p>
+                <textarea id="hm-import-textarea" rows="8" placeholder="Exemplo:&#10;Confirmou os dados positivos do cliente?	10&#10;Utilizou saudação padrão Softmarketing?	5&#10;Ofereceu solução definitiva sem transferência indevida?	NCG"
+                    class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+            </div>
+        `;
+        actionsEl.innerHTML = `
+            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
+            <button type="button" onclick="app.harmonyCtrl.executarImportarPerguntas('${this._esc(projId)}')" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm cursor-pointer">
+                <i class="fa-solid fa-check mr-1"></i> Importar Perguntas
+            </button>
+        `;
+        modalEl.classList.remove('hidden');
+        setTimeout(() => document.getElementById('hm-import-textarea')?.focus(), 50);
+    },
+
+    executarImportarPerguntas(projId) {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        const raw = document.getElementById('hm-import-textarea')?.value || '';
+        const linhas = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (linhas.length === 0) return app.ui.showAlert("Atenção", "Cole pelo menos 1 linha com pergunta.", "warning");
+
+        let count = 0;
+        linhas.forEach(line => {
+            let pergunta = line;
+            let peso = '';
+            if (line.includes('\t')) {
+                const parts = line.split('\t');
+                pergunta = (parts[0] || '').trim();
+                peso = (parts[1] || '').trim();
+            } else if (line.includes(';')) {
+                const parts = line.split(';');
+                pergunta = (parts[0] || '').trim();
+                peso = (parts[1] || '').trim();
+            }
+            if (!pergunta) return;
+            const q = this._createDefaultQuestion(pergunta, peso);
+            q.id = this._genId('hq') + '_' + count;
+            proj.perguntas.push(q);
+            count++;
+        });
+
+        document.getElementById('global-modal')?.classList.add('hidden');
+        this.openProjects[projId] = true;
+        this.rerenderProjectBody(projId);
+        this._saveProjNow(projId);
+        if (app.ui && app.ui.showToast) app.ui.showToast(`${count} pergunta(s) importada(s) para ${proj.nomeDatalake}!`, "success");
+    },
+
+    _buildCsvRows(projetos) {
+        const sep = ';';
+        const csvCell = (v) => '"' + String(v == null ? '' : v).replace(/\r?\n/g, ' | ').replace(/"/g, '""') + '"';
+        const header = ['Operacao', 'Projeto', 'Datalake_Formulario', 'Ordem', 'Pergunta_Soft', 'Peso', 'Flag', 'Motivo_Nao_Entrou', 'Qual_Metadado', 'Como_Ficou_Harmony', 'Versao_Atual', 'Prompt_Atual', 'Erros_Registrados_Versoes', 'Minutagem_Resolvida', 'Minutagem_Obs'].map(csvCell).join(sep);
+        const rows = [header];
+
+        projetos.forEach(proj => {
+            (proj.perguntas || []).forEach((q, idx) => {
+                if (!q) return;
+                const fMeta = this._getFlagMeta(q.flag);
+                const versoes = Array.isArray(q.versoes) ? q.versoes : [];
+                const vAtualObj = versoes.find(v => v.versao === (q.versaoAtual || 1)) || versoes[0] || {};
+                const errosResumo = versoes.map(v => {
+                    const probs = Array.isArray(v.problemasInsight) ? v.problemasInsight : [];
+                    if (probs.length === 0) return '';
+                    return `V${v.versao}: ` + probs.map(pr => `[${pr.resolvido ? 'OK' : 'PEND'}] [${this._getProblemTypeMeta(pr.tipoProblema).label}] ID:${pr.idLigacao} -> ${pr.erroEncontrado}`).join(' ; ');
+                }).filter(Boolean).join(' || ');
+
+                rows.push([
+                    proj.operacao || '',
+                    proj.nomeProjeto || '',
+                    proj.nomeDatalake || '',
+                    idx + 1,
+                    q.perguntaSoft || '',
+                    q.peso || '',
+                    fMeta.label,
+                    q.motivoNaoEntrou || '',
+                    q.qualMetadado || '',
+                    q.comoFicouHarmony || '',
+                    q.flag === 'inclusa' ? `V${q.versaoAtual || 1}` : '',
+                    q.flag === 'inclusa' ? (vAtualObj.promptTexto || '') : '',
+                    errosResumo,
+                    q.flag === 'minutagem' ? (q.minutagemResolvida ? 'SIM - ENTREGUE' : 'PENDENTE') : '',
+                    q.minutagemObservacao || ''
+                ].map(csvCell).join(sep));
+            });
+        });
+
+        const csvContent = '\ufeff' + rows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const dt = new Date().toISOString().split('T')[0];
+        a.download = projetos.length === 1
+            ? `Harmony_${String(projetos[0].operacao || 'OP').replace(/\W+/g, '_')}_${dt}.csv`
+            : `Harmony_Controle_Geral_${dt}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    exportarCSVProjeto(projId) {
+        const proj = this._getProj(projId);
+        if (!proj) return;
+        this._buildCsvRows([proj]);
+    },
+
+    exportarCSVTodos() {
+        const projetos = this._getProjetos();
+        if (projetos.length === 0) {
+            return app.ui.showAlert("Aviso", "Não há projetos cadastrados para exportar.", "info");
+        }
+        this._buildCsvRows(projetos);
+    }
+};
 
 // =========================================================================
 // MÓDULO EXAME FCR NO CALL CENTER (ANTI-COLA, 10 QUESTÕES DIFÍCEIS)
