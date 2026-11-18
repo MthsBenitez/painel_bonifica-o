@@ -379,7 +379,7 @@
     body:not(:has(#diploma-modal)) #view-app,
     body:not(:has(#diploma-modal)) main,
     body:not(:has(#diploma-modal)) #content-container,
-    body:not(:has(#diploma-modal)) #view-container-analise_csv_dinamico,
+    body:not(:has(#diploma-modal)) #view-container-analise_csv_dinamico:not(.pdf-clean-mode),
     body:not(:has(#diploma-modal)) #view-container-analitico_visao_geral,
     body:not(:has(#diploma-modal)) #view-container-painel_executivo_qualidade,
     body:not(:has(#diploma-modal)) #area-apresentacao {
