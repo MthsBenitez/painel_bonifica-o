@@ -169,13 +169,19 @@ const app = {
                 const cargo = String(u.cargo || '').trim().toLowerCase();
                 return tipo === 'operador' || Boolean(u.turmaId || u.turmaNumero) || cargo.includes('operador');
             },
+            isUserJovemAprendiz(u) {
+                if (!u || this.isUserOperador(u)) return false;
+                return String(u.tipoAcesso || '').trim() === 'Jovem Aprendiz';
+            },
             isUserQualidade(u) {
                 if (!u || this.isUserOperador(u)) return false;
-                return (u.tipoAcesso || 'Qualidade') === 'Qualidade';
+                const tipo = String(u.tipoAcesso || 'Qualidade').trim();
+                return tipo === 'Qualidade' || tipo === 'Jovem Aprendiz';
             },
             isUserTreinamento(u) {
                 if (!u || this.isUserOperador(u)) return false;
-                return String(u.tipoAcesso || '').trim() === 'Treinamento';
+                const tipo = String(u.tipoAcesso || '').trim();
+                return tipo === 'Treinamento' || tipo === 'Jovem Aprendiz';
             },
             getQualidadeUsers() {
                 return (this.users || []).filter(u => this.isUserQualidade(u));
@@ -2107,8 +2113,9 @@ storage: {
                     return this.isAdmin || tipo === 'Dev';
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
+                if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
                 if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
-                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
+                const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
             },
@@ -15675,17 +15682,19 @@ storage: {
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
-                gruposAcessoLista: ['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'],
+                gruposAcessoLista: ['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'],
 
                 getPresetsGruposAcesso() {
                     const todasAbas = this.getAllSystemTabs();
                     const defaultUserIds = todasAbas.filter(t => t.isDefault).map(t => t.id);
                     const allIds = todasAbas.map(t => t.id);
+                    const treinoDefaults = ['home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'];
 
                     const defaults = {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal', 'pesquisa_treinamento'],
                         'Qualidade': defaultUserIds,
-                        'Treinamento': [...new Set(['home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'calendario', 'gestao_atas', 'ata_reuniao', 'laudos_estudos', 'validar_acoes', 'registrar_acao', 'controle_estoque', 'gestao_impressoes', 'impressoes', 'caca_palavras', 'palavras_cruzadas', 'perfil', 'regras', 'treinamentos', 'legal'])],
+                        'Treinamento': [...new Set(treinoDefaults)],
+                        'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds.filter(id => id !== 'harmony')
@@ -15703,13 +15712,18 @@ storage: {
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev' && id !== 'minhas_atas');
                         if (!base.includes('home')) base.unshift('home');
-                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('produtividade_gtd')) base.push('produtividade_gtd');
-                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
-                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('diario_bordo')) base.push('diario_bordo');
-                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
-                        if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('palavras_cruzadas')) base.push('palavras_cruzadas');
+                        if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('produtividade_gtd')) base.push('produtividade_gtd');
+                        if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
+                        if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('diario_bordo')) base.push('diario_bordo');
+                        if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('caca_palavras')) base.push('caca_palavras');
+                        if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('palavras_cruzadas')) base.push('palavras_cruzadas');
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
-                        if (['Gestor', 'Gerente', 'Dev'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
+                        if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
+                        if (g === 'Jovem Aprendiz') {
+                            ['gestao_equipe', 'span_operacoes', 'implantacao_ia', 'ata_reuniao', 'analise_csv_dinamico'].forEach(reqTab => {
+                                if (!base.includes(reqTab)) base.push(reqTab);
+                            });
+                        }
                         if (base.includes('hierarquia') && !base.includes('span_operacoes')) base.push('span_operacoes');
                         if (base.includes('hierarquia') && !base.includes('implantacao_ia')) base.push('implantacao_ia');
                         if (base.includes('treinamento_capacitacao') || base.includes('csat_nps')) {
@@ -15779,13 +15793,13 @@ storage: {
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('gestao_equipe')) savedTabs.push('gestao_equipe');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('span_operacoes')) savedTabs.push('span_operacoes');
                     if (savedTabs.includes('hierarquia') && !savedTabs.includes('implantacao_ia')) savedTabs.push('implantacao_ia');
-                    if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('qualidade_treinamento')) savedTabs.push('qualidade_treinamento');
-                    if (['Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('produtividade_gtd')) savedTabs.push('produtividade_gtd');
+                    if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('qualidade_treinamento')) savedTabs.push('qualidade_treinamento');
+                    if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(tipo) && !savedTabs.includes('produtividade_gtd')) savedTabs.push('produtividade_gtd');
                     if (savedTabs.includes('minhas_atas')) {
                         savedTabs = savedTabs.filter(id => id !== 'minhas_atas');
                         if (!savedTabs.includes('ata_reuniao')) savedTabs.push('ata_reuniao');
                     }
-                    if (!app.isAdmin && tipo === 'Qualidade' && !savedTabs.includes('ata_reuniao')) savedTabs.push('ata_reuniao');
+                    if (!app.isAdmin && (tipo === 'Qualidade' || tipo === 'Jovem Aprendiz') && !savedTabs.includes('ata_reuniao')) savedTabs.push('ata_reuniao');
 
                     // Se o usuário teve suas abas sobrescritas apenas com 'implantacao_ia', restaura os presets do perfil
                     if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
@@ -15795,7 +15809,7 @@ storage: {
                         savedTabs = [...new Set([...savedTabs, ...presetTabs])];
                     }
 
-                    if (['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo)) {
+                    if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
                         const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
                         if (tipo !== 'Dev') {
                             savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
@@ -15807,7 +15821,7 @@ storage: {
                             const merged = [...new Set([...savedTabs, ...presetTabs])];
                             return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas');
                         }
-                        if (['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
+                        if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
                     savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
@@ -15817,38 +15831,58 @@ storage: {
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
                     const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
                     if (idx === -1) return;
+                    const alvo = app.users[idx];
+                    const grupoAnterior = alvo.tipoAcesso || 'Qualidade';
                     const presets = this.getPresetsGruposAcesso();
-                    app.users[idx].tipoAcesso = novoGrupo;
-                    if (novoGrupo === 'Treinamento' && !app.users[idx].subclasse) {
-                        app.users[idx].subclasse = 'Instrutor';
+                    alvo.tipoAcesso = novoGrupo;
+                    if (novoGrupo === 'Treinamento' && !alvo.subclasse) {
+                        alvo.subclasse = 'Instrutor';
                     }
                     if (novoGrupo === 'Operador') {
-                        app.users[idx].cargo = 'Operador em Treinamento';
-                        app.users[idx].subclasse = null;
-                        app.users[idx].abasLiberadas = ['pesquisa_treinamento'];
+                        alvo.cargo = 'Operador em Treinamento';
+                        alvo.subclasse = null;
+                        alvo.abasLiberadas = ['pesquisa_treinamento'];
                     } else {
-                        app.users[idx].abasLiberadas = [...(presets[novoGrupo] || [])];
+                        alvo.abasLiberadas = [...(presets[novoGrupo] || [])];
                     }
                     if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
-                        app.currentUser = app.users[idx];
+                        app.currentUser = alvo;
                         this.renderNav();
+                    }
+                    if (app.jovemAprendizAudit) {
+                        app.jovemAprendizAudit.registrarSeAplicavel(
+                            'Alteração de Perfil (Grupo)',
+                            alvo,
+                            [`Grupo de acesso alterado: ${grupoAnterior} -> ${novoGrupo}`],
+                            'perfil'
+                        );
                     }
                     app.storage.saveUsers().then(() => {
                         this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                        this.showAlert("Perfil Atualizado!", `<b>${app.users[idx].nome}</b> agora possui o perfil <b>${novoGrupo}</b>.`, "success");
+                        this.showAlert("Perfil Atualizado!", `<b>${alvo.nome}</b> agora possui o perfil <b>${novoGrupo}</b>.`, "success");
                     });
                 },
 
                 alterarSubclasseTreinamentoRapido(matricula, novaSubclasse) {
                     const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
                     if (idx === -1) return;
-                    app.users[idx].subclasse = novaSubclasse;
+                    const alvo = app.users[idx];
+                    const subAnterior = alvo.subclasse || 'Instrutor';
+                    alvo.subclasse = novaSubclasse;
                     if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
                         app.currentUser.subclasse = novaSubclasse;
                     }
+                    if (app.jovemAprendizAudit) {
+                        app.jovemAprendizAudit.registrarSeAplicavel(
+                            'Alteração de Subclasse',
+                            alvo,
+                            [`Subclasse (Treinamento): ${subAnterior} -> ${novaSubclasse}`],
+                            'perfil'
+                        );
+                    }
                     app.storage.saveUsers().then(() => {
                         this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                        this.showAlert("Subclasse Atualizada", `<b>${app.users[idx].nome}</b> agora está denominado(a) como <b>${novaSubclasse}</b> de Treinamento.`, "success");
+                        this.showAlert("Subclasse Atualizada", `<b>${alvo.nome}</b> agora está denominado(a) como <b>${novaSubclasse}</b> de Treinamento.`, "success");
                     });
                 },
 
@@ -29122,9 +29156,20 @@ storage: {
                 salvarOperacoesMonitorHierarquia(matricula) {
                     const u = app.users.find(x => x.matricula === matricula);
                     if (!u) return;
+                    const opsAntes = Array.isArray(u.operacoes) ? [...u.operacoes] : [];
                     const checks = document.querySelectorAll('.hier-op-check:checked');
                     u.operacoes = Array.from(checks).map(c => c.value);
                     u.atualizadoEm = new Date().toISOString();
+                    if (app.jovemAprendizAudit) {
+                        const add = u.operacoes.filter(o => !opsAntes.includes(o));
+                        const rem = opsAntes.filter(o => !u.operacoes.includes(o));
+                        const diffs = [];
+                        if (add.length > 0) diffs.push(`Adicionadas: ${add.join(', ')}`);
+                        if (rem.length > 0) diffs.push(`Removidas: ${rem.join(', ')}`);
+                        if (diffs.length > 0) {
+                            app.jovemAprendizAudit.registrarSeAplicavel('Alteração de Operações & Span', u, diffs, 'hierarquia');
+                        }
+                    }
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui._refreshSpanOrHierarquiaInPlace();
                     const sp = app.getSpanUsuario(u);
@@ -29209,6 +29254,10 @@ storage: {
                         app.ui.showToast("Equipe do gestor atualizada!", "success");
                     }
                     if (alterados.length > 0) {
+                        if (app.jovemAprendizAudit) {
+                            const detalhes = alterados.map(u => `${u.nome} (#${u.matricula}): ${u.gestorMatricula === matriculaGestor ? 'Vinculado ao gestor' : 'Desvinculado do gestor'}`);
+                            app.jovemAprendizAudit.registrarSeAplicavel('Alocação de Equipe (Hierarquia)', gestor, detalhes, 'hierarquia');
+                        }
                         Promise.all(alterados.map(u => app.storage.saveUserByMatricula(u.matricula, {
                             gestorMatricula: u.gestorMatricula || null,
                             atualizadoEm: u.atualizadoEm
@@ -29235,7 +29284,7 @@ storage: {
                             <div>
                                 <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Cargo</label>
                                 <select id="hier-edit-cargo" onchange="const sc = document.getElementById('hier-edit-subclasse-box'); if (sc) sc.style.display = this.value === 'Treinamento' ? 'block' : 'none';" class="${selCls}">
-                                    ${['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
                                 </select>
                             </div>
                             <div id="hier-edit-subclasse-box" style="display: ${cargo === 'Treinamento' ? 'block' : 'none'}">
@@ -29265,9 +29314,12 @@ storage: {
                 salvarMembroHierarquia(matricula) {
                     const u = app.users.find(x => x.matricula === matricula);
                     if (!u) return;
+                    const cargoAntes = u.tipoAcesso || 'Qualidade';
+                    const subAntes = u.subclasse || '';
+                    const gestorAntes = u.gestorMatricula || '';
                     const novoCargo = document.getElementById('hier-edit-cargo').value;
                     const novoGestor = document.getElementById('hier-edit-gestor').value;
-                    if (novoCargo !== (u.tipoAcesso || 'Qualidade')) {
+                    if (novoCargo !== cargoAntes) {
                         u.tipoAcesso = novoCargo;
                         if (novoCargo === 'Operador') {
                             u.cargo = 'Operador em Treinamento';
@@ -29285,6 +29337,15 @@ storage: {
                     }
                     u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
                     u.atualizadoEm = new Date().toISOString();
+                    if (app.jovemAprendizAudit) {
+                        const diffs = [];
+                        if (cargoAntes !== u.tipoAcesso) diffs.push(`Cargo/Perfil: ${cargoAntes} -> ${u.tipoAcesso}`);
+                        if (subAntes !== (u.subclasse || '')) diffs.push(`Subclasse: ${subAntes || '-'} -> ${u.subclasse || '-'}`);
+                        if (gestorAntes !== (u.gestorMatricula || '')) diffs.push(`Gestor: ${gestorAntes || 'Sem gestor'} -> ${u.gestorMatricula || 'Sem gestor'}`);
+                        if (diffs.length > 0) {
+                            app.jovemAprendizAudit.registrarSeAplicavel('Edição na Hierarquia', u, diffs, 'hierarquia');
+                        }
+                    }
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui._refreshSpanOrHierarquiaInPlace();
                     app.storage.saveUserByMatricula(u.matricula, {
@@ -32872,7 +32933,9 @@ storage: {
                         return 'Qualidade';
                     };
                     const isGestor = app.isGestor();
+                    const isJovemApr = typeof app.isJovemAprendiz === 'function' && app.isJovemAprendiz();
                     const isSuper = app.isSuperAdmin() || isGestor;
+                    const podeEditarHierarquia = isSuper || isJovemApr;
 
                     const gerentes = app.users.filter(u => cargoDe(u) === 'Gerente');
                     const gestores = app.users.filter(u => cargoDe(u) === 'Gestor');
@@ -32884,7 +32947,8 @@ storage: {
                         Gerente: 'bg-rose-500', 
                         Gestor: 'bg-amber-500', 
                         Qualidade: 'bg-blue-500', 
-                        Treinamento: 'bg-emerald-500', 
+                        Treinamento: 'bg-emerald-500',
+                        'Jovem Aprendiz': 'bg-cyan-500',
                         Dev: 'bg-purple-500',
                         Operador: 'bg-teal-500' 
                     };
@@ -32892,6 +32956,7 @@ storage: {
                         'Operador': 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800',
                         'Qualidade': 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
                         'Treinamento': 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+                        'Jovem Aprendiz': 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800',
                         'Dev': 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
                         'Gestor': 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
                         'Gerente': 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800'
@@ -32912,7 +32977,7 @@ storage: {
                                 : nomesOps.slice(0, 2).join(' · ') + (nomesOps.length > 2 ? ` <span class="text-slate-400">+${nomesOps.length - 2}</span>` : ''));
                         const searchMeta = `${nomeClean} ${u.matricula} ${cargo} ${u.turmaNumero || ''} ${nomesOps.join(' ')}`.replace(/"/g, '');
 
-                        const podeGerenciar = isSuper || isGestor;
+                        const podeGerenciar = podeEditarHierarquia;
 
                         return `
                             <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
@@ -32930,9 +32995,9 @@ storage: {
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0 ml-auto">
-                                    ${isSuper ? `
+                                    ${podeEditarHierarquia ? `
                                         <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
-                                            ${['Operador', 'Qualidade', 'Treinamento', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
+                                            ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
                                         </select>
                                         ${cargo === 'Treinamento' ? `
                                             <select onchange="app.ui.alterarSubclasseTreinamentoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-black uppercase border cursor-pointer outline-none bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs" title="Denominação da Subclasse de Treinamento">
@@ -32950,7 +33015,11 @@ storage: {
                                         <div class="text-[8px] uppercase tracking-wider text-slate-400 mt-0.5">span</div>
                                     </button>
                                     <div class="flex items-center gap-0.5">
-                                        ${isSuper ? `
+                                        ${podeEditarHierarquia ? `
+                                            <label class="w-7 h-7 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-900/30 transition flex items-center justify-center cursor-pointer" title="Atualizar Foto de Perfil">
+                                                <i class="fa-solid fa-camera text-xs"></i>
+                                                <input type="file" accept="image/*" onchange="app.admin.atualizarFotoPerfilHierarquia(event, '${u.matricula}')" class="hidden">
+                                            </label>
                                             <button type="button" onclick="app.ui.abrirModalEditarMembro('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition" title="Alterar gestor imediato na hierarquia"><i class="fa-solid fa-sitemap text-xs"></i></button>
                                             <button type="button" onclick="app.admin.openEditUser('${u.matricula}')" class="w-7 h-7 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Editar perfil completo e abas ADM liberadas"><i class="fa-solid fa-sliders text-xs"></i></button>
                                         ` : ''}
@@ -33032,6 +33101,7 @@ storage: {
                         { id: 'Gestor', label: 'Gestores', count: gestores.length },
                         { id: 'Qualidade', label: 'Qualidade', count: app.users.filter(u => cargoDe(u) === 'Qualidade').length },
                         { id: 'Treinamento', label: 'Treinamento', count: app.users.filter(u => cargoDe(u) === 'Treinamento').length },
+                        { id: 'Jovem Aprendiz', label: 'Jovem Aprendiz', count: app.users.filter(u => cargoDe(u) === 'Jovem Aprendiz').length },
                         { id: 'Operador', label: 'Operadores (Turmas)', count: app.users.filter(u => cargoDe(u) === 'Operador').length },
                         { id: 'Dev', label: 'Dev', count: app.users.filter(u => cargoDe(u) === 'Dev').length }
                     ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5 tabular-nums">${r.count}</span></button>`).join('');
@@ -33041,12 +33111,21 @@ storage: {
                             <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                                 <div>
                                     <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Equipe, Hierarquia & Span</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM e hierarquia de liderança da equipe.</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Gerencie colaboradores, grupos de acesso ADM, fotos de perfil e hierarquia da equipe.</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
+                                    ${isSuper ? `
+                                        <button type="button" onclick="app.jovemAprendizAudit && app.jovemAprendizAudit.abrirModalRelatorioDiario()" class="px-3.5 py-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:hover:bg-cyan-900/60 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800 text-xs font-extrabold transition cursor-pointer" title="Ver todas as alterações realizadas por Jovem Aprendiz por dia">
+                                            <i class="fa-solid fa-clipboard-list mr-1.5"></i>Relatório Diário (J. Aprendiz)
+                                        </button>
+                                    ` : ''}
                                     <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-chart-simple mr-1.5"></i>Visão Geral Setorial</button>
-                                    <button type="button" onclick="app.ui.abrirModalPresetsGrupos()" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition"><i class="fa-solid fa-user-shield mr-1.5"></i>Abas por Grupo</button>
-                                    <button type="button" onclick="app.ui.openAddUserModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition"><i class="fa-solid fa-user-plus mr-1.5"></i>Novo Integrante</button>
+                                    ${isSuper ? `
+                                        <button type="button" onclick="app.ui.abrirModalPresetsGrupos()" class="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition"><i class="fa-solid fa-user-shield mr-1.5"></i>Abas por Grupo</button>
+                                    ` : ''}
+                                    ${podeEditarHierarquia ? `
+                                        <button type="button" onclick="app.ui.openAddUserModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"><i class="fa-solid fa-user-plus mr-1.5"></i>Novo Integrante</button>
+                                    ` : ''}
                                 </div>
                             </div>
 
@@ -49037,6 +49116,9 @@ storage: {
                     const idx = app.users.findIndex(u => u.matricula === mat);
                     if(idx > -1) { 
                         app.users[idx].aceiteTermos = null; 
+                        if (app.jovemAprendizAudit) {
+                            app.jovemAprendizAudit.registrarSeAplicavel('Reset de Termos LGPD', app.users[idx], ['Exigido novo aceite dos Termos LGPD no próximo login'], 'seguranca');
+                        }
                         app.storage.saveUsers(); 
                         app.ui.showAlert("Feito", "Termos resetados.", "success"); 
                     }
@@ -49051,6 +49133,9 @@ storage: {
                         const encDefault = app.utils.encryptPassword('12345');
                         const nowTs = Date.now();
                         app.storage.markUserPasswordDirty(normMat);
+                        if (app.jovemAprendizAudit) {
+                            app.jovemAprendizAudit.registrarSeAplicavel('Reset de Senha', app.users[idx], ['Senha redefinida para padrão inicial (12345)'], 'seguranca');
+                        }
                         app.storage.saveUserByMatricula(app.users[idx].matricula, {
                             senha: encDefault,
                             primeiroAcesso: true,
@@ -49062,6 +49147,50 @@ storage: {
                             app.ui.showAlert("Erro", "Falha ao salvar o reset de senha no servidor.", "error");
                         });
                     }
+                },
+
+                atualizarFotoPerfilHierarquia(event, mat) {
+                    const inputEl = event && event.target;
+                    const file = inputEl && inputEl.files && inputEl.files[0];
+                    if (!file) return;
+                    const normMat = app.storage._normalizeMat(mat);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === normMat);
+                    if (idx === -1) {
+                        if (inputEl) inputEl.value = '';
+                        return app.ui.showAlert("Aviso", "Colaborador não encontrado.", "error");
+                    }
+                    const alvo = app.users[idx];
+                    const tinhaFoto = Boolean(alvo.foto);
+                    app.actions.compressImageAsync(file).then(b64 => {
+                        if (inputEl) inputEl.value = '';
+                        if (!b64) return app.ui.showAlert("Erro", "Não foi possível processar a imagem selecionada.", "error");
+                        alvo.foto = b64;
+                        alvo.atualizadoEm = new Date().toISOString();
+                        if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
+                            app.currentUser.foto = b64;
+                            app.ui.renderNav();
+                        }
+                        if (app.jovemAprendizAudit) {
+                            app.jovemAprendizAudit.registrarSeAplicavel(
+                                'Alteração de Foto de Perfil',
+                                alvo,
+                                [tinhaFoto ? 'Foto de perfil substituída na aba Hierarquia' : 'Foto de perfil adicionada na aba Hierarquia'],
+                                'foto'
+                            );
+                        }
+                        return app.storage.saveUserByMatricula(alvo.matricula, {
+                            foto: b64,
+                            atualizadoEm: alvo.atualizadoEm
+                        }).then(() => {
+                            if (app.ui && app.ui._refreshSpanOrHierarquiaInPlace) app.ui._refreshSpanOrHierarquiaInPlace();
+                            else app.ui.renderTab('hierarquia', true);
+                            if (app.ui && app.ui.showToast) app.ui.showToast(`Foto de ${alvo.nome} atualizada com sucesso!`, "success");
+                        });
+                    }).catch(err => {
+                        if (inputEl) inputEl.value = '';
+                        console.error("Erro ao atualizar foto:", err);
+                        app.ui.showAlert("Erro", "Falha ao atualizar foto do colaborador.", "error");
+                    });
                 },
 
                 registerUser() {
@@ -49084,8 +49213,18 @@ storage: {
                     const saveFinal = (fotoBase64) => {
                         const encPwd = app.utils.encryptPassword(pwd);
                         const isDef = !!(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(pwd));
-                        app.users.push({ nome, matricula: mat, senha: encPwd, primeiroAcesso: isDef, pwdUpdatedAt: Date.now(), tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 });
+                        const novoUsuario = { nome, matricula: mat, senha: encPwd, primeiroAcesso: isDef, pwdUpdatedAt: Date.now(), tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 };
+                        app.users.push(novoUsuario);
                         app.storage.markUserPasswordDirty(normMat);
+                        if (app.jovemAprendizAudit) {
+                            const detalhesCad = [
+                                `Perfil criado: ${tipoAcesso}${subclasse ? ` (${subclasse})` : ''}`,
+                                `Operações (${operacoes.length}): ${operacoes.length > 0 ? operacoes.join(', ') : 'Nenhuma'}`,
+                                `Abas liberadas: ${abasLiberadas.length}`,
+                                fotoBase64 ? 'Foto de perfil cadastrada no ato' : 'Sem foto inicial'
+                            ];
+                            app.jovemAprendizAudit.registrarSeAplicavel('Cadastro de Novo Perfil', novoUsuario, detalhesCad, 'cadastro');
+                        }
                         app.storage.saveUsers().then(() => {
                             app.ui.closeAddUserModal();
                             app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
@@ -49104,7 +49243,7 @@ storage: {
                 },
 
                 openEditUser(mat) {
-                    const canEditUsers = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev') || app.hasAdminAccess('gestao_equipe');
+                    const canEditUsers = app.isAdmin || (app.currentUser && (app.currentUser.tipoAcesso === 'Dev' || app.currentUser.tipoAcesso === 'Jovem Aprendiz')) || app.hasAdminAccess('gestao_equipe') || app.hasAdminAccess('hierarquia');
                     if (!canEditUsers) {
                         return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para editar dados ou perfil de usuário.", "error");
                     }
@@ -49155,9 +49294,10 @@ storage: {
                         return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span></label>`;
                     }).join('');
                 
-                    // Trava de Segurança: Esconde Abas e Operações se o usuário não tiver permissão de Gestão da Equipe
+                    // Trava de Segurança: Esconde Abas e Operações se o usuário não tiver permissão de Gestão da Equipe / Hierarquia
                     const adminBlocks = document.getElementById('edit-ops-container').parentElement;
-                    if (!app.hasAdminAccess('gestao_equipe')) {
+                    const podeEditarEstrutura = app.hasAdminAccess('gestao_equipe') || app.hasAdminAccess('hierarquia') || (typeof app.isJovemAprendiz === 'function' && app.isJovemAprendiz());
+                    if (!podeEditarEstrutura) {
                         adminBlocks.classList.add('hidden');
                         if (selTipo) selTipo.parentElement.classList.add('hidden');
                         if (editSubclasseContainer) editSubclasseContainer.classList.add('hidden');
@@ -49170,7 +49310,7 @@ storage: {
                 },
 
                 saveUserEdit() {
-                    const canEditUsers = app.isAdmin || (app.currentUser && app.currentUser.tipoAcesso === 'Dev') || app.hasAdminAccess('gestao_equipe');
+                    const canEditUsers = app.isAdmin || (app.currentUser && (app.currentUser.tipoAcesso === 'Dev' || app.currentUser.tipoAcesso === 'Jovem Aprendiz')) || app.hasAdminAccess('gestao_equipe') || app.hasAdminAccess('hierarquia');
                     if (!canEditUsers) {
                         const m = document.getElementById('edit-user-modal');
                         if (m) m.classList.add('hidden');
@@ -49196,6 +49336,16 @@ storage: {
 
                     if(mat !== originalMat && app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "A nova matrícula já está em uso por outro colaborador", "error");
 
+                    const antesSnap = {
+                        nome: app.users[idx].nome || '',
+                        matricula: app.users[idx].matricula || '',
+                        tipoAcesso: app.users[idx].tipoAcesso || 'Qualidade',
+                        subclasse: app.users[idx].subclasse || null,
+                        operacoes: Array.isArray(app.users[idx].operacoes) ? [...app.users[idx].operacoes] : [],
+                        abasLiberadas: Array.isArray(app.users[idx].abasLiberadas) ? [...app.users[idx].abasLiberadas] : [],
+                        tinhaFoto: Boolean(app.users[idx].foto)
+                    };
+
                     const executeSave = (fotoBase64) => {
                         app.users[idx].nome = nome;
                         app.users[idx].matricula = mat;
@@ -49210,6 +49360,30 @@ storage: {
                             app.storage.markUserPasswordDirty(app.users[idx].matricula);
                         }
                         if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
+
+                        if (app.jovemAprendizAudit) {
+                            const diffs = [];
+                            if (antesSnap.nome !== nome) diffs.push(`Nome: ${antesSnap.nome} -> ${nome}`);
+                            if (antesSnap.matricula !== mat) diffs.push(`Matrícula: ${antesSnap.matricula} -> ${mat}`);
+                            if (antesSnap.tipoAcesso !== tipoAcesso) diffs.push(`Perfil: ${antesSnap.tipoAcesso} -> ${tipoAcesso}`);
+                            if ((antesSnap.subclasse || '') !== (subclasse || '')) diffs.push(`Subclasse: ${antesSnap.subclasse || '-'} -> ${subclasse || '-'}`);
+                            if (pwd) diffs.push('Senha alterada manualmente');
+                            if (fotoBase64 !== undefined) diffs.push(antesSnap.tinhaFoto ? 'Foto de perfil atualizada' : 'Foto de perfil adicionada');
+                            const opsAdd = operacoes.filter(o => !antesSnap.operacoes.includes(o));
+                            const opsRem = antesSnap.operacoes.filter(o => !operacoes.includes(o));
+                            if (opsAdd.length > 0) diffs.push(`Operações +: ${opsAdd.join(', ')}`);
+                            if (opsRem.length > 0) diffs.push(`Operações -: ${opsRem.join(', ')}`);
+                            const abasAdd = abasLiberadas.filter(a => !antesSnap.abasLiberadas.includes(a));
+                            const abasRem = antesSnap.abasLiberadas.filter(a => !abasLiberadas.includes(a));
+                            if (abasAdd.length > 0 || abasRem.length > 0) {
+                                diffs.push(`Abas ajustadas (${abasAntesLenLabel(antesSnap.abasLiberadas.length, abasLiberadas.length)})`);
+                            }
+                            function abasAntesLenLabel(a, b) { return `${a} -> ${b} abas`; }
+                            if (diffs.length > 0) {
+                                const cat = (fotoBase64 !== undefined && diffs.length === 1) ? 'foto' : 'edicao';
+                                app.jovemAprendizAudit.registrarSeAplicavel('Edição Completa de Perfil', app.users[idx], diffs, cat);
+                            }
+                        }
 
                         if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(originalMat)) {
                             app.currentUser = app.users[idx];
@@ -51430,6 +51604,10 @@ Object.assign(app, {
 
             isGestor() {
                 return !this.isSuperAdmin() && this.currentUser?.tipoAcesso === 'Gestor';
+            },
+
+            isJovemAprendiz() {
+                return !this.isAdmin && String(this.currentUser?.tipoAcesso || '').trim() === 'Jovem Aprendiz';
             },
 
             getSubordinados(user = null) {
@@ -66691,3 +66869,339 @@ app.duolingo = {
             
             app.ui.init(); 
         });
+
+// =========================================================================
+// AUDITORIA & RELATÓRIO DIÁRIO — PERFIL JOVEM APRENDIZ
+// =========================================================================
+app.jovemAprendizAudit = {
+    STORAGE_KEY: 'soft_ja_audit_logs_v1',
+    logs: {},
+    _loadedFromCloud: false,
+
+    _pad2(n) {
+        return String(n).padStart(2, '0');
+    },
+
+    _todayIso() {
+        const d = new Date();
+        return `${d.getFullYear()}-${this._pad2(d.getMonth() + 1)}-${this._pad2(d.getDate())}`;
+    },
+
+    _esc(v) {
+        return String(v ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    _readLocal() {
+        try {
+            const raw = localStorage.getItem(this.STORAGE_KEY);
+            const parsed = raw ? JSON.parse(raw) : {};
+            return (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    },
+
+    _writeLocal(map) {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(map || {}));
+        } catch (e) {}
+    },
+
+    registrarSeAplicavel(acao, alvoUser, detalhesArray = [], categoria = 'perfil') {
+        if (typeof app.isJovemAprendiz !== 'function' || !app.isJovemAprendiz()) return null;
+        const cur = app.currentUser || {};
+        const now = new Date();
+        const ts = now.getTime();
+        const dataIso = `${now.getFullYear()}-${this._pad2(now.getMonth() + 1)}-${this._pad2(now.getDate())}`;
+        const horaStr = `${this._pad2(now.getHours())}:${this._pad2(now.getMinutes())}:${this._pad2(now.getSeconds())}`;
+        const id = `ja_${ts}_${Math.floor(Math.random() * 10000)}`;
+
+        const entry = {
+            id,
+            ts,
+            dataIso,
+            horaStr,
+            atorMatricula: String(cur.matricula || '-').trim().toUpperCase(),
+            atorNome: String(cur.nome || cur.nomeCompleto || cur.usuario || 'Jovem Aprendiz').trim().toUpperCase(),
+            atorPerfil: 'Jovem Aprendiz',
+            categoria: categoria || 'perfil',
+            acao: String(acao || 'Alteração').trim(),
+            alvoMatricula: String(alvoUser?.matricula || '-').trim().toUpperCase(),
+            alvoNome: String(alvoUser?.nome || '-').trim().toUpperCase(),
+            detalhes: Array.isArray(detalhesArray) ? detalhesArray.filter(Boolean).map(String) : [String(detalhesArray || '')].filter(Boolean)
+        };
+
+        if (!this.logs || typeof this.logs !== 'object') this.logs = this._readLocal();
+        this.logs[id] = entry;
+        this._writeLocal(this.logs);
+
+        if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref(`sistema_bonificacao/jovem_aprendiz_logs/${id}`).set(entry).catch(err => {
+                console.warn("Erro ao salvar log de Jovem Aprendiz no Firebase:", err);
+            });
+        }
+        return entry;
+    },
+
+    async carregarLogs(force = false) {
+        const localMap = this._readLocal();
+        this.logs = Object.assign({}, localMap, this.logs || {});
+        if ((!this._loadedFromCloud || force) && !window.__TEST_MODE__ && typeof firebase !== 'undefined' && firebase.database) {
+            try {
+                const snap = await firebase.database().ref('sistema_bonificacao/jovem_aprendiz_logs').once('value');
+                const val = snap.val();
+                if (val && typeof val === 'object') {
+                    this.logs = Object.assign({}, this.logs, val);
+                    this._writeLocal(this.logs);
+                }
+                this._loadedFromCloud = true;
+            } catch (err) {
+                console.warn("Aviso ao carregar logs do Jovem Aprendiz:", err);
+            }
+        }
+        return Object.values(this.logs || {})
+            .filter(Boolean)
+            .sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+    },
+
+    _getFilteredLogs(allLogs) {
+        const modo = this._filtroModo || 'dia';
+        const dataSel = this._filtroData || this._todayIso();
+        const atorSel = this._filtroAtor || 'TODOS';
+        const catSel = this._filtroCat || 'TODAS';
+        const busca = String(this._filtroBusca || '').trim().toLowerCase();
+        const d7Iso = (() => {
+            const d = new Date(Date.now() - 6 * 86400000);
+            return `${d.getFullYear()}-${this._pad2(d.getMonth() + 1)}-${this._pad2(d.getDate())}`;
+        })();
+
+        return (allLogs || []).filter(l => {
+            if (!l) return false;
+            if (modo === 'dia' && l.dataIso !== dataSel) return false;
+            if (modo === '7d' && String(l.dataIso || '') < d7Iso) return false;
+            if (atorSel !== 'TODOS' && String(l.atorMatricula || '') !== atorSel) return false;
+            if (catSel !== 'TODAS' && String(l.categoria || '') !== catSel) return false;
+            if (busca) {
+                const hay = `${l.atorNome || ''} ${l.atorMatricula || ''} ${l.acao || ''} ${l.alvoNome || ''} ${l.alvoMatricula || ''} ${(l.detalhes || []).join(' ')}`.toLowerCase();
+                if (!hay.includes(busca)) return false;
+            }
+            return true;
+        });
+    },
+
+    async abrirModalRelatorioDiario(dataInicial = null) {
+        const isAllowed = app.isAdmin || (typeof app.isSuperAdmin === 'function' && app.isSuperAdmin()) || (typeof app.isGestor === 'function' && app.isGestor());
+        if (!isAllowed) {
+            return app.ui.showAlert("Acesso Restrito", "Apenas Gestores, Gerentes ou Dev podem consultar o Relatório Diário de Jovem Aprendiz.", "warning");
+        }
+        this._filtroModo = this._filtroModo || 'dia';
+        this._filtroData = dataInicial || this._filtroData || this._todayIso();
+        this._filtroAtor = this._filtroAtor || 'TODOS';
+        this._filtroCat = this._filtroCat || 'TODAS';
+        this._filtroBusca = this._filtroBusca || '';
+
+        let modal = document.getElementById('ja-audit-report-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'ja-audit-report-modal';
+            modal.className = 'fixed inset-0 z-[85] flex items-center justify-center bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm p-3 sm:p-6';
+            modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+            document.body.appendChild(modal);
+        }
+        modal.classList.remove('hidden');
+        modal.innerHTML = `<div class="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-4xl w-full text-center text-sm font-bold text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2 text-cyan-600"></i>Carregando logs diários de Jovem Aprendiz...</div>`;
+
+        await this.carregarLogs(true);
+        this.renderModalBody();
+    },
+
+    renderModalBody() {
+        const modal = document.getElementById('ja-audit-report-modal');
+        if (!modal) return;
+        const allLogs = Object.values(this.logs || {}).filter(Boolean).sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+        const filtrados = this._getFilteredLogs(allLogs);
+
+        const atoresMap = {};
+        allLogs.forEach(l => {
+            if (l.atorMatricula) atoresMap[l.atorMatricula] = l.atorNome || l.atorMatricula;
+        });
+        (app.users || []).filter(u => String(u.tipoAcesso || '').trim() === 'Jovem Aprendiz').forEach(u => {
+            const m = String(u.matricula || '').trim().toUpperCase();
+            if (m && !atoresMap[m]) atoresMap[m] = String(u.nome || m).trim().toUpperCase();
+        });
+
+        const totalAcoes = filtrados.length;
+        const totalCad = filtrados.filter(l => l.categoria === 'cadastro').length;
+        const totalFotos = filtrados.filter(l => l.categoria === 'foto' || (l.detalhes || []).some(d => d.toLowerCase().includes('foto'))).length;
+        const totalEdits = filtrados.filter(l => ['perfil', 'edicao', 'hierarquia'].includes(l.categoria)).length;
+
+        const catBadge = {
+            cadastro: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300',
+            perfil: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300',
+            edicao: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300',
+            foto: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300',
+            hierarquia: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+            seguranca: 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+        };
+
+        const rowsHtml = filtrados.length === 0
+            ? `<div class="p-10 text-center text-xs text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">Nenhuma atividade de Jovem Aprendiz registrada neste filtro/data.</div>`
+            : filtrados.map(l => {
+                const dtFmt = l.dataIso ? l.dataIso.split('-').reverse().join('/') : '-';
+                const badgeCls = catBadge[l.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+                const dets = Array.isArray(l.detalhes) ? l.detalhes : [];
+                return `
+                    <div class="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase ${badgeCls}">${this._esc(l.acao)}</span>
+                                <span class="text-xs font-extrabold text-slate-800 dark:text-white">${this._esc(l.alvoNome)} <span class="text-slate-400 font-semibold">#${this._esc(l.alvoMatricula)}</span></span>
+                            </div>
+                            <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${dtFmt} às ${this._esc(l.horaStr || '')}</span>
+                        </div>
+                        <div class="text-[11px] text-cyan-700 dark:text-cyan-300 font-bold">
+                            <i class="fa-solid fa-user-check mr-1"></i> Executado por: ${this._esc(l.atorNome)} (#${this._esc(l.atorMatricula)})
+                        </div>
+                        ${dets.length > 0 ? `
+                            <ul class="space-y-1 pl-4 list-disc text-xs text-slate-600 dark:text-slate-300">
+                                ${dets.map(d => `<li>${this._esc(d)}</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+                <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-cyan-600 to-indigo-700 text-white">
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-widest text-cyan-100">Auditoria &amp; Governança</div>
+                        <h3 class="text-lg font-extrabold flex items-center gap-2"><i class="fa-solid fa-clipboard-list"></i> Relatório Diário — Jovem Aprendiz</h3>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="app.jovemAprendizAudit.copiarResumoDiario()" class="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition cursor-pointer"><i class="fa-regular fa-copy mr-1"></i>Copiar Resumo</button>
+                        <button type="button" onclick="app.jovemAprendizAudit.exportarRelatorioPDF()" class="px-3 py-1.5 rounded-xl bg-white text-indigo-700 hover:bg-slate-100 text-xs font-extrabold transition cursor-pointer"><i class="fa-solid fa-file-pdf text-rose-500 mr-1"></i>Exportar PDF</button>
+                        <button type="button" onclick="document.getElementById('ja-audit-report-modal').classList.add('hidden')" class="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                </div>
+
+                <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 space-y-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex items-center gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <button type="button" onclick="app.jovemAprendizAudit._filtroModo='dia'; app.jovemAprendizAudit.renderModalBody();" class="px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer ${this._filtroModo === 'dia' ? 'bg-cyan-600 text-white' : 'text-slate-500'}">Por Dia</button>
+                            <button type="button" onclick="app.jovemAprendizAudit._filtroModo='7d'; app.jovemAprendizAudit.renderModalBody();" class="px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer ${this._filtroModo === '7d' ? 'bg-cyan-600 text-white' : 'text-slate-500'}">Últimos 7 dias</button>
+                            <button type="button" onclick="app.jovemAprendizAudit._filtroModo='todos'; app.jovemAprendizAudit.renderModalBody();" class="px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer ${this._filtroModo === 'todos' ? 'bg-cyan-600 text-white' : 'text-slate-500'}">Todos</button>
+                        </div>
+                        ${this._filtroModo === 'dia' ? `
+                            <input type="date" value="${this._esc(this._filtroData)}" onchange="app.jovemAprendizAudit._filtroData=this.value; app.jovemAprendizAudit.renderModalBody();" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none">
+                        ` : ''}
+                        <select onchange="app.jovemAprendizAudit._filtroAtor=this.value; app.jovemAprendizAudit.renderModalBody();" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
+                            <option value="TODOS" ${this._filtroAtor === 'TODOS' ? 'selected' : ''}>Todos (Jovem Aprendiz)</option>
+                            ${Object.entries(atoresMap).map(([m, n]) => `<option value="${this._esc(m)}" ${this._filtroAtor === m ? 'selected' : ''}>${this._esc(n)} (#${this._esc(m)})</option>`).join('')}
+                        </select>
+                        <select onchange="app.jovemAprendizAudit._filtroCat=this.value; app.jovemAprendizAudit.renderModalBody();" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
+                            <option value="TODAS" ${this._filtroCat === 'TODAS' ? 'selected' : ''}>Todas as Ações</option>
+                            <option value="cadastro" ${this._filtroCat === 'cadastro' ? 'selected' : ''}>Cadastros de Perfil</option>
+                            <option value="perfil" ${this._filtroCat === 'perfil' ? 'selected' : ''}>Trocas de Grupo / Subclasse</option>
+                            <option value="edicao" ${this._filtroCat === 'edicao' ? 'selected' : ''}>Edições Completas</option>
+                            <option value="foto" ${this._filtroCat === 'foto' ? 'selected' : ''}>Fotos de Perfil</option>
+                            <option value="hierarquia" ${this._filtroCat === 'hierarquia' ? 'selected' : ''}>Hierarquia / Operações / Span</option>
+                            <option value="seguranca" ${this._filtroCat === 'seguranca' ? 'selected' : ''}>Senhas &amp; LGPD</option>
+                        </select>
+                        <input type="text" value="${this._esc(this._filtroBusca)}" oninput="app.jovemAprendizAudit._filtroBusca=this.value; app.jovemAprendizAudit.renderModalBody();" placeholder="Buscar colaborador ou detalhe..." class="flex-1 min-w-[180px] px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-white outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                            <div class="text-[10px] font-black uppercase text-slate-400">Total de Registros</div>
+                            <div class="text-lg font-black text-slate-800 dark:text-white">${totalAcoes}</div>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                            <div class="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400">Perfis Cadastrados</div>
+                            <div class="text-lg font-black text-emerald-800 dark:text-emerald-200">${totalCad}</div>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800">
+                            <div class="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-400">Alterações Perfil/Hier.</div>
+                            <div class="text-lg font-black text-indigo-800 dark:text-indigo-200">${totalEdits}</div>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-cyan-50/70 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800">
+                            <div class="text-[10px] font-black uppercase text-cyan-700 dark:text-cyan-400">Fotos Atualizadas</div>
+                            <div class="text-lg font-black text-cyan-800 dark:text-cyan-200">${totalFotos}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-1">
+                    ${rowsHtml}
+                </div>
+            </div>
+        `;
+    },
+
+    copiarResumoDiario() {
+        const allLogs = Object.values(this.logs || {}).filter(Boolean).sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+        const filtrados = this._getFilteredLogs(allLogs);
+        if (filtrados.length === 0) return app.ui.showAlert("Sem Dados", "Nenhuma atividade para copiar neste filtro.", "info");
+        const header = `RELATÓRIO DIÁRIO — JOVEM APRENDIZ (${this._filtroModo === 'dia' ? (this._filtroData || '').split('-').reverse().join('/') : this._filtroModo.toUpperCase()}) | Total: ${filtrados.length} ação(ões)`;
+        const linhas = filtrados.map(l => {
+            const dt = l.dataIso ? l.dataIso.split('-').reverse().join('/') : '';
+            return `[${dt} ${l.horaStr}] ${l.atorNome} (#${l.atorMatricula}) -> ${l.acao} em ${l.alvoNome} (#${l.alvoMatricula}): ${(l.detalhes || []).join(' | ')}`;
+        });
+        navigator.clipboard.writeText(`${header}\n\n${linhas.join('\n')}`).then(() => {
+            app.ui.showAlert("Copiado!", `${filtrados.length} registro(s) copiados para a área de transferência.`, "success");
+        });
+    },
+
+    exportarRelatorioPDF() {
+        const allLogs = Object.values(this.logs || {}).filter(Boolean).sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+        const filtrados = this._getFilteredLogs(allLogs);
+        if (filtrados.length === 0) return app.ui.showAlert("Sem Dados", "Nenhuma atividade para exportar neste filtro.", "info");
+        if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Erro", "Biblioteca PDF não carregada.", "error");
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        const periodoLbl = this._filtroModo === 'dia'
+            ? `Data: ${(this._filtroData || '').split('-').reverse().join('/')}`
+            : (this._filtroModo === '7d' ? 'Últimos 7 dias' : 'Histórico Completo');
+
+        doc.setFillColor(8, 145, 178);
+        doc.rect(0, 0, 297, 20, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.text('SOFTMARKETING  |  RELATÓRIO DIÁRIO DE ATIVIDADES — JOVEM APRENDIZ', 12, 10);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.text(`${periodoLbl}   |   Total de Ações: ${filtrados.length}   |   Emitido em: ${new Date().toLocaleString('pt-BR')}`, 12, 16);
+
+        doc.autoTable({
+            startY: 25,
+            margin: { left: 10, right: 10, top: 24, bottom: 12 },
+            head: [['Data / Hora', 'Jovem Aprendiz', 'Ação', 'Colaborador Afetado', 'Detalhamento das Alterações']],
+            body: filtrados.map(l => [
+                `${l.dataIso ? l.dataIso.split('-').reverse().join('/') : '-'}\n${l.horaStr || ''}`,
+                `${l.atorNome || '-'}\n(#${l.atorMatricula || '-'})`,
+                l.acao || '-',
+                `${l.alvoNome || '-'}\n(#${l.alvoMatricula || '-'})`,
+                (l.detalhes || []).join('\n') || '-'
+            ]),
+            theme: 'grid',
+            styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.5, valign: 'middle' },
+            headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+            columnStyles: {
+                0: { cellWidth: 26, halign: 'center' },
+                1: { cellWidth: 46 },
+                2: { cellWidth: 40, fontStyle: 'bold' },
+                3: { cellWidth: 46 },
+                4: { cellWidth: 119 }
+            }
+        });
+
+        doc.save(`Relatorio_Diario_Jovem_Aprendiz_${this._filtroData || this._todayIso()}.pdf`);
+    }
+};
