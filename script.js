@@ -6714,7 +6714,9 @@ storage: {
                     dataInicioOperacao: (isIntegracao || isReciclagem) ? hoje : dataOp,
                     diasAloAcompanhado: (isIntegracao || isReciclagem) ? 0 : 4,
                     previsaoEntrega: (isIntegracao || isReciclagem) ? hoje : dataFim,
-                    horario: isIntegracao ? 'Integral' : (isReciclagem ? '08:00 às 17:00' : '__personalizado__'),
+                    horario: isIntegracao ? '09:00 às 15:20' : (isReciclagem ? '08:00 às 17:00' : '__personalizado__'),
+                    horarioInicio: isIntegracao ? '09:00' : '',
+                    horarioFim: isIntegracao ? '15:20' : '',
                     quantidadeAlunos: isReciclagem ? 10 : 0,
                     temaReciclagem: '',
                     observacoesReciclagem: '',
@@ -8210,6 +8212,10 @@ storage: {
                         nome: nome,
                         cpf: cpf,
                         dataAdmissao: adm,
+                        operacao: (a.operacao || '').trim().toUpperCase(),
+                        ondeConheceu: (a.ondeConheceu || '').trim(),
+                        docPendente: (a.docPendente || '').trim(),
+                        telefoneCelular: (a.telefoneCelular || '').trim(),
                         presenca: a.presenca || 'Presente',
                         statusGeral: (a.presenca === 'Faltou') ? 'Faltou na Integração' : 'Ativo'
                     });
@@ -8363,6 +8369,15 @@ storage: {
                 el.value = v;
             },
 
+            formatarInputTelefone(el) {
+                if (!el) return;
+                const d = el.value.replace(/\D/g, '').slice(0, 11);
+                if (d.length > 10) el.value = d.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+                else if (d.length > 6) el.value = d.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+                else if (d.length > 2) el.value = d.replace(/(\d{2})(\d{0,5})/, '($1) $2');
+                else el.value = d;
+            },
+
             adicionarParticipanteIntegracao() {
                 const t = this.turmaEmEdicao;
                 if (!t) return;
@@ -8370,12 +8385,14 @@ storage: {
                 const nomeEl = document.getElementById('int-add-nome');
                 const cpfEl = document.getElementById('int-add-cpf');
                 const admEl = document.getElementById('int-add-adm');
+                const opEl = document.getElementById('int-add-operacao');
                 const presEl = document.getElementById('int-add-presenca');
 
                 const mat = (matEl?.value || '').trim().toUpperCase();
                 const nome = (nomeEl?.value || '').trim().toUpperCase();
                 const cpf = (cpfEl?.value || '').trim();
                 let adm = (admEl?.value || '').trim();
+                const opColab = (opEl?.value || '').trim().toUpperCase();
                 const presenca = presEl?.value || 'Presente';
 
                 if (adm) {
@@ -8407,6 +8424,10 @@ storage: {
                     nome: nome,
                     cpf: cpf,
                     dataAdmissao: adm || t.dataInicio || '',
+                    operacao: opColab,
+                    ondeConheceu: '',
+                    docPendente: '',
+                    telefoneCelular: '',
                     presenca: presenca,
                     statusGeral: presenca === 'Faltou' ? 'Faltou na Integração' : 'Ativo'
                 });
@@ -8419,6 +8440,36 @@ storage: {
 
                 this.renderTabelaParticipantesIntegracao();
                 this.renderPainelPresenteismoIntegracao();
+            },
+
+            atualizarCampoParticipanteIntegracao(idx, campo, valor, persistedTurmaId = null) {
+                const camposPermitidos = ['operacao', 'ondeConheceu', 'docPendente', 'telefoneCelular'];
+                if (!camposPermitidos.includes(campo)) return;
+                const valNorm = campo === 'operacao'
+                    ? String(valor || '').trim().toUpperCase()
+                    : String(valor || '').trim();
+
+                if (persistedTurmaId) {
+                    const t = app.turmasTreinamentoList && app.turmasTreinamentoList[persistedTurmaId];
+                    if (!t || !Array.isArray(t.colaboradores) || !t.colaboradores[idx]) return;
+                    if (!this.canEditTurma(t)) return;
+                    if (t.colaboradores[idx][campo] === valNorm) return;
+                    t.colaboradores[idx][campo] = valNorm;
+                    t.atualizadoEm = Date.now();
+                    const statusEl = document.getElementById('int-det-save-status');
+                    if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1 text-sky-500"></i> Salvando...';
+                    app.storage.saveTurmasTreinamento(persistedTurmaId).then(() => {
+                        if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-circle-check mr-1 text-emerald-500"></i> Alterações salvas';
+                    }).catch(err => {
+                        console.error("Erro ao atualizar participante da integração:", err);
+                        if (statusEl) statusEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1 text-amber-500"></i> Salvo localmente';
+                    });
+                    return;
+                }
+
+                const t = this.turmaEmEdicao;
+                if (!t || !Array.isArray(t.colaboradores) || !t.colaboradores[idx]) return;
+                t.colaboradores[idx][campo] = valNorm;
             },
 
             alternarPresencaParticipanteIntegracao(idx) {
@@ -8504,7 +8555,7 @@ storage: {
                 if (lista.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="7" class="p-6 text-center text-xs text-slate-400 italic">
+                            <td colspan="11" class="p-6 text-center text-xs text-slate-400 italic">
                                 Nenhum participante cadastrado ainda. Preencha os campos acima para registrar os novos colaboradores da integração.
                             </td>
                         </tr>
@@ -8512,33 +8563,46 @@ storage: {
                     return;
                 }
 
+                const esc = (v) => this._escapeDbHtml(v || '');
                 tbody.innerHTML = lista.map((c, idx) => {
                     const isPresente = (c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração');
                     const temCpfValido = (c.cpf || '').replace(/\D/g, '').length >= 11;
                     return `
                         <tr class="border-b border-slate-100 dark:border-slate-800 transition ${!isPresente ? 'bg-rose-50/60 dark:bg-rose-950/20 opacity-80' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'}">
-                            <td class="p-2.5 text-center text-xs font-bold text-slate-400 w-12">${idx + 1}</td>
-                            <td class="p-2.5 text-xs font-extrabold text-slate-700 dark:text-slate-200">${c.matricula || '-'}</td>
-                            <td class="p-2.5 text-xs font-semibold ${!isPresente ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-white'}">
-                                ${c.nome}
+                            <td class="p-2 text-center text-xs font-bold text-slate-400 w-10">${idx + 1}</td>
+                            <td class="p-2 text-xs font-extrabold text-slate-700 dark:text-slate-200 whitespace-nowrap">${esc(c.matricula || '-')}</td>
+                            <td class="p-2 text-xs font-semibold ${!isPresente ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-white'} min-w-[160px]">
+                                ${esc(c.nome)}
                             </td>
-                            <td class="p-2.5 text-xs">
+                            <td class="p-2 text-xs whitespace-nowrap">
                                 ${temCpfValido ? `
-                                    <span class="text-slate-700 dark:text-slate-200 font-medium">${c.cpf}</span>
+                                    <span class="text-slate-700 dark:text-slate-200 font-medium">${esc(c.cpf)}</span>
                                 ` : `
                                     <span class="text-rose-600 font-extrabold text-[11px] bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200">
                                         <i class="fa-solid fa-triangle-exclamation mr-1"></i> Inválido
                                     </span>
                                 `}
                             </td>
-                            <td class="p-2.5 text-xs text-slate-500 dark:text-slate-400">${c.dataAdmissao ? c.dataAdmissao.split('-').reverse().join('/') : '-'}</td>
-                            <td class="p-2.5 text-center w-36">
-                                <button type="button" onclick="app.diarioBordo.alternarPresencaParticipanteIntegracao(${idx})" class="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 mx-auto cursor-pointer ${isPresente ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-200'}" title="Clique para alternar Presente / Faltou">
+                            <td class="p-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${c.dataAdmissao ? esc(c.dataAdmissao.split('-').reverse().join('/')) : '-'}</td>
+                            <td class="p-1.5 min-w-[115px]">
+                                <input type="text" list="int-ops-datalist" value="${esc(c.operacao || '')}" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'operacao', this.value)" placeholder="Operação..." class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold uppercase text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">
+                            </td>
+                            <td class="p-1.5 min-w-[125px]">
+                                <input type="text" list="int-onde-conheceu-datalist" value="${esc(c.ondeConheceu || '')}" oninput="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'ondeConheceu', this.value)" placeholder="Onde conheceu?" class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">
+                            </td>
+                            <td class="p-1.5 min-w-[100px]">
+                                <input type="text" list="int-doc-pendente-datalist" value="${esc(c.docPendente || '')}" oninput="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'docPendente', this.value)" placeholder="Não / Sim..." class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">
+                            </td>
+                            <td class="p-1.5 min-w-[125px]">
+                                <input type="text" value="${esc(c.telefoneCelular || '')}" oninput="app.diarioBordo.formatarInputTelefone(this); app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'telefoneCelular', this.value)" maxlength="15" placeholder="(00) 00000-0000" class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">
+                            </td>
+                            <td class="p-2 text-center w-28">
+                                <button type="button" onclick="app.diarioBordo.alternarPresencaParticipanteIntegracao(${idx})" class="px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 mx-auto cursor-pointer ${isPresente ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-200' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-200'}" title="Clique para alternar Presente / Faltou">
                                     <i class="fa-solid ${isPresente ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600'}"></i>
                                     <span>${isPresente ? 'Presente' : 'Faltou'}</span>
                                 </button>
                             </td>
-                            <td class="p-2.5 text-right w-20">
+                            <td class="p-2 text-right w-14">
                                 <button type="button" onclick="app.diarioBordo.removerParticipanteIntegracao(${idx})" class="p-1 text-xs text-rose-500 hover:text-rose-700 rounded transition cursor-pointer" title="Remover da Integração">
                                     <i class="fa-solid fa-trash-can"></i>
                                 </button>
@@ -8548,15 +8612,49 @@ storage: {
                 }).join('');
             },
 
+            _getResponsaveisIntegracaoDatalistsHtml() {
+                const esc = (v) => this._escapeDbHtml(v || '');
+                const users = Array.isArray(app.users) ? app.users : [];
+                const elegiveis = users
+                    .filter(u => u && (u.matricula || u.nome) && String(u.tipoAcesso || '').trim() !== 'Operador')
+                    .sort((a, b) => {
+                        const aTr = ['Treinamento', 'RH', 'Qualidade', 'Gestor', 'Gerente'].includes(String(a.tipoAcesso || '').trim()) ? 0 : 1;
+                        const bTr = ['Treinamento', 'RH', 'Qualidade', 'Gestor', 'Gerente'].includes(String(b.tipoAcesso || '').trim()) ? 0 : 1;
+                        if (aTr !== bTr) return aTr - bTr;
+                        return String(a.nome || '').localeCompare(String(b.nome || ''));
+                    });
+                const matOpts = elegiveis
+                    .filter(u => u.matricula)
+                    .map(u => `<option value="${esc(String(u.matricula).trim().toUpperCase())}">${esc(String(u.nome || '').trim().toUpperCase())} (${esc(u.tipoAcesso || 'Usuário')})</option>`)
+                    .join('');
+                const nomeOpts = elegiveis
+                    .filter(u => u.nome)
+                    .map(u => `<option value="${esc(String(u.nome).trim().toUpperCase())}">${esc(String(u.matricula || '-').trim().toUpperCase())} • ${esc(u.tipoAcesso || 'Usuário')}</option>`)
+                    .join('');
+                return `<datalist id="int-responsaveis-mat-datalist">${matOpts}</datalist><datalist id="int-responsaveis-nome-datalist">${nomeOpts}</datalist>`;
+            },
+
+            onNomeResponsavelIntegracaoChange(nomeVal) {
+                if (!nomeVal) return;
+                const cleanNorm = this._normNomeDb(nomeVal);
+                if (!cleanNorm) return;
+                const users = Array.isArray(app.users) ? app.users : [];
+                const matched = users.find(u => u && String(u.tipoAcesso || '').trim() !== 'Operador' && [u.nome, u.nomeCompleto, u.usuario].some(x => this._normNomeDb(x) === cleanNorm));
+                if (matched && matched.matricula) {
+                    const matEl = document.getElementById('int-input-resp-mat');
+                    if (matEl) matEl.value = String(matched.matricula).trim().toUpperCase();
+                }
+            },
+
             _sincronizarDadosHeaderIntegracao(t) {
                 if (!t) return;
                 const dataEl = document.getElementById('int-input-data');
                 if (dataEl && dataEl.value) t.dataInicio = dataEl.value;
 
                 t.operacao = 'INTEGRAÇÃO GERAL';
-                if (this.canManageAll()) {
-                    const respMatEl = document.getElementById('int-input-resp-mat');
-                    const respNomeEl = document.getElementById('int-input-resp-nome');
+                const respMatEl = document.getElementById('int-input-resp-mat');
+                const respNomeEl = document.getElementById('int-input-resp-nome');
+                if (respMatEl || respNomeEl) {
                     const respMatVal = respMatEl ? (respMatEl.value || '').trim().toUpperCase() : '';
                     let respNomeVal = respNomeEl ? (respNomeEl.value || '').trim().toUpperCase() : '';
                     if (respMatVal && respMatVal !== '-') {
@@ -8571,6 +8669,9 @@ storage: {
                         }
                         t.responsavelIntegracaoMatricula = respMatVal;
                         t.treinadorMatricula = respMatVal;
+                    } else if (!respMatVal) {
+                        t.responsavelIntegracaoMatricula = '-';
+                        t.treinadorMatricula = '-';
                     }
                     if (respNomeVal) {
                         t.responsavelIntegracaoNome = respNomeVal;
@@ -8582,7 +8683,9 @@ storage: {
                 if (!t.treinadorNome) t.treinadorNome = t.responsavelIntegracaoNome;
                 if (!t.treinadorMatricula || t.treinadorMatricula === '-') t.treinadorMatricula = t.responsavelIntegracaoMatricula;
                 t.previsaoEntrega = t.dataInicio;
-                t.horario = t.horario || 'Integral';
+                t.horarioInicio = '09:00';
+                t.horarioFim = '15:20';
+                t.horario = '09:00 às 15:20';
                 t.tipoTurma = 'integracao';
                 t.numeroTurma = 'INTEGRAÇÃO ' + (t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '');
             },
@@ -8607,135 +8710,222 @@ storage: {
 
                 try {
                     const { jsPDF } = window.jspdf;
-                    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-                    const marginX = 14;
-                    const pageW = doc.internal.pageSize.getWidth();
-                    const pageH = doc.internal.pageSize.getHeight();
-                    const contentW = pageW - marginX * 2;
+                    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                    const marginX = 10;
+                    const pageW = doc.internal.pageSize.getWidth();   // 297mm
+                    const pageH = doc.internal.pageSize.getHeight();  // 210mm
+                    const contentW = pageW - marginX * 2;             // 277mm
 
-                    const dataBr = t.dataInicio ? this._formatDataBr(t.dataInicio) : 'A definir';
+                    const dataBr = t.dataInicio ? this._formatDataBr(t.dataInicio) : '__/__/____';
                     const dataArquivo = (t.dataInicio || new Date().toISOString().split('T')[0]).replace(/[^0-9-]/g, '');
-                    const respNome = String(t.responsavelIntegracaoNome || t.treinadorNome || app.currentUser?.nome || 'Instrutor').toUpperCase();
-                    const respMat = String(t.responsavelIntegracaoMatricula || t.treinadorMatricula || app.currentUser?.matricula || '-').toUpperCase();
-                    const eventoTitulo = String(t.numeroTurma || `INTEGRAÇÃO ${dataBr}`).toUpperCase();
+                    const respNome = String(t.responsavelIntegracaoNome || t.treinadorNome || app.currentUser?.nome || 'Instrutor').trim();
+                    const hrIni = t.horarioInicio || '09:00';
+                    const hrFim = t.horarioFim || '15:20';
+                    const opCabecalho = (t.operacao && t.operacao !== 'INTEGRAÇÃO GERAL') ? t.operacao : 'Diversas';
 
-                    const drawHeader = () => {
+                    const conteudoProgramatico = 'PRESENCIAL: Como surgiu nossa Empresa, Nossa Missão, Visão, Valores, Nosso Time (CEO, Secretaria, Diretores, Gerentes, Recrutamento & Seleção, Departamento Pessoal, SESMT, Facilities - manutenção / controlador de acesso / zeladores, Endomarketing, Tecnologia da Informação, Inteligência, Monitoria de Qualidade, Treinamento & Desenvolvimento, Refeitório e Soft Café, Ambulatório SESMT, Softbreak, Área Externa, Jornada de Trabalho, Banco de Horas, Processos Seletivos, Vale Transporte, Vale Alimentação, Adiantamento Salarial, Cartão Bullla, Plano de Saúde, Plano Odontológico, Auxílio Creche, Salário Família, Softpartners, Dia "S", Rota Soft e Soft Market, Quem Indica Ganha, Responsabilidade Social, Jovem Aprendiz, Celulares, O que pode levar para operação, Armários, Dress Code, Coletes, EPIs, Uso do crachá, Atestados, Tecnologias, EaD; LGPD; NR17 (O que é SESMT; Ergonomia; Doenças ocupacionais e Medidas preventivas); Rota de fuga e entrega de atestados.';
+
+                    const drawTopBanner = (startY = 8) => {
+                        const h = 16;
+                        const colLeftW = 60;
+                        const colRightW = 66;
+                        const colCenterW = contentW - colLeftW - colRightW;
+
+                        // Caixa externa estilizada
+                        doc.setFillColor(255, 255, 255);
+                        doc.setDrawColor(100, 116, 139);
+                        doc.setLineWidth(0.35);
+                        doc.rect(marginX, startY, contentW, h, 'FD');
+
+                        // Faixa sutil azul no topo esquerdo + divisor
                         doc.setFillColor(2, 132, 199);
-                        doc.rect(0, 0, pageW, 24, 'F');
+                        doc.rect(marginX, startY, 2.2, h, 'F');
+                        doc.setDrawColor(148, 163, 184);
+                        doc.setLineWidth(0.25);
+                        doc.line(marginX + colLeftW, startY, marginX + colLeftW, startY + h);
+                        doc.line(marginX + colLeftW + colCenterW, startY, marginX + colLeftW + colCenterW, startY + h);
+
+                        // Bloco Esquerdo: Treinamento & Desenvolvimento (ícone vetorial)
+                        doc.setFillColor(14, 165, 233);
+                        doc.circle(marginX + 10.5, startY + 8, 4.2, 'F');
                         doc.setTextColor(255, 255, 255);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(13);
-                        doc.text('SOFTMARKETING  |  LISTA DE PRESENÇA PARA ASSINATURA', marginX, 11);
-                        doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(9);
-                        doc.text(this._fitPdfText(doc, `Evento: ${eventoTitulo}   |   Data: ${dataBr}   |   Convocados: ${lista.length}`, contentW), marginX, 18);
+                        doc.setFontSize(6.8);
+                        doc.text('T&D', marginX + 10.5, startY + 9.2, { align: 'center' });
 
-                        doc.setFillColor(240, 249, 255);
-                        doc.setDrawColor(186, 230, 253);
-                        doc.roundedRect(marginX, 28, contentW, 13, 2, 2, 'FD');
-                        doc.setTextColor(12, 74, 110);
+                        doc.setTextColor(15, 23, 42);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(8.5);
-                        doc.text(this._fitPdfText(doc, `Responsável pela Integração: ${respNome} (Mat: ${respMat})`, contentW - 8), marginX + 4, 34);
+                        doc.setFontSize(8.2);
+                        doc.text('Treinamento &', marginX + 17, startY + 6.8);
+                        doc.setTextColor(2, 132, 199);
+                        doc.text('Desenvolvimento', marginX + 17, startY + 11.2);
+
+                        // Bloco Central: Título principal
+                        doc.setTextColor(15, 23, 42);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(13.5);
+                        doc.text('Lista de Presença Integração', marginX + colLeftW + colCenterW / 2, startY + 9.5, { align: 'center' });
+                        doc.setDrawColor(2, 132, 199);
+                        doc.setLineWidth(0.6);
+                        doc.line(marginX + colLeftW + 38, startY + 12.2, marginX + colLeftW + colCenterW - 38, startY + 12.2);
+
+                        // Bloco Direito: Softmarketing Logo Vetorial
+                        const rx = marginX + colLeftW + colCenterW;
+                        doc.setDrawColor(15, 23, 42);
+                        doc.setLineWidth(0.5);
+                        doc.circle(rx + 12, startY + 7.2, 4.2, 'S');
+                        doc.setDrawColor(234, 88, 12);
+                        doc.setLineWidth(0.45);
+                        doc.circle(rx + 12, startY + 7.2, 2.7, 'S');
+                        doc.setFillColor(2, 132, 199);
+                        doc.circle(rx + 12, startY + 7.2, 1.2, 'F');
+
+                        doc.setTextColor(15, 23, 42);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(10.5);
+                        doc.text('softmarketing', rx + 18.5, startY + 7.8);
+                        doc.setTextColor(100, 116, 139);
                         doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(7.5);
-                        doc.setTextColor(71, 85, 105);
-                        doc.text('Após colher todas as assinaturas, anexe a foto ou PDF assinado diretamente nesta integração no portal.', marginX + 4, 38.8);
+                        doc.setFontSize(5.5);
+                        doc.text('SOLUÇÕES EM COMUNICAÇÃO', rx + 18.5, startY + 11.4);
+
+                        return startY + h;
                     };
 
-                    drawHeader();
+                    let curY = drawTopBanner(8);
+                    curY += 1.5;
+
+                    // Bloco de Metadados (3 linhas organizadas idênticas ao formulário)
+                    const rowH = 5.4;
+                    const metaRows = [
+                        [{ label: 'Operação:', val: opCabecalho, w: 120 }, { label: 'Finalidade do treinamento:', val: 'Formação de Novos Colaboradores', w: contentW - 120 }],
+                        [{ label: 'Módulo:', val: 'Integração', w: 90 }, { label: 'Analista:', val: respNome, w: contentW - 90 }],
+                        [{ label: 'Data:', val: dataBr, w: 90 }, { label: 'Horário de Início:', val: hrIni, w: 93.5 }, { label: 'Horário de Término:', val: hrFim, w: contentW - 183.5 }]
+                    ];
+
+                    metaRows.forEach((cols, rIdx) => {
+                        const y = curY + rIdx * rowH;
+                        let cx = marginX;
+                        cols.forEach(col => {
+                            doc.setFillColor(rIdx % 2 === 0 ? 248 : 255, rIdx % 2 === 0 ? 250 : 255, rIdx % 2 === 0 ? 252 : 255);
+                            doc.setDrawColor(148, 163, 184);
+                            doc.setLineWidth(0.25);
+                            doc.rect(cx, y, col.w, rowH, 'FD');
+
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(7.5);
+                            doc.setTextColor(30, 41, 59);
+                            doc.text(col.label, cx + 2.5, y + 3.7);
+                            const labelW = doc.getTextWidth(col.label + ' ');
+
+                            doc.setFont('helvetica', 'normal');
+                            doc.setTextColor(15, 23, 42);
+                            doc.text(this._fitPdfText(doc, col.val, col.w - labelW - 5), cx + 2.5 + labelW, y + 3.7);
+                            cx += col.w;
+                        });
+                    });
+                    curY += metaRows.length * rowH + 1.5;
+
+                    // Caixa do Resumo do Conteúdo Programático
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6.4);
+                    const progLines = doc.splitTextToSize(conteudoProgramatico, contentW - 6);
+                    const progBodyH = Math.max(12, progLines.length * 2.65 + 2.5);
+                    const progTitleH = 5;
+
+                    doc.setFillColor(241, 245, 249);
+                    doc.setDrawColor(148, 163, 184);
+                    doc.setLineWidth(0.25);
+                    doc.rect(marginX, curY, contentW, progTitleH, 'FD');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(15, 23, 42);
+                    doc.text('Resumo do conteúdo Programático:', marginX + contentW / 2, curY + 3.6, { align: 'center' });
+
+                    doc.setFillColor(255, 255, 255);
+                    doc.rect(marginX, curY + progTitleH, contentW, progBodyH, 'FD');
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6.4);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text(progLines, marginX + 3, curY + progTitleH + 3.4);
+
+                    curY += progTitleH + progBodyH + 2;
 
                     const rows = lista.map((c, idx) => [
                         String(idx + 1).padStart(2, '0'),
                         String(c.matricula || '-').trim().toUpperCase(),
                         String(c.nome || '-').trim().toUpperCase(),
-                        ''
+                        String(c.operacao || '').trim().toUpperCase(),
+                        '',
+                        String(c.ondeConheceu || '').trim(),
+                        String(c.docPendente || '').trim(),
+                        String(c.telefoneCelular || '').trim()
                     ]);
 
                     doc.autoTable({
-                        startY: 45,
-                        margin: { left: marginX, right: marginX, top: 45, bottom: 26 },
-                        head: [['#', 'MATRÍCULA', 'NOME COMPLETO', 'ASSINATURA DO COLABORADOR']],
+                        startY: curY,
+                        margin: { left: marginX, right: marginX, top: 27, bottom: 13 },
+                        head: [['N', 'Matrícula', 'Colaborador', 'Operação', 'Assinatura', 'Onde Conheceu a Soft?', 'Doc pendente?', 'Telefone Celular']],
                         body: rows,
                         theme: 'grid',
                         showHead: 'everyPage',
                         styles: {
                             font: 'helvetica',
-                            fontSize: 8.5,
-                            textColor: [30, 41, 59],
-                            lineColor: [203, 213, 225],
+                            fontSize: 7.8,
+                            textColor: [15, 23, 42],
+                            lineColor: [100, 116, 139],
                             lineWidth: 0.25,
-                            cellPadding: { top: 3.5, bottom: 3.5, left: 2.5, right: 2.5 },
-                            minCellHeight: 11,
+                            cellPadding: { top: 2.6, bottom: 2.6, left: 2, right: 2 },
+                            minCellHeight: 10,
                             valign: 'middle'
                         },
                         headStyles: {
-                            fillColor: [14, 116, 144],
+                            fillColor: [15, 23, 42],
                             textColor: [255, 255, 255],
                             fontStyle: 'bold',
-                            fontSize: 8,
-                            minCellHeight: 8.5,
-                            halign: 'left'
+                            fontSize: 7.5,
+                            minCellHeight: 7.5,
+                            halign: 'center'
                         },
                         alternateRowStyles: {
                             fillColor: [248, 250, 252]
                         },
                         columnStyles: {
-                            0: { cellWidth: 11, halign: 'center', fontStyle: 'bold' },
-                            1: { cellWidth: 28, halign: 'center', fontStyle: 'bold' },
-                            2: { cellWidth: 74, halign: 'left' },
-                            3: { cellWidth: 69, halign: 'left' }
+                            0: { cellWidth: 9, halign: 'center', fontStyle: 'bold' },
+                            1: { cellWidth: 21, halign: 'center', fontStyle: 'bold' },
+                            2: { cellWidth: 61, halign: 'left' },
+                            3: { cellWidth: 34, halign: 'center' },
+                            4: { cellWidth: 55, halign: 'left' },
+                            5: { cellWidth: 35, halign: 'center' },
+                            6: { cellWidth: 27, halign: 'center' },
+                            7: { cellWidth: 35, halign: 'center' }
                         },
                         didDrawPage: (data) => {
                             if (data.pageNumber > 1) {
-                                drawHeader();
+                                drawTopBanner(8);
                             }
                         },
                         didDrawCell: (data) => {
-                            if (data.section === 'body' && data.column.index === 3) {
+                            if (data.section === 'body' && data.column.index === 4) {
                                 doc.setDrawColor(148, 163, 184);
-                                doc.setLineWidth(0.25);
-                                const yLine = data.cell.y + data.cell.height - 2.6;
-                                doc.line(data.cell.x + 3, yLine, data.cell.x + data.cell.width - 3, yLine);
+                                doc.setLineWidth(0.2);
+                                const yLine = data.cell.y + data.cell.height - 2.2;
+                                doc.line(data.cell.x + 2.5, yLine, data.cell.x + data.cell.width - 2.5, yLine);
                             }
                         }
                     });
-
-                    let finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY : 60;
-                    if (finalY + 24 > pageH - 12) {
-                        doc.addPage();
-                        drawHeader();
-                        finalY = 50;
-                    }
-
-                    const signY = Math.max(finalY + 14, 62);
-                    const lineW = 76;
-                    doc.setDrawColor(100, 116, 139);
-                    doc.setLineWidth(0.3);
-                    doc.line(marginX, signY, marginX + lineW, signY);
-                    doc.line(pageW - marginX - 50, signY, pageW - marginX, signY);
-
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(8);
-                    doc.setTextColor(30, 41, 59);
-                    doc.text(this._fitPdfText(doc, respNome, lineW), marginX, signY + 4.5);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(100, 116, 139);
-                    doc.text(`Responsável pela Integração (Mat: ${respMat})`, marginX, signY + 8.5);
-                    doc.text(`Data: ${dataBr}`, pageW - marginX - 25, signY + 4.5, { align: 'center' });
 
                     const totalPages = doc.internal.getNumberOfPages();
                     for (let p = 1; p <= totalPages; p++) {
                         doc.setPage(p);
                         doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(7.5);
-                        doc.setTextColor(148, 163, 184);
-                        doc.text(`Portal Qualidade & Treinamento — Lista de Integração`, marginX, pageH - 7);
-                        doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 7, { align: 'right' });
+                        doc.setFontSize(7.2);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(`Softmarketing • Lista de Presença Integração (${dataBr}) — Analista: ${respNome}`, marginX, pageH - 6);
+                        doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 6, { align: 'right' });
                     }
 
-                    doc.save(`Lista_Assinatura_Integracao_${dataArquivo}.pdf`);
+                    doc.save(`Lista_Presenca_Integracao_${dataArquivo}.pdf`);
                 } catch (err) {
                     console.error("Erro ao gerar PDF de lista de assinatura:", err);
                     app.ui.showAlert("Erro", "Não foi possível gerar o PDF da lista de assinatura.", "error");
@@ -24291,7 +24481,7 @@ storage: {
                                             <h3 class="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Identificação do Evento de Integração</h3>
                                         </div>
 
-                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                             <!-- Data: -->
                                             <div>
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -24300,28 +24490,55 @@ storage: {
                                                 <input type="date" id="int-input-data" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
                                             </div>
 
-                                            <!-- Matrícula do Responsável -->
+                                            <!-- Horário Fixo -->
                                             <div>
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span><i class="fa-solid fa-id-card text-sky-600 mr-1"></i> Matrícula do Responsável:</span>
-                                                    ${app.diarioBordo.canManageAll()
-                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
+                                                    <span><i class="fa-solid fa-clock text-sky-600 mr-1"></i> Horário (Fixo):</span>
+                                                    <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Padrão</span>
                                                 </label>
-                                                <input type="text" id="int-input-resp-mat" ${app.diarioBordo.canManageAll() ? 'oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange(\'resp_int\', this.value);" onblur="app.diarioBordo.onMatriculaChange(\'resp_int\', this.value);"' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoMatricula || app.currentUser?.matricula || '')}" placeholder="Matrícula..." class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
+                                                <div class="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-extrabold text-slate-700 dark:text-slate-200 flex items-center justify-between select-none">
+                                                    <span>Início: 09:00</span>
+                                                    <span class="text-slate-400">•</span>
+                                                    <span>Término: 15:20</span>
+                                                </div>
                                             </div>
 
-                                            <!-- Nome do Responsável -->
+                                            <!-- Matrícula do Responsável (sempre editável/selecionável) -->
                                             <div>
                                                 <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                                    <span><i class="fa-solid fa-user-tie text-sky-600 mr-1"></i> Responsável pela Integração:</span>
-                                                    ${app.diarioBordo.canManageAll()
-                                                        ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-pen-to-square mr-0.5"></i> Editável (Gestão)</span>'
-                                                        : '<span class="text-[10px] text-slate-400 font-semibold"><i class="fa-solid fa-lock text-slate-400 mr-0.5"></i> Fixo</span>'}
+                                                    <span><i class="fa-solid fa-id-card text-sky-600 mr-1"></i> Matrícula Analista:</span>
+                                                    <span class="text-[10px] text-sky-600 font-semibold"><i class="fa-solid fa-list-check mr-0.5"></i> Selecionável</span>
                                                 </label>
-                                                <input type="text" id="int-input-resp-nome" ${app.diarioBordo.canManageAll() ? '' : 'readonly'} value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '')}" placeholder="Nome do Responsável" class="w-full px-3.5 py-2.5 rounded-xl ${app.diarioBordo.canManageAll() ? 'bg-slate-50 dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed select-none'} text-xs font-bold uppercase outline-none">
+                                                <input type="text" id="int-input-resp-mat" list="int-responsaveis-mat-datalist" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('resp_int', this.value);" onblur="app.diarioBordo.onMatriculaChange('resp_int', this.value);" value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoMatricula || app.currentUser?.matricula || '')}" placeholder="Matrícula..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-sky-300 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+
+                                            <!-- Nome do Responsável (sempre editável/selecionável) -->
+                                            <div>
+                                                <label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                                                    <span><i class="fa-solid fa-user-tie text-sky-600 mr-1"></i> Analista Responsável:</span>
+                                                    <span class="text-[10px] text-sky-600 font-semibold"><i class="fa-solid fa-list-check mr-0.5"></i> Selecionável</span>
+                                                </label>
+                                                <input type="text" id="int-input-resp-nome" list="int-responsaveis-nome-datalist" oninput="app.diarioBordo.onNomeResponsavelIntegracaoChange(this.value);" onchange="app.diarioBordo.onNomeResponsavelIntegracaoChange(this.value);" value="${app.diarioBordo._escapeDbHtml(t.responsavelIntegracaoNome || app.currentUser?.nome || app.currentUser?.nomeCompleto || app.currentUser?.usuario || '')}" placeholder="Digite ou selecione..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-sky-300 dark:border-sky-700 text-xs font-bold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
                                             </div>
                                         </div>
+                                        ${app.diarioBordo._getResponsaveisIntegracaoDatalistsHtml()}
+                                        <datalist id="int-ops-datalist">
+                                            ${operacoes.map(op => `<option value="${app.diarioBordo._escapeDbHtml(op)}"></option>`).join('')}
+                                        </datalist>
+                                        <datalist id="int-onde-conheceu-datalist">
+                                            <option value="Indeed"></option>
+                                            <option value="Instagram"></option>
+                                            <option value="WhatsApp"></option>
+                                            <option value="SINE"></option>
+                                            <option value="InfoJobs"></option>
+                                            <option value="Indicação"></option>
+                                            <option value="Facebook"></option>
+                                            <option value="LinkedIn"></option>
+                                        </datalist>
+                                        <datalist id="int-doc-pendente-datalist">
+                                            <option value="Não"></option>
+                                            <option value="Sim"></option>
+                                        </datalist>
                                     </div>
 
                                     <!-- Card de Presenteísmo Dinâmico -->
@@ -24347,7 +24564,7 @@ storage: {
                                         </div>
 
                                         <!-- Linha Rápida de Adição de Participante -->
-                                        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                                             <div class="sm:col-span-2">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Matrícula:</label>
                                                 <input type="text" id="int-add-mat" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase(); app.diarioBordo.onMatriculaChange('integracao_colab', this.value);" onblur="app.diarioBordo.onMatriculaChange('integracao_colab', this.value);" placeholder="Matrícula..." class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
@@ -24357,12 +24574,16 @@ storage: {
                                                 <input type="text" id="int-add-nome" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="this.value = this.value.toUpperCase();" placeholder="Nome completo do participante" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
                                             </div>
                                             <div class="sm:col-span-2">
-                                                <label class="block text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1"><span class="text-rose-500 font-black">*</span> CPF (Obrigatório):</label>
+                                                <label class="block text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1"><span class="text-rose-500 font-black">*</span> CPF:</label>
                                                 <input type="text" id="int-add-cpf" onpaste="app.diarioBordo.handleColabInputPaste(event)" oninput="app.diarioBordo.formatarInputCpf(this)" maxlength="14" placeholder="000.000.000-00" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500">
                                             </div>
                                             <div class="sm:col-span-2">
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Admissão:</label>
-                                                <input type="date" id="int-add-adm" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Operação (Opc.):</label>
+                                                <input type="text" id="int-add-operacao" list="int-ops-datalist" oninput="this.value = this.value.toUpperCase();" placeholder="Ex: WEPINK" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold uppercase text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
+                                            </div>
+                                            <div class="sm:col-span-1">
+                                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Admissão:</label>
+                                                <input type="date" id="int-add-adm" onpaste="app.diarioBordo.handleDatePaste(event, this)" value="${t.dataInicio || ''}" class="w-full px-2 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500">
                                             </div>
                                             <div class="sm:col-span-1">
                                                 <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Presença:</label>
@@ -24371,11 +24592,16 @@ storage: {
                                                     <option value="Faltou">Faltou</option>
                                                 </select>
                                             </div>
-                                            <div class="sm:col-span-2">
-                                                <button type="button" onclick="app.diarioBordo.adicionarParticipanteIntegracao()" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-95">
+                                            <div class="sm:col-span-1">
+                                                <button type="button" onclick="app.diarioBordo.adicionarParticipanteIntegracao()" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition flex items-center justify-center gap-1 shadow-sm cursor-pointer active:scale-95">
                                                     <i class="fa-solid fa-plus"></i> Inserir
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-circle-info text-sky-500"></i>
+                                            <span>Os campos <strong>Operação</strong>, <strong>Onde Conheceu</strong>, <strong>Doc Pendente?</strong> e <strong>Telefone Celular</strong> podem ser preenchidos agora ou posteriormente após colher as assinaturas.</span>
                                         </div>
 
                                         <!-- Tabela de Participantes da Integração -->
@@ -24383,13 +24609,17 @@ storage: {
                                             <table class="w-full text-left border-collapse">
                                                 <thead>
                                                     <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
-                                                        <th class="p-2.5 w-12 text-center">#</th>
-                                                        <th class="p-2.5 w-28">Matrícula</th>
-                                                        <th class="p-2.5">Nome do Participante</th>
-                                                        <th class="p-2.5 w-36"><span class="text-rose-500">*</span> CPF (Obrigatório)</th>
-                                                        <th class="p-2.5 w-32">Data Admissão</th>
-                                                        <th class="p-2.5 w-40 text-center">Presenteísmo</th>
-                                                        <th class="p-2.5 w-20 text-right">Ação</th>
+                                                        <th class="p-2 w-10 text-center">#</th>
+                                                        <th class="p-2">Matrícula</th>
+                                                        <th class="p-2">Colaborador</th>
+                                                        <th class="p-2"><span class="text-rose-500">*</span> CPF</th>
+                                                        <th class="p-2">Admissão</th>
+                                                        <th class="p-2">Operação</th>
+                                                        <th class="p-2">Onde Conheceu</th>
+                                                        <th class="p-2">Doc Pendente?</th>
+                                                        <th class="p-2">Telefone Celular</th>
+                                                        <th class="p-2 w-28 text-center">Presenteísmo</th>
+                                                        <th class="p-2 w-14 text-right">Ação</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody id="int-tbody-participantes">
@@ -24961,9 +25191,9 @@ storage: {
                                                     <div class="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">${resumo.pctPresenteismoIntegracao !== null ? resumo.pctPresenteismoIntegracao + '% presenteísmo' : 'Sem integrantes'}</div>
                                                 </div>
                                                 <div class="p-3.5 rounded-2xl bg-sky-50/70 dark:bg-sky-950/20 border border-sky-200/70 dark:border-sky-800/70">
-                                                    <div class="text-[10px] font-black uppercase text-sky-700 dark:text-sky-400">Data da Integração</div>
+                                                    <div class="text-[10px] font-black uppercase text-sky-700 dark:text-sky-400">Data &amp; Horário Fixo</div>
                                                     <div class="text-xl font-black text-sky-900 dark:text-sky-200 mt-0.5">${esc(app.diarioBordo._formatDataBr(t.dataInicio))}</div>
-                                                    <div class="text-[11px] font-bold text-sky-700 dark:text-sky-400">${esc(t.horario || 'Integral')}</div>
+                                                    <div class="text-[11px] font-bold text-sky-700 dark:text-sky-400">09:00 às 15:20</div>
                                                 </div>
                                                 <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
                                                     <div class="text-[10px] font-black uppercase text-slate-400">Fotos / Lista Assinada</div>
@@ -25030,32 +25260,91 @@ storage: {
                                             ${resumo.colabsResumo.length === 0 ? `
                                                 <p class="text-xs text-slate-400 italic py-2">Nenhum participante cadastrado nesta turma.</p>
                                             ` : `
-                                                <table class="w-full text-left border-collapse text-xs">
-                                                    <thead>
-                                                        <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
-                                                            <th class="p-2.5">Matrícula</th>
-                                                            <th class="p-2.5">Colaborador</th>
-                                                            <th class="p-2.5 text-center">Frequência</th>
-                                                            <th class="p-2.5 text-right">Situação</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
-                                                        ${resumo.colabsResumo.map(col => `
-                                                            <tr>
-                                                                <td class="p-2.5 font-bold text-slate-500 dark:text-slate-400">${esc(col.matricula)}</td>
-                                                                <td class="p-2.5 font-bold ${col.isTO ? 'line-through text-rose-500' : 'text-slate-800 dark:text-slate-200'}">${esc(col.nome)}</td>
-                                                                <td class="p-2.5 text-center text-slate-600 dark:text-slate-300 font-semibold">
-                                                                    ${resumo.totalDiarios > 0 ? `${col.presCount}P / ${col.absCount}F (${col.taxaAluno}%)` : '-'}
-                                                                </td>
-                                                                <td class="p-2.5 text-right">
-                                                                    <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold ${col.isTO ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}">
-                                                                        ${esc(col.statusLabel)}${col.dataTO ? ` (${esc(col.dataTO)})` : ''}
-                                                                    </span>
-                                                                </td>
+                                                ${resumo.isIntegracao ? `
+                                                    <div class="flex items-center justify-between gap-2 pb-2">
+                                                        <span class="text-[11px] text-slate-500 dark:text-slate-400">Preencha ou atualize abaixo os campos pós-assinatura (salva automaticamente ao sair do campo).</span>
+                                                        <span id="int-det-save-status" class="text-[11px] font-bold text-slate-400"></span>
+                                                    </div>
+                                                    <datalist id="int-det-ops-datalist">
+                                                        ${app.diarioBordo.getOperacoesDisponiveis().map(op => `<option value="${esc(op)}"></option>`).join('')}
+                                                    </datalist>
+                                                    <table class="w-full text-left border-collapse text-xs">
+                                                        <thead>
+                                                            <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                                <th class="p-2">Matrícula</th>
+                                                                <th class="p-2">Colaborador</th>
+                                                                <th class="p-2">Operação</th>
+                                                                <th class="p-2">Onde Conheceu</th>
+                                                                <th class="p-2">Doc Pendente?</th>
+                                                                <th class="p-2">Telefone Celular</th>
+                                                                <th class="p-2 text-right">Situação</th>
                                                             </tr>
-                                                        `).join('')}
-                                                    </tbody>
-                                                </table>
+                                                        </thead>
+                                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                            ${(Array.isArray(t.colaboradores) ? t.colaboradores : []).map((col, idx) => {
+                                                                const faltou = col.presenca === 'Faltou' || col.statusGeral === 'Faltou na Integração';
+                                                                return `
+                                                                    <tr>
+                                                                        <td class="p-2 font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">${esc(col.matricula || '-')}</td>
+                                                                        <td class="p-2 font-bold ${faltou ? 'text-rose-500' : 'text-slate-800 dark:text-slate-200'}">${esc(col.nome || '-')}</td>
+                                                                        <td class="p-1.5 min-w-[115px]">
+                                                                            ${podeEditar
+                                                                                ? `<input type="text" list="int-det-ops-datalist" value="${esc(col.operacao || '')}" oninput="this.value = this.value.toUpperCase();" onchange="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'operacao', this.value, '${tidEsc}')" placeholder="Operação..." class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold uppercase text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">`
+                                                                                : `<span class="text-slate-600 dark:text-slate-300">${esc(col.operacao || '-')}</span>`}
+                                                                        </td>
+                                                                        <td class="p-1.5 min-w-[125px]">
+                                                                            ${podeEditar
+                                                                                ? `<input type="text" value="${esc(col.ondeConheceu || '')}" onchange="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'ondeConheceu', this.value, '${tidEsc}')" placeholder="Onde conheceu?" class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">`
+                                                                                : `<span class="text-slate-600 dark:text-slate-300">${esc(col.ondeConheceu || '-')}</span>`}
+                                                                        </td>
+                                                                        <td class="p-1.5 min-w-[100px]">
+                                                                            ${podeEditar
+                                                                                ? `<input type="text" value="${esc(col.docPendente || '')}" onchange="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'docPendente', this.value, '${tidEsc}')" placeholder="Não / Sim..." class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">`
+                                                                                : `<span class="text-slate-600 dark:text-slate-300">${esc(col.docPendente || '-')}</span>`}
+                                                                        </td>
+                                                                        <td class="p-1.5 min-w-[125px]">
+                                                                            ${podeEditar
+                                                                                ? `<input type="text" value="${esc(col.telefoneCelular || '')}" oninput="app.diarioBordo.formatarInputTelefone(this);" onchange="app.diarioBordo.atualizarCampoParticipanteIntegracao(${idx}, 'telefoneCelular', this.value, '${tidEsc}')" maxlength="15" placeholder="(00) 00000-0000" class="w-full px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-sky-500">`
+                                                                                : `<span class="text-slate-600 dark:text-slate-300">${esc(col.telefoneCelular || '-')}</span>`}
+                                                                        </td>
+                                                                        <td class="p-2 text-right whitespace-nowrap">
+                                                                            <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold ${faltou ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}">
+                                                                                ${faltou ? 'Faltou' : 'Presente'}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                `;
+                                                            }).join('')}
+                                                        </tbody>
+                                                    </table>
+                                                ` : `
+                                                    <table class="w-full text-left border-collapse text-xs">
+                                                        <thead>
+                                                            <tr class="bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                                <th class="p-2.5">Matrícula</th>
+                                                                <th class="p-2.5">Colaborador</th>
+                                                                <th class="p-2.5 text-center">Frequência</th>
+                                                                <th class="p-2.5 text-right">Situação</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                            ${resumo.colabsResumo.map(col => `
+                                                                <tr>
+                                                                    <td class="p-2.5 font-bold text-slate-500 dark:text-slate-400">${esc(col.matricula)}</td>
+                                                                    <td class="p-2.5 font-bold ${col.isTO ? 'line-through text-rose-500' : 'text-slate-800 dark:text-slate-200'}">${esc(col.nome)}</td>
+                                                                    <td class="p-2.5 text-center text-slate-600 dark:text-slate-300 font-semibold">
+                                                                        ${resumo.totalDiarios > 0 ? `${col.presCount}P / ${col.absCount}F (${col.taxaAluno}%)` : '-'}
+                                                                    </td>
+                                                                    <td class="p-2.5 text-right">
+                                                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold ${col.isTO ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'}">
+                                                                            ${esc(col.statusLabel)}${col.dataTO ? ` (${esc(col.dataTO)})` : ''}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            `).join('')}
+                                                        </tbody>
+                                                    </table>
+                                                `}
                                             `}
                                         </div>
                                     ` : ''}
