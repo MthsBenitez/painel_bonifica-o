@@ -8859,7 +8859,7 @@ storage: {
                 if (app.isAdmin) return true;
                 const cur = app.currentUser || {};
                 const cargo = String(cur.tipoAcesso || '').toLowerCase().trim();
-                if (['gestor', 'gerente', 'dev', 'administrador', 'admin'].includes(cargo)) return true;
+                if (['gestor', 'gerente', 'dev', 'desenvolvedor', 'administrador', 'admin'].includes(cargo)) return true;
                 if (String(cur.matricula || '').toLowerCase().trim() === 'admin') return true;
                 return false;
             },
@@ -23426,45 +23426,110 @@ storage: {
                     const turmasCadastradas = app.diarioBordo.getTurmasCadastradas();
                     
                     if (!canManage && app.diarioBordo.viewMode === 'dashboard') {
-                        app.diarioBordo.viewMode = 'lista';
+                        app.diarioBordo.viewMode = 'turmas';
                     }
                     if (!app.diarioBordo.viewMode) {
-                        app.diarioBordo.viewMode = canManage ? 'dashboard' : 'lista';
+                        app.diarioBordo.viewMode = canManage ? 'dashboard' : 'turmas';
                     }
                     const mode = app.diarioBordo.viewMode;
+                    const filtroTipoAtual = app.diarioBordo.filtroTurmaTipo || 'TODAS';
+                    const isTurmaConcluidaFn = (t) => t && (t.status === 'Entregue' || t.status === 'Integrados');
+                    const integracoesLista = turmasCadastradas.filter(t => t.tipoTurma === 'integracao');
+                    const integracoesAbertas = integracoesLista.filter(t => !isTurmaConcluidaFn(t));
+                    const formacoesLista = turmasCadastradas.filter(t => t.tipoTurma !== 'integracao');
+                    const formacoesAbertas = formacoesLista.filter(t => !isTurmaConcluidaFn(t));
+                    const diariosVisiveisCount = canManage ? allDiarios.length : visibleDiarios.length;
+                    const isEtapa1Ativa = mode === 'turmas' && filtroTipoAtual === 'integracao';
+                    const isEtapa2Ativa = (mode === 'turmas' && filtroTipoAtual !== 'integracao') || mode === 'turma_detalhes';
+                    const isEtapa3Ativa = mode === 'lista';
 
-                    // Barra Superior de Navegação (Dashboard vs Turmas Cadastradas vs Resumo Rápido vs Diários & Histórico)
+                    // Barra Fixa Única do Processo (1. Integração -> 2. Turmas -> 3. Diário de Bordo) — compacta, visual e sem redundância
                     const navSubTabsHtml = `
-                        <div class="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                            <div class="flex flex-wrap items-center gap-2 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl">
-                                ${canManage ? `
-                                    <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'dashboard'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'dashboard' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
-                                        <i class="fa-solid fa-chart-pie"></i> Dashboard Geral
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-2.5 sm:p-3 border border-slate-200 dark:border-slate-700 shadow-sm space-y-2.5">
+                            <!-- Linha Superior: Visões Complementares & Atalhos -->
+                            <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/80">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-route text-emerald-600"></i> Fluxo (1 → 2 → 3)
+                                    </span>
+                                    <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.abrirResumoRapido();" class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1.5 cursor-pointer ${mode === 'resumo_rapido' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-400'}">
+                                        <i class="fa-solid fa-bolt"></i> Resumo Rápido
                                     </button>
-                                ` : ''}
-                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'turmas' || mode === 'turma_form' || mode === 'turma_detalhes' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
-                                    <i class="fa-solid fa-graduation-cap"></i> Turmas Cadastradas (${turmasCadastradas.length})
-                                </button>
-                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.abrirResumoRapido();" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'resumo_rapido' ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
-                                    <i class="fa-solid fa-bolt"></i> Resumo Rápido
-                                </button>
-                                <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'lista'; app.ui.renderTab('diario_bordo', true);" class="px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${mode === 'lista' ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}">
-                                    <i class="fa-solid fa-list-check"></i> ${canManage ? `Diários &amp; Histórico (${allDiarios.length})` : `Meus Diários (${visibleDiarios.length})`}
-                                </button>
+                                    ${canManage ? `
+                                        <button type="button" onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'dashboard'; app.ui.renderTab('diario_bordo', true);" class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1.5 cursor-pointer ${mode === 'dashboard' ? 'bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-400'}">
+                                            <i class="fa-solid fa-chart-pie"></i> Dashboard
+                                        </button>
+                                    ` : ''}
+                                </div>
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <button type="button" onclick="app.diarioBordo.novaReciclagem()" class="px-2.5 py-1 rounded-lg bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 font-extrabold text-[11px] transition flex items-center gap-1 cursor-pointer">
+                                        <i class="fa-solid fa-rotate"></i> + Reciclagem
+                                    </button>
+                                    <button type="button" onclick="app.ui.openDiarioTutorialModal(0, false)" class="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 font-extrabold text-[11px] transition flex items-center gap-1 cursor-pointer">
+                                        <i class="fa-solid fa-graduation-cap"></i> Tutorial
+                                    </button>
+                                </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button type="button" onclick="app.ui.openDiarioTutorialModal(0, false)" class="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer" title="Abrir tutorial passo a passo do Diário de Bordo">
-                                    <i class="fa-solid fa-graduation-cap text-amber-600 dark:text-amber-400"></i> Tutorial
-                                </button>
-                                <button type="button" onclick="app.diarioBordo.novaReciclagem()" class="px-3.5 py-2 rounded-xl bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/50 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer" title="Cadastrar Turma de Reciclagem (apenas quantidade + lista de presença)">
-                                    <i class="fa-solid fa-rotate text-violet-600 dark:text-violet-400"></i> Nova Reciclagem
-                                </button>
-                                <button type="button" onclick="app.diarioBordo.novaTurma()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer">
-                                    <i class="fa-solid fa-user-plus text-emerald-600 dark:text-emerald-400"></i> Criar Turma
-                                </button>
-                                <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm hover:shadow transition flex items-center gap-2 cursor-pointer active:scale-95">
-                                    <i class="fa-solid fa-plus"></i> Novo Diário de Bordo
-                                </button>
+
+                            <!-- Fluxo Principal Fixo em 3 Etapas -->
+                            <div class="flex flex-col md:flex-row items-stretch md:items-center gap-1.5 sm:gap-2">
+                                <!-- Etapa 1: Integração -->
+                                <div onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.filtroTurmaTipo = 'integracao'; app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="flex-1 cursor-pointer rounded-xl px-3 py-2 border transition-all flex items-center justify-between gap-2 ${isEtapa1Ativa ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-400 dark:border-sky-600 ring-2 ring-sky-500/20 shadow-xs' : 'bg-slate-50/70 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:border-sky-300'}">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <div class="w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${isEtapa1Ativa ? 'bg-sky-600 text-white' : 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300'}">1</div>
+                                        <div class="min-w-0">
+                                            <div class="text-xs font-black ${isEtapa1Ativa ? 'text-sky-800 dark:text-sky-200' : 'text-slate-700 dark:text-slate-200'} truncate">
+                                                Integração <span class="font-bold opacity-75">(${integracoesLista.length})</span>
+                                            </div>
+                                            <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                                PDF &amp; Foto Assinada • ${integracoesAbertas.length} aberta(s)
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="event.stopPropagation(); app.diarioBordo.novaIntegracao();" class="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-[11px] shrink-0 shadow-xs transition cursor-pointer active:scale-95">
+                                        + Nova
+                                    </button>
+                                </div>
+
+                                <i class="fa-solid fa-chevron-right hidden md:block text-slate-300 dark:text-slate-600 text-[11px] shrink-0"></i>
+
+                                <!-- Etapa 2: Cadastrar Turma -->
+                                <div onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.filtroTurmaTipo = 'formacao'; app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="flex-1 cursor-pointer rounded-xl px-3 py-2 border transition-all flex items-center justify-between gap-2 ${isEtapa2Ativa ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-600 ring-2 ring-indigo-500/20 shadow-xs' : 'bg-slate-50/70 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:border-indigo-300'}">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <div class="w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${isEtapa2Ativa ? 'bg-indigo-600 text-white' : 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'}">2</div>
+                                        <div class="min-w-0">
+                                            <div class="text-xs font-black ${isEtapa2Ativa ? 'text-indigo-800 dark:text-indigo-200' : 'text-slate-700 dark:text-slate-200'} truncate">
+                                                Turmas <span class="font-bold opacity-75">(${formacoesLista.length})</span>
+                                            </div>
+                                            <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                                Operação &amp; Treinador • ${formacoesAbertas.length} ativa(s)
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="event.stopPropagation(); app.diarioBordo.novaTurma();" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] shrink-0 shadow-xs transition cursor-pointer active:scale-95">
+                                        + Nova
+                                    </button>
+                                </div>
+
+                                <i class="fa-solid fa-chevron-right hidden md:block text-slate-300 dark:text-slate-600 text-[11px] shrink-0"></i>
+
+                                <!-- Etapa 3: Diário de Bordo -->
+                                <div onclick="app.diarioBordo._returnViewMode = null; app.diarioBordo.viewMode = 'lista'; app.ui.renderTab('diario_bordo', true);" class="flex-1 cursor-pointer rounded-xl px-3 py-2 border transition-all flex items-center justify-between gap-2 ${isEtapa3Ativa ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600 ring-2 ring-emerald-500/20 shadow-xs' : 'bg-slate-50/70 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 hover:border-emerald-300'}">
+                                    <div class="flex items-center gap-2.5 min-w-0">
+                                        <div class="w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${isEtapa3Ativa ? 'bg-emerald-600 text-white' : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'}">3</div>
+                                        <div class="min-w-0">
+                                            <div class="text-xs font-black ${isEtapa3Ativa ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-700 dark:text-slate-200'} truncate">
+                                                Diário de Bordo <span class="font-bold opacity-75">(${diariosVisiveisCount})</span>
+                                            </div>
+                                            <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                                Chamada &amp; PDF do Dia
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="event.stopPropagation(); app.diarioBordo.novoDiario();" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] shrink-0 shadow-xs transition cursor-pointer active:scale-95">
+                                        + Novo
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -23864,6 +23929,7 @@ storage: {
                             if (filtroStatus === 'concluidas' && !isConcluida(t)) return false;
                             if (filtroOp !== 'TODAS' && t.operacao !== filtroOp) return false;
                             if (filtroTipo === 'treinamento' && (t.tipoTurma === 'integracao' || t.tipoTurma === 'reciclagem')) return false;
+                            if (filtroTipo === 'formacao' && t.tipoTurma === 'integracao') return false;
                             if (filtroTipo === 'integracao' && t.tipoTurma !== 'integracao') return false;
                             if (filtroTipo === 'reciclagem' && t.tipoTurma !== 'reciclagem') return false;
                             if (filtroBusca) {
@@ -23918,6 +23984,12 @@ storage: {
                             };
                         };
 
+                        const titTurmas = filtroTipo === 'integracao'
+                            ? '1. Integrações'
+                            : (filtroTipo === 'formacao' || filtroTipo === 'treinamento' || filtroTipo === 'reciclagem'
+                                ? '2. Turmas Cadastradas'
+                                : 'Integrações &amp; Turmas');
+
                         container.innerHTML = `
                             <div class="max-w-[1920px] mx-auto pb-16 space-y-4 animate-fade-in">
                                 ${navSubTabsHtml}
@@ -23927,11 +23999,8 @@ storage: {
                                     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                         <div>
                                             <h2 class="text-lg sm:text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                                <i class="fa-solid fa-graduation-cap text-emerald-600"></i> Turmas Cadastradas
+                                                <i class="fa-solid ${filtroTipo === 'integracao' ? 'fa-handshake text-sky-600' : 'fa-graduation-cap text-indigo-600'}"></i> ${titTurmas}
                                             </h2>
-                                            <p class="text-xs text-slate-500 dark:text-slate-400">
-                                                Selecione uma turma para lançar o diário do dia, acompanhar alunos ou gerar relatório.
-                                            </p>
                                         </div>
 
                                         <div class="flex flex-wrap items-center gap-2">
@@ -23957,10 +24026,6 @@ storage: {
                                                     <i class="fa-solid fa-table-list"></i>
                                                 </button>
                                             </div>
-
-                                            <button type="button" onclick="app.diarioBordo.novaIntegracao()" class="px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/50 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
-                                                <i class="fa-solid fa-handshake"></i> + Integração
-                                            </button>
                                         </div>
                                     </div>
 
@@ -23972,10 +24037,11 @@ storage: {
                                                 <input type="text" value="${esc(app.diarioBordo.filtroTurmaBusca || '')}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar turma, instrutor ou aluno..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                                             </div>
                                             <select onchange="app.diarioBordo.filtroTurmaTipo = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
-                                                <option value="TODAS" ${filtroTipo === 'TODAS' ? 'selected' : ''}>Todos os Tipos</option>
-                                                <option value="treinamento" ${filtroTipo === 'treinamento' ? 'selected' : ''}>Treinamento Regular</option>
-                                                <option value="reciclagem" ${filtroTipo === 'reciclagem' ? 'selected' : ''}>Reciclagem</option>
-                                                <option value="integracao" ${filtroTipo === 'integracao' ? 'selected' : ''}>Integração</option>
+                                                <option value="TODAS" ${filtroTipo === 'TODAS' ? 'selected' : ''}>Todas as Etapas (1 + 2)</option>
+                                                <option value="integracao" ${filtroTipo === 'integracao' ? 'selected' : ''}>Etapa 1: Somente Integração</option>
+                                                <option value="formacao" ${filtroTipo === 'formacao' ? 'selected' : ''}>Etapa 2: Treinamento + Reciclagem</option>
+                                                <option value="treinamento" ${filtroTipo === 'treinamento' ? 'selected' : ''}>Etapa 2: Treinamento Regular</option>
+                                                <option value="reciclagem" ${filtroTipo === 'reciclagem' ? 'selected' : ''}>Etapa 2: Reciclagem</option>
                                             </select>
                                             <select onchange="app.diarioBordo.filtroTurmaOp = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
                                                 <option value="TODAS" ${filtroOp === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
@@ -24040,6 +24106,7 @@ storage: {
                                                                             ` : ''}
                                                                         ` : `<button type="button" onclick="app.diarioBordo.novoDiarioComTurma('${tidEsc}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer">+ Diário</button>`}
                                                                         <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirDetalhesTurma(this.dataset.tid)" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] cursor-pointer">Abrir</button>
+                                                                        ${d.podeEditar && (!t.travada || canManage) ? `<button type="button" onclick="app.diarioBordo.editarTurma('${tidEsc}')" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 flex items-center justify-center cursor-pointer" title="${t.travada ? 'Editar Turma (Dev/Gestão)' : 'Editar Turma'}"><i class="fa-solid fa-pen-to-square text-[11px]"></i></button>` : ''}
                                                                         <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.abrirResumoRapido(this.dataset.tid)" class="w-7 h-7 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center cursor-pointer" title="Resumo Rápido"><i class="fa-solid fa-bolt text-[11px]"></i></button>
                                                                     </div>
                                                                 </td>
@@ -24140,8 +24207,8 @@ storage: {
                                                                     <i class="fa-solid fa-paperclip text-xs"></i>
                                                                 </button>
                                                             ` : ''}
-                                                            ${d.podeEditar && !t.travada ? `
-                                                                <button type="button" onclick="app.diarioBordo.editarTurma('${tidEsc}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 flex items-center justify-center cursor-pointer transition" title="Editar Turma">
+                                                            ${d.podeEditar && (!t.travada || canManage) ? `
+                                                                <button type="button" onclick="app.diarioBordo.editarTurma('${tidEsc}')" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 flex items-center justify-center cursor-pointer transition" title="${t.travada ? 'Editar Turma (Dev/Gestão)' : 'Editar Turma'}">
                                                                     <i class="fa-solid fa-pen-to-square text-xs"></i>
                                                                 </button>
                                                             ` : ''}
@@ -24861,8 +24928,8 @@ storage: {
                                                     <i class="fa-solid fa-file-pdf text-rose-500"></i> PDF Final
                                                 </button>
                                             ` : ''}
-                                            ${podeEditar && !t.travada ? `
-                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.editarTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer">
+                                            ${podeEditar && (!t.travada || canManage) ? `
+                                                <button type="button" data-tid="${tidEsc}" onclick="app.diarioBordo.editarTurma(this.dataset.tid)" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer" title="${t.travada ? 'Editar Turma (Dev/Gestão)' : 'Editar Turma'}">
                                                     <i class="fa-solid fa-pen-to-square"></i> Editar Turma
                                                 </button>
                                             ` : ''}
@@ -25129,29 +25196,16 @@ storage: {
                         const operacoes = app.diarioBordo.getOperacoesDisponiveis();
 
                         container.innerHTML = `
-                            <div class="max-w-[1920px] mx-auto pb-16 space-y-6 animate-fade-in">
+                            <div class="max-w-[1920px] mx-auto pb-16 space-y-4 animate-fade-in">
                                 <!-- Sub-navegação Fixa no Topo -->
                                 ${navSubTabsHtml}
 
-                                <!-- Banner Header -->
-                                <div class="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                                    <div class="relative z-10">
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-emerald-200 text-xs font-bold uppercase tracking-widest mb-3 border border-white/10">
-                                            <i class="fa-solid fa-chalkboard-user"></i> Capacitação &amp; Treinamento
-                                        </div>
-                                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Diário de Bordo</h2>
-                                        <p class="text-emerald-100/80 text-xs sm:text-sm max-w-2xl mt-1 leading-relaxed">
-                                            Acompanhamento diário das turmas em formação, frequência em sala, alterações de quadro, absenteísmo e geração de relatório executivo oficial.
-                                        </p>
-                                    </div>
-                                    <div class="relative z-10 flex flex-wrap items-center gap-3">
-                                        <button type="button" onclick="app.diarioBordo.novoDiario()" class="px-5 py-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs sm:text-sm shadow-lg hover:shadow-xl transition-all flex items-center gap-2.5 transform active:scale-95 cursor-pointer">
-                                            <i class="fa-solid fa-plus text-emerald-600"></i> Novo Diário de Bordo
-                                        </button>
-                                    </div>
-                                    <div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none text-9xl">
-                                        <i class="fa-solid fa-book-journal-whills"></i>
-                                    </div>
+                                <!-- Cabeçalho Enxuto Etapa 3 -->
+                                <div class="flex items-center justify-between px-1">
+                                    <h2 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-list-check text-emerald-600"></i> 3. Diários de Bordo
+                                    </h2>
+                                    <span class="text-xs font-bold text-slate-400">${listaFiltrada.length} registro(s)</span>
                                 </div>
 
                                 <!-- Barra de Filtros e Busca -->
