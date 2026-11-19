@@ -2239,7 +2239,7 @@ storage: {
                     return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
-                if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
+                if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'apresentacao_dental_uni', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
                 if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
@@ -15970,7 +15970,7 @@ storage: {
                         'Operador': ['home', 'meu_painel', 'ranking_monitorias', 'impressoes', 'treinamentos', 'perfil', 'regras', 'legal', 'pesquisa_treinamento'],
                         'Qualidade': defaultUserIds,
                         'Treinamento': [...new Set(treinoDefaults)],
-                        'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias'])],
+                        'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias', 'apresentacao_dental_uni'])],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'faltas_integracao', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds.filter(id => id !== 'harmony')
@@ -15996,7 +15996,7 @@ storage: {
                         if (base.includes('gestao_equipe') && !base.includes('hierarquia')) base.push('hierarquia');
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(g) && !base.includes('hierarquia')) base.push('hierarquia');
                         if (g === 'Jovem Aprendiz') {
-                            ['gestao_equipe', 'span_operacoes', 'implantacao_ia', 'ata_reuniao', 'analise_csv_dinamico'].forEach(reqTab => {
+                            ['gestao_equipe', 'span_operacoes', 'implantacao_ia', 'ata_reuniao', 'analise_csv_dinamico', 'apresentacao_dental_uni'].forEach(reqTab => {
                                 if (!base.includes(reqTab)) base.push(reqTab);
                             });
                         }
@@ -38494,15 +38494,15 @@ storage: {
                     const isGestaoOuDev = app.isAdmin ||
                         (app.isSuperAdmin && app.isSuperAdmin()) ||
                         (app.isGestor && app.isGestor()) ||
-                        ['Dev', 'Gerente', 'Gestor'].includes(cargo);
+                        ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(cargo);
                     if (isGestaoOuDev) return true;
                     if (!u) return false;
 
-                    const uMat = String(u.matricula || '').trim();
-                    if (uMat && apr.criadorMatricula && String(apr.criadorMatricula).trim() === uMat) return true;
-                    if (uMat && Array.isArray(apr.responsaveisQualidade) && apr.responsaveisQualidade.some(m => String(m).trim() === uMat)) return true;
-                    if (uMat && Array.isArray(apr.responsaveisTreinamento) && apr.responsaveisTreinamento.some(m => String(m).trim() === uMat)) return true;
-                    if (uMat && Array.isArray(apr.allowedUsers) && apr.allowedUsers.some(m => String(m).trim() === uMat)) return true;
+                    const uMat = String(u.matricula || '').trim().toUpperCase();
+                    if (uMat && apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === uMat) return true;
+                    if (uMat && Array.isArray(apr.responsaveisQualidade) && apr.responsaveisQualidade.some(m => String(m).trim().toUpperCase() === uMat)) return true;
+                    if (uMat && Array.isArray(apr.responsaveisTreinamento) && apr.responsaveisTreinamento.some(m => String(m).trim().toUpperCase() === uMat)) return true;
+                    if (uMat && Array.isArray(apr.allowedUsers) && apr.allowedUsers.some(m => String(m).trim().toUpperCase() === uMat)) return true;
 
                     // Cruzamento automático pelo Setor/Operação vinculado no cadastro do usuário (u.operacoes)
                     const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
@@ -38671,9 +38671,9 @@ storage: {
                         ? (liberadas.find(a => a.id === this.qtFonteAtivaId) || null)
                         : null;
                     const userCargo = String(app.currentUser?.tipoAcesso || (app.isAdmin ? 'Dev' : 'Qualidade')).trim();
-                    const isGestaoOuDev = app.isAdmin || (app.isSuperAdmin && app.isSuperAdmin()) || (app.isGestor && app.isGestor()) || ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
-                    const userMat = String(app.currentUser?.matricula || '').trim();
-                    const canManageApr = activeApr && (isGestaoOuDev || (activeApr.criadorMatricula && String(activeApr.criadorMatricula).trim() === userMat));
+                    const isGestaoOuDev = app.isAdmin || (app.isSuperAdmin && app.isSuperAdmin()) || (app.isGestor && app.isGestor()) || ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(userCargo);
+                    const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
+                    const canManageApr = activeApr && (isGestaoOuDev || (activeApr.criadorMatricula && String(activeApr.criadorMatricula).trim().toUpperCase() === userMat));
 
                     // Barra superior única, super clean e sem textos longos
                     let navHtml = `
@@ -39477,7 +39477,7 @@ storage: {
                     const isGestaoOuDev = app.isAdmin ||
                         (app.isSuperAdmin && app.isSuperAdmin()) ||
                         (app.isGestor && app.isGestor()) ||
-                        ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
+                        ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(userCargo);
 
                     if (!isGestaoOuDev && app.currentUser) {
                         lista = lista.filter(a => {
@@ -42416,9 +42416,9 @@ storage: {
                 },
 
                 renderView_ApresentacaoDentalUni(container) {
-                    // Trava de segurança: exclusivo Gestor, Dev, Gerente ou Admin
+                    // Trava de segurança: exclusivo Gestor, Dev, Gerente, Jovem Aprendiz ou Admin (ou aba liberada)
                     const tipo = app.currentUser?.tipoAcesso;
-                    if (!['Gestor', 'Dev', 'Gerente'].includes(tipo) && !app.isAdmin) {
+                    if (!['Gestor', 'Dev', 'Gerente', 'Jovem Aprendiz'].includes(tipo) && !app.isAdmin) {
                         container.innerHTML = `
                             <div class="p-16 text-center text-slate-500 glass-card rounded-3xl m-8 max-w-lg mx-auto border border-slate-200 dark:border-slate-800">
                                 <div class="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400 flex items-center justify-center text-3xl mx-auto mb-4">
@@ -47313,7 +47313,11 @@ storage: {
                     
                     app.ui.showAlert("Gerando Link...", "Salvando os dados temporários na nuvem para os visitantes...", "info");
                     
-                    firebase.database().ref('sistema_bonificacao/shares/' + shareId).set(payload).then(() => {
+                    const writeShare = (app.storage && typeof app.storage._writeFirebaseNodeFast === 'function')
+                        ? app.storage._writeFirebaseNodeFast('sistema_bonificacao/shares/' + shareId, payload, 'PUT', 15000)
+                        : firebase.database().ref('sistema_bonificacao/shares/' + shareId).set(payload);
+
+                    writeShare.then(() => {
                         const shareUrl = window.location.origin + window.location.pathname + '?share=' + shareId;
                         
                         document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-share-nodes text-teal-500"></i> Link Público Gerado`;
@@ -48208,7 +48212,7 @@ storage: {
                     const eqTreinamento = todosUsuarios.filter(u => String(u.tipoAcesso || '').trim() === 'Treinamento');
                     const outrosUsuarios = todosUsuarios.filter(u => {
                         const c = String(u.tipoAcesso || '').trim();
-                        return c !== 'Qualidade' && c !== 'Treinamento' && c !== 'Dev' && c !== 'Gerente' && c !== 'Gestor' && !u.isAdmin;
+                        return c !== 'Qualidade' && c !== 'Treinamento' && c !== 'Dev' && c !== 'Gerente' && c !== 'Gestor' && c !== 'Jovem Aprendiz' && !u.isAdmin;
                     });
 
                     const renderUserCheck = (u, roleTag, colorClass) => {
@@ -48406,7 +48410,7 @@ storage: {
                             }
                             (app.users || []).forEach(u => {
                                 const cargo = String(u.tipoAcesso || '').trim();
-                                if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin) {
+                                if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || cargo === 'Jovem Aprendiz' || u.isAdmin) {
                                     if (u.matricula) allowedSet.add(String(u.matricula).trim());
                                 }
                             });
@@ -48512,19 +48516,19 @@ storage: {
                 renderPastasApresentacoes() {
                     let lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
                     
-                    const userMat = String(app.currentUser?.matricula || '').trim();
+                    const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
                     const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
                     const isGestaoOuDev = app.isAdmin || 
                         (app.isSuperAdmin && app.isSuperAdmin()) || 
                         (app.isGestor && app.isGestor()) || 
-                        ['Dev', 'Gerente', 'Gestor'].includes(userCargo);
+                        ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(userCargo);
 
                     // SEGURANÇA & ACESSO HIERÁRQUICO POR SETOR:
                     if (!isGestaoOuDev && app.currentUser) {
                         lista = lista.filter(a => {
                             if (app.ui && app.ui.userCanAccessApresentacaoQT && app.ui.userCanAccessApresentacaoQT(a, app.currentUser)) return true;
-                            if (a.criadorMatricula && String(a.criadorMatricula).trim() === userMat) return true;
-                            if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim() === userMat)) return true;
+                            if (a.criadorMatricula && String(a.criadorMatricula).trim().toUpperCase() === userMat) return true;
+                            if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim().toUpperCase() === userMat)) return true;
                             return false;
                         });
                     }
@@ -48554,8 +48558,8 @@ storage: {
                                 </div>
                                 <div class="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     ${pastas[nomePasta].map(apr => {
-                                        const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat);
-                                        const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim() === userMat;
+                                        const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat);
+                                        const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat;
                                         const qtdQual = (apr.responsaveisQualidade || []).length;
                                         const qtdTrein = (apr.responsaveisTreinamento || []).length;
                                         const qtdTratativas = Object.keys(apr.tratativasQT || {}).length;
@@ -48592,19 +48596,19 @@ storage: {
                     const apr = app.apresentacoesList[id];
                     if(!apr) return;
                     
-                    const allowed = (apr.allowedUsers || []).map(m => String(m).trim());
-                    const respQ = (apr.responsaveisQualidade || []).map(m => String(m).trim());
-                    const respT = (apr.responsaveisTreinamento || []).map(m => String(m).trim());
-                    const criadorMat = String(apr.criadorMatricula || '').trim();
+                    const allowed = (apr.allowedUsers || []).map(m => String(m).trim().toUpperCase());
+                    const respQ = (apr.responsaveisQualidade || []).map(m => String(m).trim().toUpperCase());
+                    const respT = (apr.responsaveisTreinamento || []).map(m => String(m).trim().toUpperCase());
+                    const criadorMat = String(apr.criadorMatricula || '').trim().toUpperCase();
                     const setorAtual = apr.setor || apr.pasta || '';
                     
                     let userCheckboxes = (app.users || []).map(u => {
-                        const uMat = String(u.matricula || '').trim();
+                        const uMat = String(u.matricula || '').trim().toUpperCase();
                         const cargo = String(u.tipoAcesso || '').trim();
-                        const isGestao = cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin;
+                        const isGestao = cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || cargo === 'Jovem Aprendiz' || u.isAdmin;
                         const isCriador = criadorMat && uMat === criadorMat;
                         const isChecked = isCriador || isGestao || allowed.includes(uMat) || respQ.includes(uMat) || respT.includes(uMat) ? 'checked' : '';
-                        const isDisabled = isCriador || isGestao ? 'disabled title="Acesso nativo permanente (Gestão/Criador)"' : '';
+                        const isDisabled = isCriador || isGestao ? 'disabled title="Acesso nativo permanente (Gestão/Jovem Aprendiz/Criador)"' : '';
                         const ops = Array.isArray(u.operacoes) ? u.operacoes.join(' • ') : (u.operacao || '');
                         const badgeCargo = cargo === 'Qualidade'
                             ? `<span class="text-[9px] bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300 px-1.5 py-0.5 rounded font-black shrink-0">QUALIDADE</span>`
@@ -48685,7 +48689,7 @@ storage: {
 
                         (app.users || []).forEach(u => {
                             const cargo = String(u.tipoAcesso || '').trim();
-                            if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || u.isAdmin) {
+                            if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || cargo === 'Jovem Aprendiz' || u.isAdmin) {
                                 if (u.matricula) allowedSet.add(String(u.matricula).trim());
                             }
                         });
