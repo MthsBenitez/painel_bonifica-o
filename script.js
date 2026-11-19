@@ -1679,7 +1679,8 @@ storage: {
                     }
 
                     const isAuthPayload = payload.senha !== undefined || payload.primeiroAcesso !== undefined;
-                    const isProfileSyncPayload = isAuthPayload || payload.foto !== undefined || payload.fotoUpdatedAt !== undefined;
+                    const isStructurePayload = payload.tipoAcesso !== undefined || payload.cargo !== undefined || payload.subclasse !== undefined || payload.abasLiberadas !== undefined || payload.gestorMatricula !== undefined || payload.turmaId !== undefined || payload.operacoes !== undefined || payload.nome !== undefined;
+                    const isProfileSyncPayload = isAuthPayload || isStructurePayload || payload.foto !== undefined || payload.fotoUpdatedAt !== undefined;
                     let idx = -1;
                     (app.users || []).forEach((u, i) => {
                         if (!u || this._normalizeMat(u.matricula) !== mKey) return;
@@ -7094,18 +7095,22 @@ storage: {
                     const existingIdx = app.users.findIndex(u => String(u.matricula || '').trim().toUpperCase() === mat);
                     if (existingIdx > -1) {
                         const u = app.users[existingIdx];
-                        u.tipoAcesso = 'Operador';
-                        u.cargo = 'Operador em Treinamento';
-                        u.subclasse = null;
-                        u.turmaId = t.id;
-                        u.turmaNumero = t.numeroTurma || '';
-                        u.turmaTreinadorMatricula = t.treinadorMatricula || '';
-                        u.turmaTreinadorNome = t.treinadorNome || '';
-                        if (rawCpf && !u.cpf) u.cpf = rawCpf;
+                        if (!u.tipoAcesso || u.tipoAcesso === 'Operador') {
+                            u.tipoAcesso = 'Operador';
+                            u.cargo = 'Operador em Treinamento';
+                            u.subclasse = null;
+                            u.turmaId = t.id;
+                            u.turmaNumero = t.numeroTurma || '';
+                            u.turmaTreinadorMatricula = t.treinadorMatricula || '';
+                            u.turmaTreinadorNome = t.treinadorNome || '';
+                            if (!Array.isArray(u.abasLiberadas) || u.abasLiberadas.length === 0) {
+                                u.abasLiberadas = ['pesquisa_treinamento'];
+                            }
+                            usersModificados = true;
+                        }
+                        if (rawCpf && !u.cpf) { u.cpf = rawCpf; usersModificados = true; }
                         if (!Array.isArray(u.operacoes)) u.operacoes = [];
-                        if (t.operacao && !u.operacoes.includes(t.operacao)) u.operacoes.push(t.operacao);
-                        u.abasLiberadas = ['pesquisa_treinamento'];
-                        usersModificados = true;
+                        if (t.operacao && !u.operacoes.includes(t.operacao)) { u.operacoes.push(t.operacao); usersModificados = true; }
                     } else {
                         app.users.push({
                             matricula: mat,
@@ -16110,23 +16115,35 @@ storage: {
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
-                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
-                    if (idx === -1) return;
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === normMat);
+                    if (idx === -1) {
+                        this.showAlert("Aviso", "Colaborador não encontrado para alteração de cargo.", "error");
+                        return;
+                    }
                     const alvo = app.users[idx];
                     const grupoAnterior = alvo.tipoAcesso || 'Qualidade';
                     const presets = this.getPresetsGruposAcesso();
                     alvo.tipoAcesso = novoGrupo;
-                    if (novoGrupo === 'Treinamento' && !alvo.subclasse) {
-                        alvo.subclasse = 'Instrutor';
+                    if (novoGrupo === 'Treinamento') {
+                        if (!alvo.subclasse) alvo.subclasse = 'Instrutor';
+                    } else {
+                        alvo.subclasse = null;
                     }
                     if (novoGrupo === 'Operador') {
                         alvo.cargo = 'Operador em Treinamento';
-                        alvo.subclasse = null;
                         alvo.abasLiberadas = ['pesquisa_treinamento'];
                     } else {
+                        alvo.cargo = null;
+                        alvo.turmaId = null;
                         alvo.abasLiberadas = [...(presets[novoGrupo] || [])];
                     }
-                    if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
+                    if (novoGrupo === 'Gerente' || novoGrupo === 'Gestor') {
+                        alvo.gestorMatricula = null;
+                    }
+                    alvo.atualizadoEm = new Date().toISOString();
+
+                    if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
                         app.currentUser = alvo;
                         this.renderNav();
                     }
@@ -16138,19 +16155,37 @@ storage: {
                             'perfil'
                         );
                     }
-                    app.storage.saveUsers().then(() => {
-                        this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                        this.showAlert("Perfil Atualizado!", `<b>${alvo.nome}</b> agora possui o perfil <b>${novoGrupo}</b>.`, "success");
+                    this._refreshSpanOrHierarquiaInPlace();
+                    app.storage.saveUserByMatricula(alvo.matricula, {
+                        tipoAcesso: alvo.tipoAcesso,
+                        subclasse: alvo.subclasse || null,
+                        cargo: alvo.cargo || null,
+                        turmaId: alvo.turmaId || null,
+                        abasLiberadas: alvo.abasLiberadas,
+                        gestorMatricula: alvo.gestorMatricula || null,
+                        atualizadoEm: alvo.atualizadoEm
+                    }).then(() => {
+                        this._refreshSpanOrHierarquiaInPlace();
+                        if (this.showToast) {
+                            this.showToast(`Cargo de ${alvo.nome} alterado para ${novoGrupo} na nuvem!`, "success");
+                        } else {
+                            this.showAlert("Perfil Atualizado!", `<b>${alvo.nome}</b> agora possui o perfil <b>${novoGrupo}</b>.`, "success");
+                        }
+                    }).catch(err => {
+                        console.error("Erro ao alterar cargo/grupo:", err);
+                        this.showAlert("Erro ao Salvar Cargo", `Não foi possível salvar a alteração de cargo de <b>${alvo.nome}</b> no servidor.<br><br><span class="text-xs">${err && err.message ? err.message : 'Verifique sua conexão e tente novamente.'}</span>`, "error");
                     });
                 },
 
                 alterarSubclasseTreinamentoRapido(matricula, novaSubclasse) {
-                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(matricula).trim());
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === normMat);
                     if (idx === -1) return;
                     const alvo = app.users[idx];
                     const subAnterior = alvo.subclasse || 'Instrutor';
                     alvo.subclasse = novaSubclasse;
-                    if (app.currentUser && String(app.currentUser.matricula).trim() === String(matricula).trim()) {
+                    alvo.atualizadoEm = new Date().toISOString();
+                    if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
                         app.currentUser.subclasse = novaSubclasse;
                     }
                     if (app.jovemAprendizAudit) {
@@ -16161,9 +16196,19 @@ storage: {
                             'perfil'
                         );
                     }
-                    app.storage.saveUsers().then(() => {
-                        this.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                        this.showAlert("Subclasse Atualizada", `<b>${alvo.nome}</b> agora está denominado(a) como <b>${novaSubclasse}</b> de Treinamento.`, "success");
+                    this._refreshSpanOrHierarquiaInPlace();
+                    app.storage.saveUserByMatricula(alvo.matricula, {
+                        subclasse: alvo.subclasse,
+                        atualizadoEm: alvo.atualizadoEm
+                    }).then(() => {
+                        if (this.showToast) {
+                            this.showToast(`Subclasse de ${alvo.nome} atualizada para ${novaSubclasse}!`, "success");
+                        } else {
+                            this.showAlert("Subclasse Atualizada", `<b>${alvo.nome}</b> agora está denominado(a) como <b>${novaSubclasse}</b> de Treinamento.`, "success");
+                        }
+                    }).catch(err => {
+                        console.error("Erro ao atualizar subclasse:", err);
+                        this.showAlert("Erro", "Falha ao salvar a subclasse na nuvem.", "error");
                     });
                 },
 
@@ -29707,12 +29752,22 @@ storage: {
                 },
 
                 alterarCargoRapidoHierarquia(matricula, novoCargo) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const u = app.users.find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if (!u) return;
                     u.tipoAcesso = novoCargo;
                     const presets = this.getPresetsGruposAcesso();
-                    if (presets[novoCargo]) {
-                        u.abasLiberadas = [...presets[novoCargo]];
+                    if (novoCargo === 'Operador') {
+                        u.cargo = 'Operador em Treinamento';
+                        u.subclasse = null;
+                        u.abasLiberadas = ['pesquisa_treinamento'];
+                    } else {
+                        u.cargo = null;
+                        u.turmaId = null;
+                        u.subclasse = novoCargo === 'Treinamento' ? (u.subclasse || 'Instrutor') : null;
+                        if (presets[novoCargo]) {
+                            u.abasLiberadas = [...presets[novoCargo]];
+                        }
                     }
                     if (novoCargo === 'Gerente' || novoCargo === 'Gestor') {
                         u.gestorMatricula = null;
@@ -29721,9 +29776,14 @@ storage: {
                     app.ui._refreshSpanOrHierarquiaInPlace();
                     app.storage.saveUserByMatricula(u.matricula, {
                         tipoAcesso: u.tipoAcesso,
+                        subclasse: u.subclasse || null,
+                        cargo: u.cargo || null,
+                        turmaId: u.turmaId || null,
                         abasLiberadas: u.abasLiberadas,
                         gestorMatricula: u.gestorMatricula || null,
                         atualizadoEm: u.atualizadoEm
+                    }).then(() => {
+                        if (app.ui && app.ui.showToast) app.ui.showToast(`Cargo de ${u.nome} alterado para ${novoCargo}!`, "success");
                     }).catch(err => {
                         console.error("Erro ao alterar cargo:", err);
                         if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao salvar cargo na nuvem.", "error");
@@ -29938,7 +29998,8 @@ storage: {
                 },
 
                 abrirModalEditarMembro(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const u = app.users.find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if (!u) return;
                     const cargo = u.tipoAcesso || 'Qualidade';
                     const gestores = app.users.filter(g => (g.tipoAcesso || 'Qualidade') === 'Gestor' && g.matricula !== u.matricula);
@@ -29977,7 +30038,8 @@ storage: {
                 },
 
                 salvarMembroHierarquia(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const u = app.users.find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if (!u) return;
                     const cargoAntes = u.tipoAcesso || 'Qualidade';
                     const subAntes = u.subclasse || '';
@@ -29990,6 +30052,8 @@ storage: {
                             u.cargo = 'Operador em Treinamento';
                             u.abasLiberadas = ['pesquisa_treinamento'];
                         } else {
+                            u.cargo = null;
+                            u.turmaId = null;
                             const presets = this.getPresetsGruposAcesso();
                             if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
                         }
@@ -30002,6 +30066,10 @@ storage: {
                     }
                     u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
                     u.atualizadoEm = new Date().toISOString();
+                    if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
+                        app.currentUser = u;
+                        app.ui.renderNav();
+                    }
                     if (app.jovemAprendizAudit) {
                         const diffs = [];
                         if (cargoAntes !== u.tipoAcesso) diffs.push(`Cargo/Perfil: ${cargoAntes} -> ${u.tipoAcesso}`);
@@ -30015,10 +30083,14 @@ storage: {
                     app.ui._refreshSpanOrHierarquiaInPlace();
                     app.storage.saveUserByMatricula(u.matricula, {
                         tipoAcesso: u.tipoAcesso,
+                        cargo: u.cargo || null,
+                        turmaId: u.turmaId || null,
                         abasLiberadas: u.abasLiberadas,
                         subclasse: u.subclasse || null,
                         gestorMatricula: u.gestorMatricula || null,
                         atualizadoEm: u.atualizadoEm
+                    }).then(() => {
+                        if (app.ui && app.ui.showToast) app.ui.showToast(`Cargo de ${u.nome} salvo na nuvem!`, "success");
                     }).catch(err => {
                         console.error("Erro ao atualizar membro:", err);
                         if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alteração na nuvem.", "error");
@@ -49951,7 +50023,8 @@ storage: {
                     if (!canEditUsers) {
                         return app.ui.showAlert("Acesso Restrito", "Você não possui permissão para editar dados ou perfil de usuário.", "error");
                     }
-                    const u = app.users.find(x => x.matricula === mat);
+                    const normMat = app.storage._normalizeMat(mat);
+                    const u = app.users.find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if(!u) return;
                 
                     document.getElementById('edit-mat-original').value = u.matricula;
@@ -50035,10 +50108,12 @@ storage: {
 
                     if(!nome || !mat) return app.ui.showAlert("Aviso", "Nome e Matrícula são obrigatórios", "error");
 
-                    const idx = app.users.findIndex(u => u.matricula === originalMat);
-                    if(idx === -1) return;
+                    const origNormMat = app.storage._normalizeMat(originalMat);
+                    const newNormMat = app.storage._normalizeMat(mat);
+                    const idx = app.users.findIndex(u => app.storage._normalizeMat(u.matricula) === origNormMat);
+                    if(idx === -1) return app.ui.showAlert("Aviso", "Colaborador não encontrado para edição.", "error");
 
-                    if(mat !== originalMat && app.users.find(u => u.matricula === mat)) return app.ui.showAlert("Aviso", "A nova matrícula já está em uso por outro colaborador", "error");
+                    if(newNormMat !== origNormMat && app.users.find(u => app.storage._normalizeMat(u.matricula) === newNormMat)) return app.ui.showAlert("Aviso", "A nova matrícula já está em uso por outro colaborador", "error");
 
                     const antesSnap = {
                         nome: app.users[idx].nome || '',
@@ -50057,6 +50132,16 @@ storage: {
                         app.users[idx].subclasse = subclasse;
                         app.users[idx].operacoes = operacoes;
                         app.users[idx].abasLiberadas = abasLiberadas;
+                        if (tipoAcesso === 'Operador') {
+                            app.users[idx].cargo = 'Operador em Treinamento';
+                        } else {
+                            app.users[idx].cargo = null;
+                            app.users[idx].turmaId = null;
+                        }
+                        if (tipoAcesso === 'Gerente' || tipoAcesso === 'Gestor') {
+                            app.users[idx].gestorMatricula = null;
+                        }
+                        app.users[idx].atualizadoEm = new Date().toISOString();
                         if(pwd) {
                             app.users[idx].senha = app.utils.encryptPassword(pwd);
                             app.users[idx].primeiroAcesso = !!(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(pwd));
@@ -50112,10 +50197,13 @@ storage: {
                                 const patch = {
                                     nome,
                                     tipoAcesso,
-                                    subclasse,
+                                    subclasse: subclasse || null,
+                                    cargo: app.users[idx].cargo || null,
+                                    turmaId: app.users[idx].turmaId || null,
+                                    gestorMatricula: app.users[idx].gestorMatricula || null,
                                     operacoes,
                                     abasLiberadas,
-                                    atualizadoEm: new Date().toISOString()
+                                    atualizadoEm: app.users[idx].atualizadoEm
                                 };
                                 if (pwd) {
                                     patch.senha = app.users[idx].senha;
@@ -50132,7 +50220,11 @@ storage: {
 
                         savePromise.then((res) => {
                             document.getElementById('edit-user-modal').classList.add('hidden');
-                            app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                            if (app.ui && app.ui._refreshSpanOrHierarquiaInPlace) {
+                                app.ui._refreshSpanOrHierarquiaInPlace();
+                            } else {
+                                app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
+                            }
                             if (res && res.remoteSaved === false) {
                                 app.ui.showAlert("Aviso", "Alteração salva localmente, mas o servidor não respondeu. Tente sincronizar em instantes.", "warning");
                             } else {
@@ -52281,7 +52373,8 @@ storage: {
                 },
 
                 viewUserProfile(mat) {
-                    const u = app.users.find(x => x.matricula === mat);
+                    const normMat = app.storage._normalizeMat(mat);
+                    const u = app.users.find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if(!u) return;
 
                     document.getElementById('up-nome').textContent = u.nome;
