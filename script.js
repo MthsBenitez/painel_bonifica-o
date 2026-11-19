@@ -16466,6 +16466,311 @@ storage: {
                         }
                     });
                 },
+                getMonitoriaMotivationalData(realizado = 0, meta = 400) {
+                    const real = Math.max(0, Math.round(Number(realizado) || 0));
+                    const target = Math.max(1, Math.round(Number(meta) || 400));
+                    const falta = Math.max(0, target - real);
+                    const pctRaw = (real / target) * 100;
+                    const pctTxt = pctRaw.toFixed(1).replace('.', ',');
+
+                    let tierKey = 'inicio';
+                    let badge = 'Arrancada Inicial';
+                    let icon = 'fa-rocket';
+                    let wrapCls = 'bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50 dark:from-sky-950/50 dark:via-blue-950/40 dark:to-indigo-950/40 border-sky-200 dark:border-sky-800/70';
+                    let badgeCls = 'bg-sky-600 text-white';
+                    let iconBoxCls = 'bg-sky-600 text-white shadow-sky-500/25';
+
+                    if (pctRaw >= 115) {
+                        tierKey = 'superacao';
+                        badge = 'Além da Meta (+115%)';
+                        icon = 'fa-crown';
+                        wrapCls = 'bg-gradient-to-r from-fuchsia-50 via-purple-50 to-indigo-50 dark:from-fuchsia-950/50 dark:via-purple-950/40 dark:to-indigo-950/40 border-purple-300 dark:border-purple-700/80';
+                        badgeCls = 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white';
+                        iconBoxCls = 'bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white shadow-purple-500/30';
+                    } else if (pctRaw >= 100) {
+                        tierKey = 'meta_batida';
+                        badge = 'Meta 100% Batida (Q1)';
+                        icon = 'fa-trophy';
+                        wrapCls = 'bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950/50 dark:via-teal-950/40 dark:to-green-950/40 border-emerald-300 dark:border-emerald-700/80';
+                        badgeCls = 'bg-emerald-600 text-white';
+                        iconBoxCls = 'bg-emerald-600 text-white shadow-emerald-500/30';
+                    } else if (pctRaw >= 90) {
+                        tierKey = 'reta_final';
+                        badge = 'Reta Final (Q2)';
+                        icon = 'fa-flag-checkered';
+                        wrapCls = 'bg-gradient-to-r from-indigo-50 via-violet-50 to-blue-50 dark:from-indigo-950/50 dark:via-violet-950/40 dark:to-blue-950/40 border-indigo-300 dark:border-indigo-700/80';
+                        badgeCls = 'bg-indigo-600 text-white';
+                        iconBoxCls = 'bg-indigo-600 text-white shadow-indigo-500/25';
+                    } else if (pctRaw >= 70) {
+                        tierKey = 'avancado';
+                        badge = 'Zona de Bonificação';
+                        icon = 'fa-bolt';
+                        wrapCls = 'bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/50 dark:via-orange-950/40 dark:to-yellow-950/40 border-amber-300 dark:border-amber-700/80';
+                        badgeCls = 'bg-amber-600 text-white';
+                        iconBoxCls = 'bg-amber-500 text-white shadow-amber-500/25';
+                    } else if (pctRaw >= 50) {
+                        tierKey = 'metade';
+                        badge = 'Metade Superada';
+                        icon = 'fa-fire-flame-curved';
+                        wrapCls = 'bg-gradient-to-r from-cyan-50 via-sky-50 to-emerald-50 dark:from-cyan-950/50 dark:via-sky-950/40 dark:to-emerald-950/40 border-cyan-300 dark:border-cyan-700/80';
+                        badgeCls = 'bg-cyan-600 text-white';
+                        iconBoxCls = 'bg-cyan-600 text-white shadow-cyan-500/25';
+                    } else if (pctRaw >= 25) {
+                        tierKey = 'ritmo';
+                        badge = 'Ganhando Tração';
+                        icon = 'fa-gauge-high';
+                        wrapCls = 'bg-gradient-to-r from-blue-50 via-cyan-50 to-slate-50 dark:from-blue-950/50 dark:via-cyan-950/40 dark:to-slate-900 border-blue-200 dark:border-blue-800/70';
+                        badgeCls = 'bg-blue-600 text-white';
+                        iconBoxCls = 'bg-blue-600 text-white shadow-blue-500/25';
+                    }
+
+                    const pools = {
+                        inicio: [
+                            'Cada monitoria concluída agora tira peso da última semana. Começo firme gera tranquilidade no fechamento.',
+                            'Com {real} de {meta} monitorias feitas, o alicerce do seu mês já está sendo construído.',
+                            'Consistência diária vence corrida de última hora: mantenha o bloco fixo de escutas todo dia.',
+                            'Boas auditorias no início do mês criam margem de segurança para imprevistos no caminho.',
+                            'A meta de {meta} começa na primeira ligação auditada com atenção aos detalhes.',
+                            'Você já deu a largada ({real} concluídas). Ritmo estável hoje é meta batida com folga amanhã.',
+                            'Transforme pequenas metas por turno em avanço contínuo rumo às {meta} monitorias.',
+                            'Cada avaliação feita com qualidade agora já corrige desvios da operação logo na raiz.',
+                            'O melhor momento para construir seu Q1 é exatamente no primeiro quarto do mês.',
+                            'Faltam {falta} monitorias, e cada dia produtivo encurta essa distância rapidamente.',
+                            'Foco no volume com critério: qualidade na escuta e agilidade no registro caminham juntas.',
+                            'O segredo dos melhores monitores é não deixar o contador parado no começo do ciclo.',
+                            'Você já somou {real} auditorias ({pct}%). Continue alimentando o ritmo dia após dia.',
+                            'Disciplina no início do mês é o que transforma {meta} em um objetivo leve de alcançar.',
+                            'Uma avaliação por vez, com critério técnico, já vai desenhando seu resultado no mês.',
+                            'Mantenha o foco no alvo diário: constância pequena hoje vira potência lá na frente.',
+                            'Boa largada! Cada ligação analisada fortalece seu painel e eleva o padrão da operação.',
+                            'Metas grandes se conquistam em entregas diárias. Siga firme nesta batida!',
+                            'O placar já começou a girar ({real}/{meta}). Preserve a cadência e evite acúmulos.',
+                            'Excelente início de jornada: foco na meta diária que as {meta} vêm naturalmente.'
+                        ],
+                        ritmo: [
+                            'Você já passou de um quarto da meta ({real}/{meta}). A engrenagem pegou velocidade!',
+                            'Com {pct}% concluídos, seu ritmo diário já mostra consistência rumo ao objetivo.',
+                            'O motor aqueceu! Continue protegendo seu tempo de monitoria para não perder embalo.',
+                            '{real} monitorias entregues: o caminho até {meta} já está ficando bem mais curto.',
+                            'Cada escuta bem feita agora aproxima você da zona de bonificação sem sufoco.',
+                            'Ritmo sólido! Manter essa cadência garante tranquilidade na virada da quinzena.',
+                            'De grão em grão você já alcançou {pct}% da meta. Siga acelerando com qualidade!',
+                            'Bom avanço! Quem mantém o ritmo entre 25% e 50% raramente passa aperto no fechamento.',
+                            'Faltam {falta} monitorias: divida pelos dias úteis restantes e você verá como é totalmente alcançável.',
+                            'Sua entrega atual ({real}) já faz diferença real na saúde qualitativa da operação.',
+                            'Constância visível no painel! Não tire o pé agora que o ritmo encaixou.',
+                            'Você está construindo uma entrega sólida rumo à metade do mês. Continue nessa pegada!',
+                            'Metade da jornada já está logo ali na curva: {real} concluídas e subindo.',
+                            'Seu foco está aparecendo nos números ({pct}%). Mantenha o padrão de excelência.',
+                            'Auditoria após auditoria, você transforma esforço diário em resultado concreto.',
+                            'O avanço já é nítido: siga firme no plano diário até bater os 50% e ir além.',
+                            'Cadência certa gera resultado previsível. Ótima evolução até aqui!',
+                            'Olho no alvo de {meta}: você já provou que consegue manter a máquina rodando.',
+                            'Cada monitoria adicionada aqui conta para a sua meta e para a evolução de um operador.',
+                            'Trilha bem encaminhada com {real} monitorias. Bora buscar a metade da meta!'
+                        ],
+                        metade: [
+                            'Mais da metade do caminho percorrido ({real} de {meta})! Agora a descida joga a favor.',
+                            'Você já rompeu os {pct}%! Faltam {falta} monitorias para fechar a conta completa.',
+                            'Meio caminho superado com mérito: agora o foco já mira entrar forte na zona de bônus (70%+).',
+                            'Com {real} monitorias auditadas, a parte mais pesada de embalar já ficou para trás.',
+                            'Virada de chave confirmada! Você já passou da metade e está cada vez mais perto da meta.',
+                            'Olha o placar: {pct}% atingidos! Mantenha essa energia para chegar logo aos 70%.',
+                            'Faltam menos monitorias do que você já fez. A vantagem agora é toda sua!',
+                            'Excelente consistência: passar da metade no ritmo certo é sinal de mês vencedor.',
+                            'Cada bloco de monitorias agora empurra sua projeção direto para cima de {meta}.',
+                            'Você já entregou {real} avaliações de valor. Q4 está logo à frente — siga firme!',
+                            'Mais de 50% no bolso! Proteja sua rotina diária que a meta vai caindo dia após dia.',
+                            'Agora é momento de consolidar: menos de {falta} para completar todas as {meta}.',
+                            'Ótima resposta no painel ({pct}%). Sua disciplina já está virando resultado.',
+                            'A linha de chegada já começa a aparecer no horizonte. Continue acelerando!',
+                            'Quem chega na metade com fôlego sempre fecha o mês entre os destaques.',
+                            'Seu marcador não mente: {real} concluídas e muito potencial para buscar Q2 ou Q1.',
+                            'Cada dia consistente daqui para frente vale ouro na composição do seu fechamento.',
+                            'Passou da metade! Mantenha a qualidade das devolutivas e o volume sob controle.',
+                            'Você já construiu a maior parte da caminhada. Rumo aos 70% e além!',
+                            'Excelente controle de ritmo com {real}/{meta}. Mantenha a pegada vencedora!'
+                        ],
+                        avancado: [
+                            'Você já entrou na zona de entrega forte ({pct}%): {real} monitorias garantidas e subindo!',
+                            'Excelente patamar! Com {real} monitorias feitas, faltam apenas {falta} para cravar {meta}.',
+                            'Você já superou a faixa intermediária e agora briga pelos quadrantes altos!',
+                            'O trabalho duro já rendeu {pct}% da meta. Agora é mirar firme nos 90% e no Q1.',
+                            'Pouca distância restante ({falta} monitorias): cada dia bem feito aproxima do 100%.',
+                            'Desempenho de destaque! Você está muito perto de fechar a reta final do mês.',
+                            'Foco total: sair dos 70%-89% para os 100% depende só de manter esse gás final.',
+                            'Com {real} entregas registradas, seu comprometimento já aparece em alto nível.',
+                            'Você está na faixa decisiva do mês. Cada bloco auditado agora aumenta seu retorno.',
+                            'A meta de {meta} já sente seus passos chegando perto: faltam só {falta}!',
+                            'Qualidade somada a volume dá exatamente isso: {pct}% concluídos com autoridade.',
+                            'Não desacelere na parte mais gostosa da subida — o topo Q1 está ao alcance.',
+                            'Belo avanço! Falta menos de um terço do caminho para completar 100% da meta.',
+                            'Seu esforço diário já colocou você na zona de pontuação sólida. Vamos buscar mais!',
+                            'Você transformou planejamento em números reais ({real} monitorias). Mire os 90%+!',
+                            'Faltam {falta} para fechar com chave de ouro. Ritmo de campeão na reta pré-final!',
+                            'O mês está tomando a sua cara: consistente, produtivo e rumo ao teto máximo.',
+                            'Grande entrega até aqui ({pct}%). Continue firme que o 100% vem com força!',
+                            'Já passou da hora de pensar pequeno: com {real} feitas, o alvo natural é bater 100%!',
+                            'Controle impecável! Mais alguns dias focados e você entra na reta final dos 90%.'
+                        ],
+                        reta_final: [
+                            'Reta final absoluta! Com {real} de {meta} ({pct}%), faltam apenas {falta} monitorias para o 100%!',
+                            'Q2 no bolso e Q1 na mira: você está a um passo de fechar as {meta} completas!',
+                            'Só faltam {falta} monitorias! É questão de manter o foco para comemorar os 100%.',
+                            'Que sprint incrível! {pct}% concluídos — o topo do quadrante Q1 está logo ali.',
+                            'Falta muito pouco para bater o teto máximo. Capriche nessa chegada triunfal!',
+                            'Com {real} auditorias no painel, você está quase cruzando a linha de chegada de {meta}.',
+                            'Últimos metros da maratona: {falta} restantes para carimbar 100% no mês!',
+                            'Sensacional! Chegar acima dos 90% mostra domínio total do seu controle diário.',
+                            'Agora é questão de honra fechar {meta}/{meta}: faltam só {falta}!',
+                            'Sua entrega de {pct}% coloca você muito perto da premiação máxima no indicador.',
+                            'Falta pouco para o troféu de 100%! Mantenha a qualidade e finalize com estilo.',
+                            'Faltando apenas {falta}, cada monitoria de hoje já tem gosto de vitória!',
+                            'Desempenho admirável na reta final. O 100% já está batendo na porta!',
+                            'Último fôlego rumo ao Q1: você já garantiu {real} de {meta} com muita competência.',
+                            'Você chegou até os {pct}% com mérito próprio. Agora complete a obra prima!',
+                            'Quase lá! Não deixe para amanhã as {falta} monitorias que podem coroar seu mês hoje.',
+                            'Excelente controle de metas: 90%+ já é realidade, e o Q1 é o próximo clique!',
+                            'Pouquíssimo caminho para fechar a conta perfeita. Vai lá e busca essas {falta}!',
+                            'Você está a centímetros da meta cheia ({real}/{meta}). Sprint final rumo ao topo!',
+                            'Meta praticamente dominada com {pct}%. Só mais um empurrão para cravar 100%!'
+                        ],
+                        meta_batida: [
+                            'META BATIDA! Você atingiu {real} de {meta} monitorias e garantiu o Q1 no máximo!',
+                            'Parabéns pela entrega impecável: 100% da meta concluída com excelência!',
+                            'Missão cumprida com sucesso! {real} monitorias entregues e topo do quadrante assegurado.',
+                            'Você cravou {meta}+ monitorias no mês! Disciplina e constância recompensadas ao máximo.',
+                            'Resultado de elite: {real} monitorias realizadas ({pct}%). Meta 100% superada!',
+                            'Objetivo alcançado no mais alto nível! Aproveite o fôlego extra para blindar feedbacks pendentes.',
+                            'Fechamento de respeito: meta integral batida ({real}/{meta})! Orgulho da Qualidade.',
+                            'Você não apenas acompanhou a meta — você dominou os 100% e entregou no teto Q1!',
+                            'Troféu garantido! {real} monitorias auditadas mostram compromisso de ponta a ponta.',
+                            'Meta de {meta} concluída com autoridade! Agora cada nova escuta é superávit e liderança.',
+                            'Sensacional! 100% batido! Seu ritmo serviu de referência para o time inteiro.',
+                            'Você fez por merecer cada detalhe deste resultado: {real} auditorias entregues!',
+                            'Chegou ao topo do painel ({real}/{meta})! Continue inspirando o padrão de excelência.',
+                            'Zero sufoco, 100% entrega: meta batida e pontuação máxima cravada!',
+                            'Parabéns, monitor(a)! Atingir {meta} monitorias exige foco diário — e você entregou tudo!',
+                            'Objetivo {meta} riscado da lista com maestria! Excelente trabalho no mês.',
+                            'Meta 100% atingida! Que resultado brilhante — mantenha a qualidade nos retornos e feedbacks.',
+                            'Você fechou o ciclo de monitorias no quadrante máximo (Q1). Excelente consistência!',
+                            'Placar lindo de ver: {real} monitorias e meta 100% concretizada!',
+                            'Dedicação diária virou entrega máxima ({pct}%). Parabéns pelo desempenho!',
+                            'Bateu a meta de {meta} com classe! Agora é manter o cuidado com a operação e celebrar.',
+                            'Entrega cheia! {real} auditorias completas colocam você no grupo dos melhores do mês.',
+                            'Meta superada no critério certo: volume batido e evolução garantida para a equipe!',
+                            'Trabalho concluído no nível Q1 ({real}/{meta}). Continue mantendo esse padrão alto!',
+                            'Você conquistou 100% do alvo mensal de monitorias. Brilha muito no fechamento!'
+                        ],
+                        superacao: [
+                            'Nível fora da curva! Com {real} monitorias ({pct}%), você superou com folga a meta de {meta}!',
+                            'Desempenho histórico: muito além dos 100%! Você está puxando a régua da equipe para cima.',
+                            'Referência absoluta em produtividade e entrega: {real} monitorias realizadas no mês!',
+                            'Não bastou bater {meta} — você foi além com {pct}% de entrega! Trabalho admirável.',
+                            'Liderança pelo exemplo: superar a meta em {real} monitorias mostra maestria na rotina.',
+                            'Acima do teto e com sobra! Seu ritmo atual transforma você em destaque absoluto da Qualidade.',
+                            'Extraordinário! {real} avaliações auditadas mostram um nível raro de comprometimento.',
+                            'Você já deixou a meta de {meta} para trás há tempo ({pct}%). Parabéns pela entrega gigante!',
+                            'Performance inspiradora: bater o teto já é ótimo, ir além mostra paixão por resultado.',
+                            'Cada monitoria acima de {meta} fortalece ainda mais o time inteiro. Espetacular ({real})!',
+                            'Você alcançou a prateleira mais alta do controle de monitorias: {real} entregas concluídas!',
+                            'Consistência absurda! Sua marca de {pct}% é exemplo de alta performance.',
+                            'Superação total: meta de {meta} pulverizada com {real} monitorias registradas!',
+                            'Poucos chegam tão longe no ciclo — seu controle e ritmo estão impecáveis ({pct}%).',
+                            'Parabéns por elevar o sarrafo! {real} monitorias concluídas é resultado de destaque máximo.',
+                            'Você provou que o limite de {meta} era só o ponto de partida. Brilhante demais!'
+                        ]
+                    };
+
+                    const list = pools[tierKey] || pools.inicio;
+                    if (!this._monMotivLastByTier) this._monMotivLastByTier = {};
+                    if (!this._monMotivSeenByTier) this._monMotivSeenByTier = {};
+
+                    // Carrega histórico da sessão para nunca repetir consecutivamente nem esgotar antes de variar todas
+                    let seenSet = this._monMotivSeenByTier[tierKey];
+                    if (!(seenSet instanceof Set)) {
+                        seenSet = new Set();
+                        try {
+                            const saved = JSON.parse(sessionStorage.getItem(`soft_mon_motiv_seen_${tierKey}`) || '[]');
+                            if (Array.isArray(saved)) saved.forEach(i => seenSet.add(Number(i)));
+                        } catch (e) {}
+                        this._monMotivSeenByTier[tierKey] = seenSet;
+                    }
+
+                    let lastIdx = this._monMotivLastByTier[tierKey];
+                    if (lastIdx === undefined) {
+                        try {
+                            const rawLast = sessionStorage.getItem(`soft_mon_motiv_last_${tierKey}`);
+                            if (rawLast !== null) lastIdx = Number(rawLast);
+                        } catch (e) {}
+                    }
+
+                    let candidates = [];
+                    for (let i = 0; i < list.length; i++) {
+                        if (!seenSet.has(i) && i !== lastIdx) candidates.push(i);
+                    }
+                    if (candidates.length === 0) {
+                        seenSet.clear();
+                        for (let i = 0; i < list.length; i++) {
+                            if (i !== lastIdx || list.length === 1) candidates.push(i);
+                        }
+                    }
+
+                    const chosenIdx = candidates[Math.floor(Math.random() * candidates.length)];
+                    seenSet.add(chosenIdx);
+                    this._monMotivLastByTier[tierKey] = chosenIdx;
+                    try {
+                        sessionStorage.setItem(`soft_mon_motiv_last_${tierKey}`, String(chosenIdx));
+                        sessionStorage.setItem(`soft_mon_motiv_seen_${tierKey}`, JSON.stringify(Array.from(seenSet)));
+                    } catch (e) {}
+
+                    const rawPhrase = list[chosenIdx] || list[0];
+                    const phrase = rawPhrase
+                        .replace(/\{real\}/g, String(real))
+                        .replace(/\{meta\}/g, String(target))
+                        .replace(/\{falta\}/g, String(falta))
+                        .replace(/\{pct\}/g, pctTxt);
+
+                    return { tierKey, badge, icon, wrapCls, badgeCls, iconBoxCls, phrase, real, target, falta, pctTxt };
+                },
+                buildMonitoriaMotivationalBannerHtml(realizado = 0, meta = 400, domPrefix = 'mon') {
+                    const info = this.getMonitoriaMotivationalData(realizado, meta);
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (s) => String(s || '');
+                    const prefixSafe = String(domPrefix || 'mon').replace(/[^a-zA-Z0-9_-]/g, '');
+                    return `
+                        <div id="${prefixSafe}-motiv-banner" class="rounded-2xl border p-4 sm:p-5 mb-6 shadow-xs transition-all ${info.wrapCls}">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div class="flex items-start sm:items-center gap-3.5 min-w-0">
+                                    <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${info.iconBoxCls}">
+                                        <i class="fa-solid ${esc(info.icon)} text-base"></i>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${info.badgeCls}">${esc(info.badge)}</span>
+                                            <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${info.real} / ${info.target} (${info.pctTxt}%)</span>
+                                        </div>
+                                        <p id="${prefixSafe}-motiv-phrase" class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 leading-relaxed">${esc(info.phrase)}</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="app.ui.refreshMonitoriaMotivationalBanner(${info.real}, ${info.target}, '${prefixSafe}')" class="self-start sm:self-center shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/85 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-extrabold shadow-xs transition cursor-pointer active:scale-95" title="Gerar outra frase motivacional diferente">
+                                    <i class="fa-solid fa-arrows-rotate text-[10px]"></i> Nova frase
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                },
+                refreshMonitoriaMotivationalBanner(realizado = 0, meta = 400, domPrefix = 'mon') {
+                    const prefixSafe = String(domPrefix || 'mon').replace(/[^a-zA-Z0-9_-]/g, '');
+                    const el = document.getElementById(`${prefixSafe}-motiv-phrase`);
+                    const info = this.getMonitoriaMotivationalData(realizado, meta);
+                    if (el) {
+                        el.style.opacity = '0.35';
+                        setTimeout(() => {
+                            el.textContent = info.phrase;
+                            el.style.opacity = '1';
+                        }, 110);
+                    }
+                },
                 analiseFiltroMes: '', // Estado para o filtro de mês do CSV Dinâmico                
                 actionFilterUser: '',
                 actionFilterOp: '',
@@ -33593,6 +33898,12 @@ storage: {
                         </div>
                     `;
 
+                    const curMatMon = app.currentUser ? String(app.currentUser.matricula || '').trim().toUpperCase() : '';
+                    const myMonRow = curMatMon ? rankingArray.find(r => String(r.matricula || '').trim().toUpperCase() === curMatMon) : null;
+                    if (myMonRow && !this._monitoriasFiltroDia) {
+                        html += this.buildMonitoriaMotivationalBannerHtml(myMonRow.total, 400, 'impmon');
+                    }
+
                     // BARRA DE FERRAMENTAS PROFISSIONAL & ORGANIZADA
                     if(canManageMon) {
                         html += `
@@ -34214,6 +34525,7 @@ storage: {
                                 <div id="anim-prog-bar-${userMatricula}" class="spark-bar-fill bg-blue-500 h-full rounded-full transition-all duration-1000 w-0"></div>
                             </div>
                         </div>
+                        ${this.buildMonitoriaMotivationalBannerHtml(myData.total, meta, 'rankmon')}
                     `;
 
                     // --- VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
