@@ -16420,6 +16420,10 @@ storage: {
                     this.applyMonitoriasRowFilters(className);
                 },
                 applyMonitoriasRowFilters(className) {
+                    if (className === 'linha-bruta' && document.getElementById('import-mon-linhas-tbody') && typeof this._renderImportMonLinhasRows === 'function') {
+                        this._renderImportMonLinhasRows(true);
+                        return;
+                    }
                     const filterMode = this.monitoriasFilterState[className] || 'todos';
                     const searchTerm = this.monitoriasSearchState[className] || '';
                     let visibleCount = 0;
@@ -34449,141 +34453,266 @@ storage: {
                         `;
                     }
 
-                    // SEÇÃO: DETALHAMENTO ANALÍTICO DA IMPORTAÇÃO (APENAS ESTA PARTE FICA AQUI!)
-                    if (canManageMon && state.detalhes && state.detalhes.linhas) {
-                        const todasLinhasBrutas = state.detalhes.linhas || [];
-                        let countBrutoPend = 0, countBrutoAplic = 0, countBrutoEleg = 0;
-                        todasLinhasBrutas.forEach(linha => {
-                            const statusStr = String(linha.status || '').toLowerCase();
-                            const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
-                            const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || statusStr.includes('pendente');
-                            const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
-                            if (isPendente) countBrutoPend++;
-                            if (isAplicado) countBrutoAplic++;
-                            if (isElegivel) countBrutoEleg++;
-                        });
+                    const hasDetalhes = Boolean(canManageMon && state.detalhes && Array.isArray(state.detalhes.linhas));
+                    const totalLinhasDetalhes = hasDetalhes ? state.detalhes.linhas.length : 0;
 
+                    if (hasDetalhes) {
                         html += `
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
-                                <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                                <div class="absolute left-0 bottom-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                                
-                                <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
-                                    <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico da Importação
-                                </h3>
-                
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
-                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
-                                        <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
-                                        <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${state.detalhes.mediaTotal || 0}</div>
-                                        <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
-                                    </div>
-                
-                                    <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform custom-scrollbar max-h-48 overflow-y-auto">
-                                        <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
-                                        <div class="space-y-4">
-                                            ${state.detalhes.colaboradores ? state.detalhes.colaboradores.map((op, idx) => {
-                                                const linhasSeguras = state.detalhes.linhas || [];
-                                                const analiseDoOperador = linhasSeguras.filter(l => l.operador === op.nome);
-                                                
-                                                const notasMonitor = analiseDoOperador.filter(l => l.isRegisteredMonitor && typeof l.nota === 'number').map(l => l.nota);
-                                                const notasOutros = analiseDoOperador.filter(l => !l.isRegisteredMonitor && typeof l.nota === 'number').map(l => l.nota);
-                                                
-                                                const mediaMon = notasMonitor.length > 0 ? (notasMonitor.reduce((a,b)=>a+b,0)/notasMonitor.length).toFixed(1) : '-';
-                                                const mediaOutros = notasOutros.length > 0 ? (notasOutros.reduce((a,b)=>a+b,0)/notasOutros.length).toFixed(1) : '-';
-                                                
-                                                return `
-                                                <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                    <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
-                                                        <div class="flex flex-col">
-                                                            <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}.${op.nome}</span>
-                                                            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">${op.qtd} Avaliações Mapeadas</span>
-                                                        </div>
-                                                        <span class="font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Geral Absoluta">${op.media}</span>
-                                                    </div>
-                                                    <div class="grid grid-cols-2 gap-2 text-center">
-                                                        <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
-                                                            <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Média Monitores</div>
-                                                            <div class="font-black text-slate-700 dark:text-slate-300">${mediaMon}</div>
-                                                        </div>
-                                                        <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
-                                                            <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Média Outros Sup.</div>
-                                                            <div class="font-black text-slate-700 dark:text-slate-300">${mediaOutros}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                `;
-                                            }).join('') : ''}
+                            <div id="import-mon-detalhes-slot" class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 border-t-4 border-t-purple-500 shadow-lg">
+                                <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 flex items-center justify-center">
+                                            <i class="fa-solid fa-spinner fa-spin"></i>
                                         </div>
-                                    </div>
-                                </div>
-                
-                                <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                    <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         <div>
-                                            <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
-                                            <span id="fb-counter-linha-bruta" class="text-[10px] font-bold text-slate-400">Exibindo ${todasLinhasBrutas.length} de ${todasLinhasBrutas.length} avaliações</span>
-                                        </div>
-                                        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                                            <div class="relative flex-1 md:flex-none">
-                                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                                                <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value, 'linha-bruta')" placeholder="Buscar operador ou monitor..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
-                                            </div>
-                                            <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
-                                            <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
-                                            <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
-                                            <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis (${app.getDescricaoRegraFeedback()}) (${countBrutoEleg})</button>
+                                            <h3 class="text-base font-black text-slate-800 dark:text-white uppercase tracking-wider">Carregando Detalhamento Analítico</h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Organizando ${totalLinhasDetalhes} avaliação(ões) importadas...</p>
                                         </div>
                                     </div>
-                                    <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
-                                        <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
-                                            <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
-                                                <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                                    <th class="py-3 px-4">Monitor</th>
-                                                    <th class="py-3 px-4">Operador Avaliado</th>
-                                                    <th class="py-3 px-4 text-center">Nota</th>
-                                                    <th class="py-3 px-4 text-center">Status Feedback</th>
-                                                    <th class="py-3 px-4">Operação</th>
-                                                    <th class="py-3 px-4 text-right">Data</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
-                                                ${todasLinhasBrutas.map(linha => {
-                                                    const statusStr = String(linha.status || '').toLowerCase();
-                                                    const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
-                                                    const isPendente = (app.isNotaFeedback(linha.nota) && !isAplicado) || statusStr.includes('pendente');
-                                                    const isElegivel = (app.isNotaFeedback(linha.nota)) || isAplicado || isPendente;
-                                                    const rowClasses = [
-                                                        isPendente ? 'fb-pendente' : '',
-                                                        isAplicado ? 'fb-aplicado' : '',
-                                                        isElegivel ? 'fb-elegivel' : ''
-                                                    ].filter(Boolean).join(' ');
-                                                    let statusBadge = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">${app.getTextoDispensadoFeedback()}</span>`;
-                                                    if (isAplicado) {
-                                                        statusBadge = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
-                                                    } else if (isPendente) {
-                                                        statusBadge = `<span class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800 font-black animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedback Pendente</span>`;
-                                                    }
-                                                    return `
-                                                    <tr class="linha-bruta ${rowClasses} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
-                                                        <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${linha.monitor}</td>
-                                                        <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                        <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
-                                                        <td class="py-3 px-4 text-center">${statusBadge}</td>
-                                                        <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
-                                                        <td class="py-3 px-4 text-right text-xs text-slate-400 tabular-nums">${linha.data}</td>
-                                                    </tr>
-                                                    `;
-                                                }).join('')}
-                                            </tbody>
-                                        </table>
+                                    <span class="px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-purple-700 dark:text-purple-300">Processando base</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5 animate-pulse">
+                                    <div class="h-28 rounded-2xl bg-slate-200/70 dark:bg-slate-800/70"></div>
+                                    <div class="h-28 rounded-2xl bg-slate-200/70 dark:bg-slate-800/70"></div>
+                                </div>
+                                <div class="h-44 rounded-2xl bg-slate-200/60 dark:bg-slate-800/60 animate-pulse"></div>
+                            </div>
+                        `;
+                    }
+
+                    container.innerHTML = html;
+
+                    if (hasDetalhes) {
+                        const renderToken = (this._importMonRenderToken || 0) + 1;
+                        this._importMonRenderToken = renderToken;
+                        requestAnimationFrame(() => {
+                            setTimeout(() => {
+                                if (this._importMonRenderToken !== renderToken || app.currentTab !== 'import_monitorias') return;
+                                const slot = document.getElementById('import-mon-detalhes-slot');
+                                if (slot) this._hydrateImportMonitoriasDetalhes(slot, state);
+                            }, 20);
+                        });
+                    }
+                },
+
+                _hydrateImportMonitoriasDetalhes(slot, state) {
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (v => String(v ?? ''));
+                    const todasLinhasBrutas = (state.detalhes && state.detalhes.linhas) ? state.detalhes.linhas : [];
+                    let countBrutoPend = 0, countBrutoAplic = 0, countBrutoEleg = 0;
+
+                    // Pré-indexação única O(N) por operador (evita varrer milhares de linhas para cada colaborador)
+                    const statsPorOp = new Map();
+                    const preparedLinhas = new Array(todasLinhasBrutas.length);
+
+                    for (let i = 0; i < todasLinhasBrutas.length; i++) {
+                        const linha = todasLinhasBrutas[i] || {};
+                        const statusStr = String(linha.status || '').toLowerCase();
+                        const isNotaFb = app.isNotaFeedback(linha.nota);
+                        const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
+                        const isPendente = (isNotaFb && !isAplicado) || statusStr.includes('pendente');
+                        const isElegivel = isNotaFb || isAplicado || isPendente;
+                        if (isPendente) countBrutoPend++;
+                        if (isAplicado) countBrutoAplic++;
+                        if (isElegivel) countBrutoEleg++;
+
+                        if (typeof linha.nota === 'number' && linha.operador) {
+                            let agg = statsPorOp.get(linha.operador);
+                            if (!agg) {
+                                agg = { monSum: 0, monCnt: 0, outSum: 0, outCnt: 0 };
+                                statsPorOp.set(linha.operador, agg);
+                            }
+                            if (linha.isRegisteredMonitor) {
+                                agg.monSum += linha.nota;
+                                agg.monCnt++;
+                            } else {
+                                agg.outSum += linha.nota;
+                                agg.outCnt++;
+                            }
+                        }
+
+                        preparedLinhas[i] = {
+                            linha,
+                            isAplicado,
+                            isPendente,
+                            isElegivel,
+                            searchLower: `${linha.monitor || ''} ${linha.operador || ''} ${linha.operacao || ''} ${linha.data || ''} ${linha.nota ?? ''}`.toLowerCase()
+                        };
+                    }
+
+                    this._importMonPreparedLinhas = preparedLinhas;
+                    this._importMonRowsLimit = 150;
+                    if (!this.monitoriasFilterState) this.monitoriasFilterState = { 'linha-bruta': 'todos', 'linha-bruta-user': 'todos' };
+                    if (!this.monitoriasSearchState) this.monitoriasSearchState = { 'linha-bruta': '', 'linha-bruta-user': '' };
+                    this.monitoriasFilterState['linha-bruta'] = 'todos';
+                    this.monitoriasSearchState['linha-bruta'] = '';
+
+                    const colabList = Array.isArray(state.detalhes?.colaboradores) ? state.detalhes.colaboradores : [];
+                    const colabCardsHtml = colabList.map((op, idx) => {
+                        const agg = statsPorOp.get(op.nome);
+                        const mediaMon = (agg && agg.monCnt > 0) ? (agg.monSum / agg.monCnt).toFixed(1) : '-';
+                        const mediaOutros = (agg && agg.outCnt > 0) ? (agg.outSum / agg.outCnt).toFixed(1) : '-';
+                        return `
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                    <div class="flex flex-col">
+                                        <span class="font-black text-slate-800 dark:text-white text-xs">${idx + 1}. ${esc(op.nome)}</span>
+                                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">${op.qtd} Avaliações Mapeadas</span>
+                                    </div>
+                                    <span class="font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Geral Absoluta">${op.media}</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
+                                        <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Média Monitores</div>
+                                        <div class="font-black text-slate-700 dark:text-slate-300">${mediaMon}</div>
+                                    </div>
+                                    <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
+                                        <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Média Outros Sup.</div>
+                                        <div class="font-black text-slate-700 dark:text-slate-300">${mediaOutros}</div>
                                     </div>
                                 </div>
                             </div>
                         `;
+                    }).join('');
+
+                    slot.className = 'glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg animate-fade-in';
+                    slot.innerHTML = `
+                        <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                            <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico da Importação
+                        </h3>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
+                            <div class="bg-white/90 dark:bg-slate-900/90 rounded-2xl p-6 shadow-sm border border-slate-200/70 dark:border-slate-700/70">
+                                <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
+                                <div class="text-5xl font-black text-slate-800 dark:text-white mb-2">${state.detalhes.mediaTotal || 0}</div>
+                                <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
+                            </div>
+
+                            <div class="bg-white/90 dark:bg-slate-900/90 rounded-2xl p-6 shadow-sm border border-slate-200/70 dark:border-slate-700/70 custom-scrollbar max-h-48 overflow-y-auto">
+                                <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
+                                <div class="space-y-3">${colabCardsHtml}</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 shadow-sm overflow-hidden relative z-10">
+                            <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/70 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                    <span id="fb-counter-linha-bruta" class="text-[10px] font-bold text-slate-400"></span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                                    <div class="relative flex-1 md:flex-none">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                                        <input type="text" oninput="app.ui.filterAuditoriaTable(this.value, 'linha-bruta')" placeholder="Buscar operador ou monitor..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
+                                    </div>
+                                    <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
+                                    <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
+                                    <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
+                                    <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis (${app.getDescricaoRegraFeedback()}) (${countBrutoEleg})</button>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
+                                <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                    <thead class="bg-slate-100/90 dark:bg-slate-800/90 sticky top-0 z-20 shadow-sm">
+                                        <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                            <th class="py-3 px-4">Monitor</th>
+                                            <th class="py-3 px-4">Operador Avaliado</th>
+                                            <th class="py-3 px-4 text-center">Nota</th>
+                                            <th class="py-3 px-4 text-center">Status Feedback</th>
+                                            <th class="py-3 px-4">Operação</th>
+                                            <th class="py-3 px-4 text-right">Data</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="import-mon-linhas-tbody" class="divide-y divide-slate-100/50 dark:divide-slate-800/50"></tbody>
+                                </table>
+                            </div>
+                            <div id="import-mon-linhas-footer" class="hidden px-4 py-3 border-t border-slate-200/60 dark:border-slate-700/60 bg-slate-50/70 dark:bg-slate-800/40 flex flex-wrap items-center justify-between gap-2 text-xs"></div>
+                        </div>
+                    `;
+                    this._renderImportMonLinhasRows(true);
+                },
+
+                _renderImportMonLinhasRows(resetLimit = false) {
+                    const tbody = document.getElementById('import-mon-linhas-tbody');
+                    if (!tbody) return;
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (v => String(v ?? ''));
+                    const list = Array.isArray(this._importMonPreparedLinhas) ? this._importMonPreparedLinhas : [];
+                    const filterMode = (this.monitoriasFilterState && this.monitoriasFilterState['linha-bruta']) || 'todos';
+                    const searchTerm = (this.monitoriasSearchState && this.monitoriasSearchState['linha-bruta']) || '';
+                    if (resetLimit) this._importMonRowsLimit = 150;
+                    const limit = this._importMonRowsLimit || 150;
+
+                    const filtered = [];
+                    for (let i = 0; i < list.length; i++) {
+                        const item = list[i];
+                        if (filterMode === 'pendentes' && !item.isPendente) continue;
+                        if (filterMode === 'aplicados' && !item.isAplicado) continue;
+                        if (filterMode === 'elegiveis' && !item.isElegivel) continue;
+                        if (searchTerm && !item.searchLower.includes(searchTerm)) continue;
+                        filtered.push(item);
                     }
-                    
-                    container.innerHTML = html;
+
+                    const visibleSlice = filtered.slice(0, limit);
+                    const badgeDisp = `<span class="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 font-bold">${app.getTextoDispensadoFeedback()}</span>`;
+                    const badgeAplic = `<span class="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 font-black"><i class="fa-solid fa-circle-check mr-1"></i> Feedback Aplicado</span>`;
+                    const badgePend = `<span class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800 font-black"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedback Pendente</span>`;
+
+                    if (visibleSlice.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="6" class="py-10 text-center text-xs text-slate-400 italic">Nenhuma avaliação encontrada neste filtro.</td></tr>`;
+                    } else {
+                        tbody.innerHTML = visibleSlice.map(item => {
+                            const linha = item.linha;
+                            const statusBadge = item.isAplicado ? badgeAplic : (item.isPendente ? badgePend : badgeDisp);
+                            const notaCls = typeof linha.nota === 'string'
+                                ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner'
+                                : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500');
+                            return `
+                                <tr class="linha-bruta hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors">
+                                    <td class="py-2.5 px-4 font-bold text-slate-700 dark:text-slate-300"><i class="fa-solid fa-user-shield text-blue-400 mr-1 text-[10px]"></i> ${esc(linha.monitor || '-')}</td>
+                                    <td class="py-2.5 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${esc(linha.operador || '-')}</td>
+                                    <td class="py-2.5 px-4 text-center font-black ${notaCls}">${esc(linha.nota ?? '-')}</td>
+                                    <td class="py-2.5 px-4 text-center">${statusBadge}</td>
+                                    <td class="py-2.5 px-4 text-xs text-slate-500">${esc(linha.operacao || '-')}</td>
+                                    <td class="py-2.5 px-4 text-right text-xs text-slate-400 tabular-nums">${esc(linha.data || '-')}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+
+                    const suffixToMode = { all: 'todos', pendente: 'pendentes', aplicado: 'aplicados', elegivel: 'elegiveis' };
+                    Object.keys(suffixToMode).forEach(suffix => {
+                        const btn = document.getElementById(`fb-btn-linha-bruta-${suffix}`);
+                        if (!btn) return;
+                        if (suffixToMode[suffix] === filterMode) {
+                            btn.classList.add('ring-2', 'ring-offset-1', 'ring-indigo-500', 'scale-105');
+                        } else {
+                            btn.classList.remove('ring-2', 'ring-offset-1', 'ring-indigo-500', 'scale-105');
+                        }
+                    });
+
+                    const counterEl = document.getElementById('fb-counter-linha-bruta');
+                    if (counterEl) {
+                        counterEl.textContent = filtered.length === visibleSlice.length
+                            ? `Exibindo ${filtered.length} de ${list.length} avaliações`
+                            : `Exibindo ${visibleSlice.length} de ${filtered.length} filtradas (${list.length} no total)`;
+                    }
+
+                    const footerEl = document.getElementById('import-mon-linhas-footer');
+                    if (footerEl) {
+                        const restante = filtered.length - visibleSlice.length;
+                        if (restante > 0) {
+                            footerEl.classList.remove('hidden');
+                            footerEl.innerHTML = `
+                                <span class="text-slate-500 font-semibold">Mostrando ${visibleSlice.length} de ${filtered.length} avaliações para manter a navegação leve.</span>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="app.ui._importMonRowsLimit = (app.ui._importMonRowsLimit || 150) + 150; app.ui._renderImportMonLinhasRows(false);" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer transition">Carregar +${Math.min(150, restante)}</button>
+                                    <button type="button" onclick="app.ui._importMonRowsLimit = ${filtered.length}; app.ui._renderImportMonLinhasRows(false);" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold cursor-pointer transition">Exibir todas (${filtered.length})</button>
+                                </div>
+                            `;
+                        } else {
+                            footerEl.classList.add('hidden');
+                            footerEl.innerHTML = '';
+                        }
+                    }
                 },
                 renderView_RankingMonitorias(container) {
                     const state = app.monitoriasData || {};
@@ -39552,23 +39681,10 @@ storage: {
                 },
 
                 _getApresentacoesVisiveisTroca() {
-                    let lista = Object.values(app.apresentacoesList || {}).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                    const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
-                    const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
-                    const isGestaoOuDev = app.isAdmin ||
-                        (app.isSuperAdmin && app.isSuperAdmin()) ||
-                        (app.isGestor && app.isGestor()) ||
-                        ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(userCargo);
-
-                    if (!isGestaoOuDev && app.currentUser) {
-                        lista = lista.filter(a => {
-                            if (app.ui && app.ui.userCanAccessApresentacaoQT && app.ui.userCanAccessApresentacaoQT(a, app.currentUser)) return true;
-                            if (a.criadorMatricula && String(a.criadorMatricula).trim().toUpperCase() === userMat) return true;
-                            if (Array.isArray(a.allowedUsers) && a.allowedUsers.some(m => String(m).trim().toUpperCase() === userMat)) return true;
-                            return false;
-                        });
+                    if (app.admin && typeof app.admin.getApresentacoesVisiveisParaUsuario === 'function') {
+                        return app.admin.getApresentacoesVisiveisParaUsuario().lista;
                     }
-                    return lista;
+                    return [];
                 },
 
                 _buildTrocarApresentacaoListaHtml(lista, query = '') {
@@ -40110,19 +40226,13 @@ storage: {
 
                     if (!data) {
                         html += `
-                        <div class="p-12 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10 mb-10">
-                            <i class="fa-solid fa-magnifying-glass-chart text-5xl text-blue-400 dark:text-blue-500 mb-4 animate-bounce"></i>
-                            <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Importe um arquivo para começar</h3>
-                            <p class="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">O sistema lerá os pesos, mapeará falhas e compilará os formulários.</p>
+                        <div class="p-8 sm:p-10 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10 mb-6">
+                            <i class="fa-solid fa-magnifying-glass-chart text-4xl text-blue-400 dark:text-blue-500 mb-3"></i>
+                            <h3 class="font-extrabold text-lg text-slate-700 dark:text-slate-200 mb-1">Importe uma planilha nova ou abra uma apresentação pronta abaixo</h3>
+                            <p class="text-slate-500 dark:text-slate-400 text-xs max-w-md mx-auto leading-relaxed">O sistema lerá os pesos, mapeará falhas e compilará os formulários automaticamente.</p>
                         </div>
-                        
-                        <div class="mb-4 flex items-center gap-3 mt-8">
-                            <i class="fa-solid fa-folder-tree text-2xl text-slate-400"></i>
-                            <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Apresentações Salvas (Nuvem)</h2>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="pastas-apresentacoes-grid">
-                            ${app.admin.renderPastasApresentacoes()}
-                        </div>
+
+                        ${app.admin.renderApresentacoesNuvemSectionHtml()}
                         `;
                         container.innerHTML = html;
                         return;
@@ -41220,22 +41330,7 @@ storage: {
                         `);
 
                         if (!this.analiseEditMode) {
-                            html += `
-                                <div class="mt-12 pt-8 border-t border-slate-200 dark:border-slate-700/80">
-                                    <div class="mb-4 flex items-center justify-between">
-                                        <div class="flex items-center gap-3">
-                                            <i class="fa-solid fa-folder-tree text-2xl text-blue-500"></i>
-                                            <div>
-                                                <h2 class="text-xl font-extrabold text-slate-800 dark:text-white">Apresentações Salvas (Nuvem)</h2>
-                                                <p class="text-xs text-slate-500 dark:text-slate-400">Projetos salvos por você e compartilhados pela equipe/gestão.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="pastas-apresentacoes-grid">
-                                        ${app.admin.renderPastasApresentacoes()}
-                                    </div>
-                                </div>
-                            `;
+                            html += app.admin.renderApresentacoesNuvemSectionHtml();
                         }
 
                         html += ``; // Reabertura da variável para finalizar
@@ -48594,17 +48689,15 @@ storage: {
                     }, 100);
                 },
 
-                renderPastasApresentacoes() {
-                    let lista = Object.values(app.apresentacoesList || {}).sort((a,b) => b.timestamp - a.timestamp);
-                    
+                getApresentacoesVisiveisParaUsuario() {
+                    let lista = Object.values(app.apresentacoesList || {}).filter(Boolean).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     const userMat = String(app.currentUser?.matricula || '').trim().toUpperCase();
                     const userCargo = String(app.currentUser?.tipoAcesso || '').trim();
-                    const isGestaoOuDev = app.isAdmin || 
-                        (app.isSuperAdmin && app.isSuperAdmin()) || 
-                        (app.isGestor && app.isGestor()) || 
+                    const isGestaoOuDev = app.isAdmin ||
+                        (app.isSuperAdmin && app.isSuperAdmin()) ||
+                        (app.isGestor && app.isGestor()) ||
                         ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz'].includes(userCargo);
 
-                    // SEGURANÇA & ACESSO HIERÁRQUICO POR SETOR:
                     if (!isGestaoOuDev && app.currentUser) {
                         lista = lista.filter(a => {
                             if (app.ui && app.ui.userCanAccessApresentacaoQT && app.ui.userCanAccessApresentacaoQT(a, app.currentUser)) return true;
@@ -48613,64 +48706,314 @@ storage: {
                             return false;
                         });
                     }
+                    return { lista, userMat, isGestaoOuDev };
+                },
 
-                    if(lista.length === 0) {
-                        return `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-8 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação disponível para o seu perfil/setor na nuvem.</div>`;
+                _getAprNuvemState() {
+                    if (!this._aprNuvemFiltro) {
+                        this._aprNuvemFiltro = { busca: '', setor: 'TODOS', ordem: 'recentes', layout: 'pastas' };
+                    }
+                    return this._aprNuvemFiltro;
+                },
+
+                setAprNuvemFiltro(patch = {}, reRenderToolbar = false) {
+                    const st = this._getAprNuvemState();
+                    Object.assign(st, patch);
+                    if (reRenderToolbar) {
+                        const sec = document.getElementById('apr-nuvem-section');
+                        if (sec) {
+                            sec.outerHTML = this.renderApresentacoesNuvemSectionHtml();
+                            return;
+                        }
+                    }
+                    this.filtrarPastasApresentacoesDOM();
+                },
+
+                filtrarPastasApresentacoesDOM() {
+                    const grid = document.getElementById('pastas-apresentacoes-grid');
+                    if (!grid) return;
+                    const st = this._getAprNuvemState();
+                    const { totalVisivel, totalFiltrado, html } = this._buildPastasApresentacoesPayload();
+                    grid.className = st.layout === 'lista'
+                        ? 'w-full'
+                        : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5';
+                    grid.innerHTML = html;
+                    const countEl = document.getElementById('apr-nuvem-count');
+                    if (countEl) {
+                        countEl.textContent = totalFiltrado === totalVisivel
+                            ? `${totalVisivel} apresentação${totalVisivel === 1 ? '' : 'ões'}`
+                            : `${totalFiltrado} de ${totalVisivel} encontrada${totalFiltrado === 1 ? '' : 's'}`;
+                    }
+                    const clearBtn = document.getElementById('apr-nuvem-clear-btn');
+                    if (clearBtn) {
+                        const temFiltro = Boolean((st.busca || '').trim() || (st.setor && st.setor !== 'TODOS'));
+                        clearBtn.classList.toggle('hidden', !temFiltro);
+                    }
+                },
+
+                _buildPastasApresentacoesPayload() {
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (v => String(v ?? ''));
+                    const norm = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                    const st = this._getAprNuvemState();
+                    const { lista, userMat, isGestaoOuDev } = this.getApresentacoesVisiveisParaUsuario();
+
+                    const setoresSet = new Set();
+                    lista.forEach(a => setoresSet.add(String(a.setor || a.pasta || 'Geral').trim() || 'Geral'));
+                    const setoresLista = Array.from(setoresSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+                    const q = norm(st.busca);
+                    let filtrada = lista.filter(a => {
+                        const setorApr = String(a.setor || a.pasta || 'Geral').trim() || 'Geral';
+                        if (st.setor && st.setor !== 'TODOS' && setorApr !== st.setor) return false;
+                        if (q) {
+                            const hay = norm(`${a.nome || ''} ${setorApr} ${a.criadorNome || ''} ${a.dataStr || ''} ${a.mesRef || ''} ${a.anoRef || ''}`);
+                            if (!hay.includes(q)) return false;
+                        }
+                        return true;
+                    });
+
+                    if (st.ordem === 'antigos') {
+                        filtrada.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    } else if (st.ordem === 'nome') {
+                        filtrada.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+                    } else if (st.ordem === 'setor') {
+                        filtrada.sort((a, b) => {
+                            const sa = String(a.setor || a.pasta || 'Geral');
+                            const sb = String(b.setor || b.pasta || 'Geral');
+                            const c = sa.localeCompare(sb, 'pt-BR');
+                            return c !== 0 ? c : ((b.timestamp || 0) - (a.timestamp || 0));
+                        });
+                    } else {
+                        filtrada.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    }
+
+                    if (lista.length === 0) {
+                        return {
+                            totalVisivel: 0,
+                            totalFiltrado: 0,
+                            setoresLista,
+                            html: `<div class="col-span-1 md:col-span-3 text-center text-sm text-slate-400 italic py-10 border border-slate-200 dark:border-slate-700 rounded-2xl border-dashed">Nenhuma apresentação disponível para o seu perfil/setor na nuvem.</div>`
+                        };
+                    }
+
+                    if (filtrada.length === 0) {
+                        return {
+                            totalVisivel: lista.length,
+                            totalFiltrado: 0,
+                            setoresLista,
+                            html: `
+                                <div class="col-span-1 md:col-span-3 text-center py-10 px-4 bg-white dark:bg-slate-800/60 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl space-y-2.5">
+                                    <i class="fa-solid fa-magnifying-glass text-2xl text-slate-400 block"></i>
+                                    <div class="text-sm font-bold text-slate-700 dark:text-slate-200">Nenhuma apresentação encontrada neste filtro</div>
+                                    <p class="text-xs text-slate-500">Tente buscar outro nome, mês, autor ou limpar o filtro de setor.</p>
+                                    <button type="button" onclick="app.admin.setAprNuvemFiltro({ busca: '', setor: 'TODOS' }, true)" class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition">
+                                        Limpar filtros
+                                    </button>
+                                </div>
+                            `
+                        };
+                    }
+
+                    const activeAprId = app.analiseCSVDinamicoData?._savedAprId || '';
+                    const renderAprBadges = (apr, canManage, isAutor) => {
+                        const qtdQual = (apr.responsaveisQualidade || []).length;
+                        const qtdTrein = (apr.responsaveisTreinamento || []).length;
+                        const qtdTratativas = Object.keys(apr.tratativasQT || {}).length;
+                        return `
+                            <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
+                                <span><i class="fa-regular fa-clock"></i> ${esc(apr.dataStr || '-')}</span>
+                                ${apr.criadorNome ? `<span class="text-slate-500 dark:text-slate-400 font-semibold truncate max-w-[140px]" title="Criado por ${esc(apr.criadorNome)}">• ${esc(String(apr.criadorNome).split(' ').slice(0, 2).join(' '))}</span>` : ''}
+                                ${(qtdQual > 0 || qtdTrein > 0) ? `<span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded font-bold">Q:${qtdQual} • T:${qtdTrein}</span>` : ''}
+                                ${qtdTratativas > 0 ? `<span class="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold">${qtdTratativas} tratativa(s)</span>` : ''}
+                                ${canManage && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded font-bold border border-teal-200 dark:border-teal-700"><i class="fa-solid fa-users mr-1"></i>${apr.allowedUsers.length}</span>` : ''}
+                            </div>
+                        `;
+                    };
+
+                    if (st.layout === 'lista') {
+                        const rowsHtml = filtrada.map(apr => {
+                            const setorApr = String(apr.setor || apr.pasta || 'Geral').trim() || 'Geral';
+                            const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat);
+                            const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat;
+                            const isAtiva = activeAprId && activeAprId === apr.id;
+                            const idEsc = esc(apr.id);
+                            return `
+                                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition ${isAtiva ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''}">
+                                    <td class="p-3.5 whitespace-nowrap">
+                                        <span class="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] font-extrabold uppercase">${esc(setorApr)}</span>
+                                    </td>
+                                    <td class="p-3.5 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${idEsc}')">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="text-sm font-extrabold text-slate-800 dark:text-white hover:text-blue-600 transition">${esc(apr.nome || 'Sem nome')}</span>
+                                            ${isAtiva ? `<span class="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-black uppercase">ABERTA</span>` : ''}
+                                            ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-emerald-200 dark:border-emerald-700">MEU PROJETO</span>` : ''}
+                                            ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700">Q&T</span>` : ''}
+                                        </div>
+                                    </td>
+                                    <td class="p-3.5 text-xs text-slate-600 dark:text-slate-300">${esc(apr.criadorNome || '-')}</td>
+                                    <td class="p-3.5 text-xs text-slate-500 tabular-nums whitespace-nowrap">${esc(apr.dataStr || '-')}</td>
+                                    <td class="p-3.5 text-right whitespace-nowrap">
+                                        <div class="inline-flex items-center gap-1.5">
+                                            <button type="button" onclick="app.admin.loadApresentacaoFromDB('${idEsc}')" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer transition" title="Abrir Apresentação">
+                                                <i class="fa-solid fa-folder-open mr-1"></i>Abrir
+                                            </button>
+                                            <button type="button" onclick="app.ui.abrirQualidadeTreinamentoDaSessao('${idEsc}')" class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 hover:text-white hover:bg-indigo-600 border border-indigo-200 dark:border-indigo-700 inline-flex items-center justify-center transition-colors cursor-pointer" title="Abrir no Backoffice Qualidade & Treinamento"><i class="fa-solid fa-compass-drafting text-xs"></i></button>
+                                            ${canManage ? `<button type="button" onclick="app.admin.openShareApresentacaoModal('${idEsc}')" class="w-8 h-8 rounded-lg bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 border border-slate-200 dark:border-slate-600 inline-flex items-center justify-center transition-colors cursor-pointer" title="Gerenciar Setor e Equipe Q&T Responsável"><i class="fa-solid fa-user-shield text-xs"></i></button>` : ''}
+                                            ${canManage ? `<button type="button" onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${idEsc}\\')', true)" class="w-8 h-8 rounded-lg bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-200 dark:border-slate-600 inline-flex items-center justify-center transition-colors cursor-pointer" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+
+                        return {
+                            totalVisivel: lista.length,
+                            totalFiltrado: filtrada.length,
+                            setoresLista,
+                            html: `
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                    <th class="p-3.5">Setor / Operação</th>
+                                                    <th class="p-3.5">Apresentação</th>
+                                                    <th class="p-3.5">Autor</th>
+                                                    <th class="p-3.5">Salvo em</th>
+                                                    <th class="p-3.5 text-right">Ações</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                ${rowsHtml}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            `
+                        };
                     }
 
                     const pastas = {};
-                    lista.forEach(a => {
-                        const keyPasta = a.setor || a.pasta || 'Geral';
-                        if(!pastas[keyPasta]) pastas[keyPasta] = [];
+                    filtrada.forEach(a => {
+                        const keyPasta = String(a.setor || a.pasta || 'Geral').trim() || 'Geral';
+                        if (!pastas[keyPasta]) pastas[keyPasta] = [];
                         pastas[keyPasta].push(a);
                     });
 
-                    let html = '';
-                    Object.keys(pastas).sort().forEach(nomePasta => {
-                        html += `
-                            <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[370px]">
-                                <div class="bg-blue-50 dark:bg-blue-900/20 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
-                                    <i class="fa-solid fa-folder-open text-blue-500 text-xl"></i>
-                                    <div class="min-w-0 flex-1">
-                                        <div class="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Setor / Operação</div>
-                                        <h3 class="font-bold text-slate-800 dark:text-white truncate">${nomePasta}</h3>
-                                    </div>
-                                    <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2 py-0.5 rounded-full font-black">${pastas[nomePasta].length}</span>
+                    const pastaKeys = Object.keys(pastas).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+                    const cardsHtml = pastaKeys.map(nomePasta => `
+                        <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[420px]">
+                            <div class="bg-blue-50/90 dark:bg-blue-900/20 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
+                                <div class="w-9 h-9 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                    <i class="fa-solid fa-folder-open text-base"></i>
                                 </div>
-                                <div class="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    ${pastas[nomePasta].map(apr => {
-                                        const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat);
-                                        const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat;
-                                        const qtdQual = (apr.responsaveisQualidade || []).length;
-                                        const qtdTrein = (apr.responsaveisTreinamento || []).length;
-                                        const qtdTratativas = Object.keys(apr.tratativasQT || {}).length;
-                                        return `
-                                        <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group transition-colors hover:border-blue-300">
-                                            <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${apr.id}')">
-                                                <div class="text-sm font-bold text-slate-700 dark:text-slate-300 truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5 flex-wrap">
-                                                    <span class="truncate">${apr.nome}</span>
-                                                    ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border border-emerald-200 dark:border-emerald-700 shrink-0">MEU PROJETO</span>` : ''}
-                                                    ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700 shrink-0" title="Retroalimenta a aba Qualidade & Treinamento"><i class="fa-solid fa-arrows-spin mr-0.5"></i>Q&T</span>` : ''}
-                                                </div>
-                                                <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
-                                                    <span><i class="fa-regular fa-clock"></i> ${apr.dataStr}</span>
-                                                    ${(qtdQual > 0 || qtdTrein > 0) ? `<span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded font-bold">Q:${qtdQual} • T:${qtdTrein}</span>` : ''}
-                                                    ${qtdTratativas > 0 ? `<span class="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold">${qtdTratativas} tratativa(s)</span>` : ''}
-                                                    ${canManage && apr.allowedUsers && apr.allowedUsers.length > 0 ? `<span class="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded font-bold border border-teal-200 dark:border-teal-700"><i class="fa-solid fa-users mr-1"></i>${apr.allowedUsers.length}</span>` : ''}
-                                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Setor / Operação</div>
+                                    <h3 class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(nomePasta)}">${esc(nomePasta)}</h3>
+                                </div>
+                                <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-black tabular-nums">${pastas[nomePasta].length}</span>
+                            </div>
+                            <div class="p-3.5 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
+                                ${pastas[nomePasta].map(apr => {
+                                    const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat);
+                                    const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat;
+                                    const isAtiva = activeAprId && activeAprId === apr.id;
+                                    const idEsc = esc(apr.id);
+                                    return `
+                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border ${isAtiva ? 'border-blue-400 ring-1 ring-blue-400/40 bg-blue-50/40 dark:bg-blue-950/30' : 'border-slate-100 dark:border-slate-700'} flex justify-between items-center group transition-colors hover:border-blue-300">
+                                        <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${idEsc}')">
+                                            <div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5 flex-wrap">
+                                                <span class="truncate">${esc(apr.nome || 'Sem nome')}</span>
+                                                ${isAtiva ? `<span class="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide shrink-0">ABERTA</span>` : ''}
+                                                ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border border-emerald-200 dark:border-emerald-700 shrink-0">MEU PROJETO</span>` : ''}
+                                                ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700 shrink-0" title="Retroalimenta a aba Qualidade & Treinamento"><i class="fa-solid fa-arrows-spin mr-0.5"></i>Q&T</span>` : ''}
                                             </div>
-                                            <div class="flex items-center gap-1 shrink-0">
-                                                <button onclick="app.ui.abrirQualidadeTreinamentoDaSessao('${apr.id}')" class="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 hover:text-white hover:bg-indigo-600 shadow-sm border border-indigo-200 dark:border-indigo-700 flex items-center justify-center transition-colors" title="Abrir no Backoffice Qualidade & Treinamento"><i class="fa-solid fa-compass-drafting text-xs"></i></button>
-                                                ${canManage ? `<button onclick="app.admin.openShareApresentacaoModal('${apr.id}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Gerenciar Setor e Equipe Q&T Responsável"><i class="fa-solid fa-user-shield text-xs"></i></button>` : ''}
-                                                ${canManage ? `<button onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${apr.id}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
-                                            </div>
+                                            ${renderAprBadges(apr, canManage, isAutor)}
                                         </div>
-                                    `}).join('')}
+                                        <div class="flex items-center gap-1 shrink-0">
+                                            <button type="button" onclick="app.ui.abrirQualidadeTreinamentoDaSessao('${idEsc}')" class="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 hover:text-white hover:bg-indigo-600 shadow-sm border border-indigo-200 dark:border-indigo-700 flex items-center justify-center transition-colors cursor-pointer" title="Abrir no Backoffice Qualidade & Treinamento"><i class="fa-solid fa-compass-drafting text-xs"></i></button>
+                                            ${canManage ? `<button type="button" onclick="app.admin.openShareApresentacaoModal('${idEsc}')" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-teal-500 hover:text-white hover:bg-teal-500 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors cursor-pointer" title="Gerenciar Setor e Equipe Q&T Responsável"><i class="fa-solid fa-user-shield text-xs"></i></button>` : ''}
+                                            ${canManage ? `<button type="button" onclick="app.ui.showConfirm('Excluir Apresentação?', 'Tem certeza que deseja deletar este relatório salvo permanentemente da nuvem?', 'app.admin.deleteApresentacao(\\'${idEsc}\\')', true)" class="w-8 h-8 rounded-full bg-white dark:bg-slate-700 text-slate-400 hover:text-red-500 hover:bg-red-50 shadow-sm border border-slate-200 dark:border-slate-600 flex items-center justify-center transition-colors cursor-pointer" title="Excluir do Sistema"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+                                        </div>
+                                    </div>
+                                `}).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+
+                    return {
+                        totalVisivel: lista.length,
+                        totalFiltrado: filtrada.length,
+                        setoresLista,
+                        html: cardsHtml
+                    };
+                },
+
+                renderApresentacoesNuvemSectionHtml() {
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (v => String(v ?? ''));
+                    const st = this._getAprNuvemState();
+                    const payload = this._buildPastasApresentacoesPayload();
+                    const temFiltro = Boolean((st.busca || '').trim() || (st.setor && st.setor !== 'TODOS'));
+                    const countTxt = payload.totalFiltrado === payload.totalVisivel
+                        ? `${payload.totalVisivel} apresentação${payload.totalVisivel === 1 ? '' : 'ões'}`
+                        : `${payload.totalFiltrado} de ${payload.totalVisivel} encontrada${payload.totalFiltrado === 1 ? '' : 's'}`;
+
+                    return `
+                        <section id="apr-nuvem-section" class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700/80 space-y-4">
+                            <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                                <div class="flex flex-wrap items-center justify-between gap-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                            <i class="fa-solid fa-folder-tree text-lg"></i>
+                                        </div>
+                                        <div>
+                                            <h2 class="text-lg font-extrabold text-slate-800 dark:text-white leading-tight">Apresentações Salvas (Nuvem)</h2>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Busque por nome, setor, mês ou autor para abrir rapidamente.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span id="apr-nuvem-count" class="text-xs font-bold text-slate-500 dark:text-slate-400 tabular-nums">${countTxt}</span>
+                                        <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                            <button type="button" onclick="app.admin.setAprNuvemFiltro({ layout: 'pastas' }, true)" class="px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${st.layout === 'pastas' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs' : 'text-slate-400'}" title="Agrupado por Setor">
+                                                <i class="fa-solid fa-grip mr-1"></i>Por Setor
+                                            </button>
+                                            <button type="button" onclick="app.admin.setAprNuvemFiltro({ layout: 'lista' }, true)" class="px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${st.layout === 'lista' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs' : 'text-slate-400'}" title="Lista Geral Ordenada">
+                                                <i class="fa-solid fa-table-list mr-1"></i>Lista Geral
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-700/70">
+                                    <div class="relative flex-1 min-w-[220px]">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input type="text" id="apr-nuvem-search-input" value="${esc(st.busca || '')}" oninput="app.admin.setAprNuvemFiltro({ busca: this.value })" placeholder="Pesquisar apresentação pronta (setor, mês, título ou autor)..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                    <select onchange="app.admin.setAprNuvemFiltro({ setor: this.value }, true)" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                        <option value="TODOS" ${st.setor === 'TODOS' ? 'selected' : ''}>Todos os Setores (${payload.totalVisivel})</option>
+                                        ${payload.setoresLista.map(s => `<option value="${esc(s)}" ${st.setor === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                                    </select>
+                                    <select onchange="app.admin.setAprNuvemFiltro({ ordem: this.value })" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                        <option value="recentes" ${st.ordem === 'recentes' ? 'selected' : ''}>Mais recentes</option>
+                                        <option value="antigos" ${st.ordem === 'antigos' ? 'selected' : ''}>Mais antigos</option>
+                                        <option value="nome" ${st.ordem === 'nome' ? 'selected' : ''}>Título (A-Z)</option>
+                                        <option value="setor" ${st.ordem === 'setor' ? 'selected' : ''}>Setor (A-Z)</option>
+                                    </select>
+                                    <button id="apr-nuvem-clear-btn" type="button" onclick="app.admin.setAprNuvemFiltro({ busca: '', setor: 'TODOS' }, true)" class="${temFiltro ? '' : 'hidden'} px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition flex items-center gap-1.5 cursor-pointer">
+                                        <i class="fa-solid fa-filter-circle-xmark"></i> Limpar
+                                    </button>
                                 </div>
                             </div>
-                        `;
-                    });
-                    return html;
+
+                            <div class="${st.layout === 'lista' ? 'w-full' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'}" id="pastas-apresentacoes-grid">
+                                ${payload.html}
+                            </div>
+                        </section>
+                    `;
+                },
+
+                renderPastasApresentacoes() {
+                    return this._buildPastasApresentacoesPayload().html;
                 },
 
                 openShareApresentacaoModal(id) {
