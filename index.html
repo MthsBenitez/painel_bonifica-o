@@ -1056,13 +1056,13 @@
                     <div class="flex items-center gap-3 sm:gap-4">
                         
                         <!-- Pill Persistente de Lembrete de Indicadores (Últimos 5 dias do mês - Qualidade) -->
-                        <button id="header-ind-alert-pill" type="button" onclick="app.ui.openIndicatorsAlertModal()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-200 text-xs font-extrabold shadow-xs hover:bg-rose-100 dark:hover:bg-rose-900/70 transition cursor-pointer" title="Ver metas pendentes de fechamento do mês">
-                            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                        <button id="header-ind-alert-pill" type="button" onclick="app.ui.openIndicatorsAlertModal()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-200 text-xs font-extrabold shadow-xs hover:bg-rose-100 dark:hover:bg-rose-900/70 transition cursor-pointer whitespace-nowrap shrink-0" title="Ver metas pendentes de fechamento do mês">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
                             <span id="header-ind-alert-text">Fechamento</span>
                         </button>
 
                         <!-- Mês Global -->
-                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group">
+                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group shrink-0">
                             <i class="fa-regular fa-calendar-days text-green-600 text-sm"></i>
                             <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
                         </div>
@@ -1079,6 +1079,17 @@
                             </div>
 
                             <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5"></div>
+
+                            <!-- Botão de Sincronização Manual com a Nuvem -->
+                            <button id="header-cloud-sync-btn" type="button" onclick="app.storage && app.storage.syncCloudFromServer(false)" class="relative items-center justify-center w-9 h-9 flex shrink-0 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Sincronizar dados da nuvem agora">
+                                <i class="fa-solid fa-cloud-arrow-down text-base"></i>
+                            </button>
+
+                            <!-- Ícone Destacado: Faltas na Integração (Gestores, Gerentes e Dev) -->
+                            <button id="header-faltas-int-pill" type="button" onclick="app.ui.renderTab('faltas_integracao', true)" class="hidden relative items-center justify-center w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white shadow-sm shadow-rose-500/25 ring-2 ring-rose-200/80 dark:ring-rose-900/60 transition-all hover:scale-105 active:scale-95 cursor-pointer" title="Faltas na integração pendentes de envio ao RH">
+                                <i class="fa-solid fa-user-xmark text-sm"></i>
+                                <span id="header-faltas-int-text" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black tabular-nums leading-[14px] flex items-center justify-center border-2 border-white dark:border-[#0f172a] shadow-xs">0</span>
+                            </button>
 
                             <!-- Ícone Destacado: Demandas Recorrentes Pessoais -->
                             <button id="header-rec-reminders-btn" type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="hidden relative items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-sm shadow-amber-500/30 ring-2 ring-amber-200/80 dark:ring-amber-900/60 transition-all hover:scale-105 active:scale-95 cursor-pointer" title="Minhas Demandas Recorrentes e Lembretes Pessoais">
@@ -1176,7 +1187,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261118_v92"></script>
+    <script src="script.js?v=20261119_v99"></script>
 </body>
 </html>
 

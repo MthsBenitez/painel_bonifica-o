@@ -526,6 +526,132 @@ storage: {
                     });
                 },
 
+                _fbRestRequest(nodePath, method = 'PUT', payload = undefined, timeoutMs = 20000) {
+                    const dbBase = String(this.firebaseConfig?.databaseURL || '').replace(/\/+$/, '');
+                    const cleanPath = String(nodePath || '').replace(/^\/+|\/+$/g, '');
+                    if (!dbBase || !cleanPath || typeof fetch !== 'function') {
+                        return Promise.reject(new Error('REST Firebase indisponivel neste ambiente.'));
+                    }
+                    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                    const timer = setTimeout(() => {
+                        try { if (controller) controller.abort(); } catch (e) {}
+                    }, timeoutMs);
+
+                    const opts = {
+                        method: String(method || 'PUT').toUpperCase(),
+                        cache: 'no-store',
+                        signal: controller ? controller.signal : undefined
+                    };
+                    if (opts.method !== 'DELETE' && opts.method !== 'GET') {
+                        opts.headers = { 'Content-Type': 'application/json' };
+                        opts.body = JSON.stringify(payload === undefined ? null : payload);
+                    }
+                    return fetch(`${dbBase}/${cleanPath}.json`, opts)
+                        .then(async resp => {
+                            if (!resp.ok) {
+                                const txt = await resp.text().catch(() => '');
+                                throw new Error(`Firebase REST HTTP ${resp.status}: ${txt.slice(0, 120)}`);
+                            }
+                            return resp.json().catch(() => null);
+                        })
+                        .finally(() => clearTimeout(timer));
+                },
+
+                _writeFirebaseNodeFast(nodePath, payload = undefined, method = 'PUT', timeoutMs = 20000) {
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
+                        return Promise.resolve();
+                    }
+                    const cleanPath = String(nodePath || '').replace(/^\/+|\/+$/g, '');
+                    const mUpper = String(method || 'PUT').toUpperCase();
+                    if (!cleanPath) return Promise.reject(new Error('Caminho Firebase invalido.'));
+
+                    const hasSdk = (typeof firebase !== 'undefined' && firebase.database);
+                    if (!hasSdk || app.firebaseConnected !== true) {
+                        return this._fbRestRequest(cleanPath, mUpper, payload, timeoutMs);
+                    }
+
+                    return new Promise((resolve, reject) => {
+                        let settled = false;
+                        let restStarted = false;
+                        let fallbackTimer = null;
+
+                        const triggerRest = () => {
+                            if (settled || restStarted) return;
+                            restStarted = true;
+                            this._fbRestRequest(cleanPath, mUpper, payload, timeoutMs)
+                                .then(() => {
+                                    if (!settled) { settled = true; clearTimeout(fallbackTimer); resolve(); }
+                                })
+                                .catch(err => {
+                                    if (!settled) { settled = true; clearTimeout(fallbackTimer); reject(err); }
+                                });
+                        };
+
+                        fallbackTimer = setTimeout(triggerRest, 3500);
+
+                        try {
+                            const ref = firebase.database().ref(cleanPath);
+                            const op = mUpper === 'DELETE'
+                                ? ref.remove()
+                                : (mUpper === 'PATCH'
+                                    ? ref.update(payload && typeof payload === 'object' ? payload : {})
+                                    : ref.set(payload === undefined ? null : payload));
+                            op.then(() => {
+                                if (!settled) {
+                                    settled = true;
+                                    clearTimeout(fallbackTimer);
+                                    resolve();
+                                }
+                            }).catch(() => {
+                                triggerRest();
+                            });
+                        } catch (e) {
+                            triggerRest();
+                        }
+                    });
+                },
+
+                syncCloudFromServer(silent = true) {
+                    if (window.__TEST_MODE__ || this._syncingCloudNow) return Promise.resolve();
+                    this._syncingCloudNow = true;
+                    const syncKeys = ['config', 'users', 'operacoes', 'notifications', 'diario_bordo', 'turmas_treinamento', 'harmonyDeploy', 'harmonyChecklist'];
+                    return Promise.all(
+                        syncKeys.map(k =>
+                            this._fetchFirebaseNodeFast('sistema_bonificacao/' + k, 400, 15000).then(res => ({
+                                key: k,
+                                val: res.ok ? res.val : undefined,
+                                ok: res.ok
+                            }))
+                        )
+                    ).then(results => {
+                        const out = {};
+                        const loaded = [];
+                        results.forEach(r => {
+                            if (r.ok) {
+                                out[r.key] = r.val;
+                                loaded.push(r.key);
+                            }
+                        });
+                        if (loaded.length > 0) {
+                            this._applyHydratedData(out);
+                            if (app.currentUser && !app.isAdmin) {
+                                const mNorm = this._normalizeMat(app.currentUser.matricula);
+                                const freshUser = (app.users || []).find(u => this._normalizeMat(u.matricula) === mNorm);
+                                if (freshUser) app.currentUser = freshUser;
+                            }
+                            if (typeof app.syncOperacoesFromSetorial === 'function') app.syncOperacoesFromSetorial();
+                            if (app.faltasIntegracao && typeof app.faltasIntegracao.updateHeaderPill === 'function') app.faltasIntegracao.updateHeaderPill();
+                            this._refreshCurrentTabSilentlyAfterBgSync(loaded);
+                            if (!silent && app.ui && app.ui.showToast) {
+                                app.ui.showToast("Dados sincronizados com a nuvem!", "success");
+                            }
+                        }
+                    }).finally(() => {
+                        this._lastCloudSyncTs = Date.now();
+                        this._syncingCloudNow = false;
+                    });
+                },
+
                 _applyHydratedData(data) {
                     if (!data || typeof data !== 'object') return;
                     const has = (k) => Object.prototype.hasOwnProperty.call(data, k);
@@ -961,6 +1087,9 @@ storage: {
                 },
 
                 _refreshCurrentTabSilentlyAfterBgSync(loadedKeys) {
+                    if (Array.isArray(loadedKeys) && loadedKeys.includes('turmas_treinamento') && app.faltasIntegracao && typeof app.faltasIntegracao.updateHeaderPill === 'function') {
+                        app.faltasIntegracao.updateHeaderPill();
+                    }
                     const viewApp = document.getElementById('view-app');
                     if (!viewApp || viewApp.classList.contains('hidden')) return;
                     if (!app.currentUser && !app.isAdmin) return;
@@ -986,6 +1115,7 @@ storage: {
                     const tabDependsOn = {
                         'home': ['events', 'diario_bordo', 'visaoGeralData', 'monitorias', 'notifications'],
                         'diario_bordo': ['diario_bordo', 'turmas_treinamento'],
+                        'faltas_integracao': ['turmas_treinamento'],
                         'calendario': ['events'],
                         'gestao_atas': ['atas'],
                         'ata_reuniao': ['atas'],
@@ -1244,6 +1374,7 @@ storage: {
                                 this._refreshCurrentTabSilentlyAfterBgSync(Object.keys(data2B));
                             }
                             console.log("Carga completa em background finalizada!");
+                            this._lastCloudSyncTs = Date.now();
                         }).catch(errBg => console.warn("Aviso na carga em segundo plano:", errBg));
                     }).catch((error) => {
                         try {
@@ -1266,6 +1397,19 @@ storage: {
                             "error"
                         );
                     });
+
+                    if (!this._focusSyncBound) {
+                        this._focusSyncBound = true;
+                        document.addEventListener('visibilitychange', () => {
+                            if (document.visibilityState !== 'visible') return;
+                            const viewApp = document.getElementById('view-app');
+                            if (!viewApp || viewApp.classList.contains('hidden')) return;
+                            const lastTs = Number(this._lastCloudSyncTs || 0);
+                            if (Date.now() - lastTs >= 25000) {
+                                this.syncCloudFromServer(true);
+                            }
+                        });
+                    }
                 },
                 sanitizeFirebaseKey(str) {
                     return String(str || '').replace(/\//g, ' - ').replace(/[.#$\[\]]/g, '').replace(/\s+/g, ' ').trim();
@@ -1387,7 +1531,18 @@ storage: {
                 },
                 _mergeUserRecord(existing, localU, mKey) {
                     const merged = Object.assign({}, existing, localU);
-                    if (!localU.foto && existing.foto) merged.foto = existing.foto;
+                    const exFotoTs = Number(existing?.fotoUpdatedAt || 0);
+                    const locFotoTs = Number(localU?.fotoUpdatedAt || 0);
+                    if (!localU.foto && existing.foto) {
+                        merged.foto = existing.foto;
+                        if (exFotoTs) merged.fotoUpdatedAt = exFotoTs;
+                    } else if (existing.foto && exFotoTs > locFotoTs) {
+                        merged.foto = existing.foto;
+                        merged.fotoUpdatedAt = exFotoTs;
+                    } else if (localU.foto && locFotoTs >= exFotoTs) {
+                        merged.foto = localU.foto;
+                        if (locFotoTs) merged.fotoUpdatedAt = locFotoTs;
+                    }
                     const remoteTs = Number(existing.pwdUpdatedAt || 0);
                     const localTs = Number(localU.pwdUpdatedAt || 0);
                     const localPwdDirty = !!(this._dirtyPwdMats && this._dirtyPwdMats.has(mKey));
@@ -1447,11 +1602,13 @@ storage: {
                         localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
                     } catch(e) {}
 
-                    if (typeof firebase !== 'undefined' && firebase.database) {
+                    if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__) {
                         return this._enqueueUserSave(() => {
-                            const usersRef = firebase.database().ref('sistema_bonificacao/users');
-                            return usersRef.once('value').then(snap => {
-                                const { entries } = this._extractUsersSnapshot(snap.val());
+                            return this._fetchFirebaseNodeFast('sistema_bonificacao/users', 350, 15000).then(res => {
+                                if (!res || !res.ok) {
+                                    return Promise.reject(new Error("Falha ao ler lista de usuarios na nuvem."));
+                                }
+                                const { entries } = this._extractUsersSnapshot(res.val);
 
                                 // SAFE MERGE MAP: preserva 100% dos usuarios remotos existentes e senhas personalizadas na nuvem
                                 const userMap = new Map();
@@ -1469,7 +1626,7 @@ storage: {
                                 });
                                 const uniqueRemoteCount = userMap.size;
 
-                                // Mescla com os usuarios locais preservando senhas mais novas remotas
+                                // Mescla com os usuarios locais preservando senhas e fotos mais novas remotas
                                 app.users.forEach(u => {
                                     const mKey = this._normalizeMat(u && u.matricula);
                                     if (!mKey || removedSet.has(mKey)) return;
@@ -1499,7 +1656,7 @@ storage: {
                                     localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
                                 } catch(e) {}
 
-                                return usersRef.set(mergedUsers);
+                                return this._writeFirebaseNodeFast('sistema_bonificacao/users', mergedUsers, 'PUT', 25000);
                             }).catch(err => {
                                 console.error("Erro no merge seguro de usuarios:", err);
                                 return Promise.reject(err);
@@ -1517,12 +1674,16 @@ storage: {
                         payload.senha = app.utils.encryptPassword(payload.senha);
                         if (payload.pwdUpdatedAt === undefined) payload.pwdUpdatedAt = Date.now();
                     }
+                    if (payload.foto !== undefined && payload.fotoUpdatedAt === undefined) {
+                        payload.fotoUpdatedAt = Date.now();
+                    }
 
                     const isAuthPayload = payload.senha !== undefined || payload.primeiroAcesso !== undefined;
+                    const isProfileSyncPayload = isAuthPayload || payload.foto !== undefined || payload.fotoUpdatedAt !== undefined;
                     let idx = -1;
                     (app.users || []).forEach((u, i) => {
                         if (!u || this._normalizeMat(u.matricula) !== mKey) return;
-                        if (idx === -1 || isAuthPayload) {
+                        if (idx === -1 || isProfileSyncPayload) {
                             Object.assign(u, payload);
                         }
                         if (idx === -1 || (u.primeiroAcesso === false && u.senha && !(app.utils && app.utils.isDefaultPassword(u.senha)))) {
@@ -1545,71 +1706,70 @@ storage: {
                         return Promise.resolve();
                     }
 
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return this._enqueueUserSave(() => {
-                            const usersRef = firebase.database().ref('sistema_bonificacao/users');
-                            let primaryRemoteKey = null;
-                            return usersRef.once('value').then(snap => {
-                                const val = snap.val();
-                                const { entries, keyByMat, keysByMat } = this._extractUsersSnapshot(val);
-                                const matchingKeys = (keysByMat && keysByMat.get(mKey)) || [];
-                                const remoteKey = keyByMat.get(mKey);
-                                if (remoteKey !== undefined) {
-                                    primaryRemoteKey = remoteKey;
-                                    const remoteEntry = entries.find(e => e.key === remoteKey);
-                                    if (idx > -1 && remoteEntry && remoteEntry.user) {
-                                        const mergedLocal = Object.assign({}, remoteEntry.user, app.users[idx], payload);
-                                        if (!app.users[idx].foto && remoteEntry.user.foto) mergedLocal.foto = remoteEntry.user.foto;
-                                        app.users[idx] = mergedLocal;
-                                        if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
-                                            app.currentUser = mergedLocal;
-                                        }
+                    return this._enqueueUserSave(() => {
+                        let primaryRemoteKey = null;
+                        return this._fetchFirebaseNodeFast('sistema_bonificacao/users', 350, 15000).then(res => {
+                            if (!res || !res.ok) {
+                                return Promise.reject(new Error("Falha ao localizar usuario na nuvem."));
+                            }
+                            const val = res.val;
+                            const { entries, keyByMat, keysByMat } = this._extractUsersSnapshot(val);
+                            const matchingKeys = (keysByMat && keysByMat.get(mKey)) || [];
+                            const remoteKey = keyByMat.get(mKey);
+                            if (remoteKey !== undefined) {
+                                primaryRemoteKey = remoteKey;
+                                const remoteEntry = entries.find(e => e.key === remoteKey);
+                                if (idx > -1 && remoteEntry && remoteEntry.user) {
+                                    const mergedLocal = Object.assign({}, remoteEntry.user, app.users[idx], payload);
+                                    if (payload.foto === undefined && !app.users[idx].foto && remoteEntry.user.foto) mergedLocal.foto = remoteEntry.user.foto;
+                                    app.users[idx] = mergedLocal;
+                                    if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
+                                        app.currentUser = mergedLocal;
                                     }
-                                    if (!this._userKeyMap) this._userKeyMap = new Map();
-                                    this._userKeyMap.set(mKey, remoteKey);
+                                }
+                                if (!this._userKeyMap) this._userKeyMap = new Map();
+                                this._userKeyMap.set(mKey, remoteKey);
 
-                                    // Se houver registros duplicados da mesma matricula e estivermos atualizando senha/acesso, sincroniza TODOS os registros no Firebase
-                                    const targetKeys = isAuthPayload && matchingKeys.length > 1 ? matchingKeys : [remoteKey];
-                                    const multiPatch = {};
-                                    targetKeys.forEach(rk => {
-                                        Object.keys(payload).forEach(pk => {
-                                            multiPatch[`${rk}/${pk}`] = payload[pk];
-                                        });
+                                // Se houver registros duplicados da mesma matricula, sincroniza senha e foto em TODOS no Firebase
+                                const targetKeys = isProfileSyncPayload && matchingKeys.length > 1 ? matchingKeys : [remoteKey];
+                                const multiPatch = {};
+                                targetKeys.forEach(rk => {
+                                    Object.keys(payload).forEach(pk => {
+                                        multiPatch[`${rk}/${pk}`] = payload[pk];
                                     });
-                                    return usersRef.update(multiPatch);
-                                } else if (idx > -1) {
-                                    const newKey = this._nextNumericUserKey(val);
-                                    primaryRemoteKey = newKey;
-                                    if (!this._userKeyMap) this._userKeyMap = new Map();
-                                    this._userKeyMap.set(mKey, newKey);
-                                    return firebase.database().ref('sistema_bonificacao/users/' + newKey).set(app.users[idx]);
-                                } else {
-                                    return Promise.reject(new Error("Usuário não localizado no servidor para atualização."));
-                                }
-                            }).then(() => {
-                                if (opts && opts.verifyPwdReadback && primaryRemoteKey !== null) {
-                                    return firebase.database().ref('sistema_bonificacao/users/' + primaryRemoteKey).once('value').then(checkSnap => {
-                                        const saved = checkSnap.val();
-                                        const okPwd = payload.senha === undefined || (saved && saved.senha === payload.senha);
-                                        const okFirst = payload.primeiroAcesso === undefined || (saved && saved.primeiroAcesso === payload.primeiroAcesso);
-                                        if (!saved || !okPwd || !okFirst) {
-                                            return Promise.reject(new Error("Confirmacao de gravacao da senha no banco falhou."));
-                                        }
-                                    });
-                                }
-                            }).then(() => {
-                                if (payload.senha !== undefined && this._dirtyPwdMats) {
-                                    this._dirtyPwdMats.delete(mKey);
-                                }
-                                try {
-                                    if (Array.isArray(app.users) && app.users.length > 0) {
-                                        localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                                });
+                                return this._writeFirebaseNodeFast('sistema_bonificacao/users', multiPatch, 'PATCH', 20000);
+                            } else if (idx > -1) {
+                                const newKey = this._nextNumericUserKey(val);
+                                primaryRemoteKey = newKey;
+                                if (!this._userKeyMap) this._userKeyMap = new Map();
+                                this._userKeyMap.set(mKey, newKey);
+                                return this._writeFirebaseNodeFast('sistema_bonificacao/users/' + newKey, app.users[idx], 'PUT', 20000);
+                            } else {
+                                return Promise.reject(new Error("Usuário não localizado no servidor para atualização."));
+                            }
+                        }).then(() => {
+                            if (opts && opts.verifyPwdReadback && primaryRemoteKey !== null) {
+                                return this._fetchFirebaseNodeFast('sistema_bonificacao/users/' + primaryRemoteKey, 350, 12000).then(checkRes => {
+                                    const saved = checkRes && checkRes.val;
+                                    const okPwd = payload.senha === undefined || (saved && saved.senha === payload.senha);
+                                    const okFirst = payload.primeiroAcesso === undefined || (saved && saved.primeiroAcesso === payload.primeiroAcesso);
+                                    if (!saved || !okPwd || !okFirst) {
+                                        return Promise.reject(new Error("Confirmacao de gravacao da senha no banco falhou."));
                                     }
-                                } catch(e) {}
-                            });
+                                });
+                            }
+                        }).then(() => {
+                            if (payload.senha !== undefined && this._dirtyPwdMats) {
+                                this._dirtyPwdMats.delete(mKey);
+                            }
+                            try {
+                                if (Array.isArray(app.users) && app.users.length > 0) {
+                                    localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
+                                }
+                            } catch(e) {}
                         });
-                    }
-                    return Promise.resolve();
+                    });
                 },
                 saveSingleUserField(userIdx, fieldsObj) {
                     if (userIdx < 0 || !app.users || !app.users[userIdx] || !app.users[userIdx].matricula) return Promise.resolve();
@@ -1627,18 +1787,15 @@ storage: {
                     if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) {
                         return Promise.resolve();
                     }
-                    if (typeof firebase === 'undefined' || !firebase.database) {
-                        return Promise.resolve();
-                    }
 
                     const targetList = Array.isArray(touchedUsers) ? touchedUsers.filter(u => u && u.matricula) : [];
                     if (targetList.length === 0) {
-                        return firebase.database().ref('sistema_bonificacao').update(safeUpdates);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao', safeUpdates, 'PATCH', 20000);
                     }
 
                     return this._enqueueUserSave(() => {
-                        return firebase.database().ref('sistema_bonificacao/users').once('value').then(snap => {
-                            const { keyByMat } = this._extractUsersSnapshot(snap.val());
+                        return this._fetchFirebaseNodeFast('sistema_bonificacao/users', 350, 15000).then(res => {
+                            const { keyByMat } = this._extractUsersSnapshot(res && res.ok ? res.val : null);
                             targetList.forEach(u => {
                                 const mKey = this._normalizeMat(u.matricula);
                                 const remoteKey = keyByMat.get(mKey);
@@ -1646,7 +1803,7 @@ storage: {
                                     safeUpdates[`users/${remoteKey}/results`] = u.results || {};
                                 }
                             });
-                            return firebase.database().ref('sistema_bonificacao').update(safeUpdates);
+                            return this._writeFirebaseNodeFast('sistema_bonificacao', safeUpdates, 'PATCH', 25000);
                         });
                     });
                 },
@@ -1766,26 +1923,20 @@ storage: {
                 },
                 saveSoftlingoModulos() {
                     try { localStorage.setItem('softlingo_modulos_backup', JSON.stringify(app.softlingoModulos || {})); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/softlingo/modulos').set(app.softlingoModulos || {});
-                    }
-                    return Promise.resolve();
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/softlingo/modulos', app.softlingoModulos || {}, 'PUT');
                 },
                 saveTentativaResposta(tentativa) {
                     const id = 'tentativa_' + Date.now() + '_' + Math.floor(Math.random()*1000);
                     if (!app.tentativasRespostas) app.tentativasRespostas = {};
                     app.tentativasRespostas[id] = { id, ...tentativa };
                     try { localStorage.setItem('softlingo_tentativas_backup', JSON.stringify(app.tentativasRespostas)); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/softlingo/tentativas_respostas/' + id).set(app.tentativasRespostas[id]);
-                    }
-                    return Promise.resolve();
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/softlingo/tentativas_respostas/' + id, app.tentativasRespostas[id], 'PUT');
                 },
                 saveConfig() {
                     this.invalidateCoreCache();
                     app.config = this.sanitizeFirebaseObject(app.config);
                     try { localStorage.setItem('soft_config_backup', JSON.stringify(app.config)); } catch (e) {}
-                    return firebase.database().ref('sistema_bonificacao/config').set(app.config);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/config', app.config, 'PUT');
                 },
                 saveClassificacaoOperadores() {
                     try { localStorage.setItem('soft_classificacao_operadores_backup', JSON.stringify(app.config.classificacaoOperadoresCargos || {})); } catch (e) {}
@@ -1798,10 +1949,7 @@ storage: {
                     app.allVisaoGeralData[app.currentMonth] = app.visaoGeralData;
                     try { localStorage.setItem('soft_visao_geral_backup', JSON.stringify(app.allVisaoGeralData)); } catch (e) {}
                     try { localforage.setItem('soft_visao_geral', app.allVisaoGeralData); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/visaoGeralData').set(app.allVisaoGeralData);
-                    }
-                    return Promise.resolve();
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/visaoGeralData', app.allVisaoGeralData, 'PUT');
                 },
                 saveActions(singleId = null) {
                     if (typeof localforage !== 'undefined' && app.actionsList) {
@@ -1809,22 +1957,19 @@ storage: {
                         localforage.setItem('soft_actions_hd_ts', Date.now()).catch(() => {});
                     }
                     if (singleId && app.actionsList && app.actionsList[singleId]) {
-                        return firebase.database().ref('sistema_bonificacao/actions/' + singleId).set(app.actionsList[singleId]);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/actions/' + singleId, app.actionsList[singleId], 'PUT');
                     }
                     if (!app.actionsList || Object.keys(app.actionsList).length === 0) {
                         console.warn("Segurança de Integridade: saveActions abortado pois actionsList está vazia.");
                         return Promise.resolve();
                     }
-                    return firebase.database().ref('sistema_bonificacao/actions').set(app.actionsList);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/actions', app.actionsList, 'PUT');
                 },
-                saveNotifications() { 
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        return firebase.database().ref('sistema_bonificacao/notifications').set(app.notificationsList);
-                    }
-                    return Promise.resolve();
+                saveNotifications() {
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/notifications', app.notificationsList || {}, 'PUT');
                 },
-                saveEvents() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/events').set(app.eventsList || {}); },
-                saveOperacoes() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/operacoes').set(app.operacoesList || {}); },
+                saveEvents() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/events', app.eventsList || {}, 'PUT'); },
+                saveOperacoes() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/operacoes', app.operacoesList || {}, 'PUT'); },
                 saveAtas(singleId = null) {
                     this.invalidateCoreCache();
                     
@@ -1838,11 +1983,10 @@ storage: {
                         console.warn("Ambiente de teste detectado: escrita de atas em banco de produção bloqueada.");
                         return Promise.resolve();
                     }
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
 
                     if (singleId && app.atasList && app.atasList[singleId]) {
                         const sanitizedItem = this.sanitizeFirebaseObject(app.atasList[singleId]);
-                        return firebase.database().ref('sistema_bonificacao/atas/' + singleId).set(sanitizedItem);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/atas/' + singleId, sanitizedItem, 'PUT');
                     }
                     
                     // Trava de integridade: nunca apagar o banco se app.atasList estiver vazio
@@ -1852,41 +1996,38 @@ storage: {
                     }
                     
                     const sanitizedObj = this.sanitizeFirebaseObject(app.atasList || {});
-                    return firebase.database().ref('sistema_bonificacao/atas').set(sanitizedObj);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/atas', sanitizedObj, 'PUT');
                 },
-                saveLaudos() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/laudos').set(app.laudos.list || []); },
+                saveLaudos() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/laudos', app.laudos.list || [], 'PUT'); },
                 saveApresentacoes(singleId = null) {
                     this.invalidateCoreCache();
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     if (singleId) {
                         const item = (app.apresentacoesList || {})[singleId];
                         if (!item) {
-                            return firebase.database().ref('sistema_bonificacao/apresentacoes/' + singleId).remove();
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/apresentacoes/' + singleId, undefined, 'DELETE');
                         }
-                        return firebase.database().ref('sistema_bonificacao/apresentacoes/' + singleId).set(item);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/apresentacoes/' + singleId, item, 'PUT');
                     }
-                    return firebase.database().ref('sistema_bonificacao/apresentacoes').set(app.apresentacoesList || {});
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/apresentacoes', app.apresentacoesList || {}, 'PUT');
                 },
-                saveEstoque() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoque').set(app.estoqueItems || {}); },
-                saveEstoqueLogs() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/estoqueLogs').set(app.estoqueLogs || {}); },
+                saveEstoque() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/estoque', app.estoqueItems || {}, 'PUT'); },
+                saveEstoqueLogs() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/estoqueLogs', app.estoqueLogs || {}, 'PUT'); },
                 saveImpressoes(singleId = null) {
                     this.invalidateCoreCache();
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     if (singleId) {
                         const item = (app.impressoesList || {})[singleId];
                         if (!item) {
-                            return firebase.database().ref('sistema_bonificacao/impressoes/' + singleId).remove();
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/impressoes/' + singleId, undefined, 'DELETE');
                         }
                         const sanitized = this.sanitizeFirebaseObject(item);
-                        return firebase.database().ref('sistema_bonificacao/impressoes/' + singleId).set(sanitized);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/impressoes/' + singleId, sanitized, 'PUT');
                     }
                     const sanitizedObj = this.sanitizeFirebaseObject(app.impressoesList || {});
-                    return firebase.database().ref('sistema_bonificacao/impressoes').set(sanitizedObj);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/impressoes', sanitizedObj, 'PUT');
                 },
-                saveImpressoesStats() { this.invalidateCoreCache(); return firebase.database().ref('sistema_bonificacao/impressoesStats').set(app.impressoesStats || { arquivos: 0, folhas: 0 }); },
+                saveImpressoesStats() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/impressoesStats', app.impressoesStats || { arquivos: 0, folhas: 0 }, 'PUT'); },
                 saveDiarioBordo(singleId = null) {
                     this.invalidateCoreCache();
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     try { localStorage.setItem('soft_diario_bordo_backup', JSON.stringify(app.diarioBordoList || {})); } catch (e) {}
                     if (typeof localforage !== 'undefined' && app.diarioBordoList) {
                         localforage.setItem('soft_diario_bordo_hd', app.diarioBordoList).catch(() => {});
@@ -1894,38 +2035,37 @@ storage: {
                     if (singleId) {
                         const item = (app.diarioBordoList || {})[singleId];
                         if (!item) {
-                            return firebase.database().ref('sistema_bonificacao/diario_bordo/' + singleId).remove();
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/diario_bordo/' + singleId, undefined, 'DELETE');
                         }
                         const sanitized = this.sanitizeFirebaseObject(item);
-                        return firebase.database().ref('sistema_bonificacao/diario_bordo/' + singleId).set(sanitized);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/diario_bordo/' + singleId, sanitized, 'PUT');
                     }
                     const sanitizedObj = this.sanitizeFirebaseObject(app.diarioBordoList || {});
-                    return firebase.database().ref('sistema_bonificacao/diario_bordo').set(sanitizedObj);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/diario_bordo', sanitizedObj, 'PUT');
                 },
                 saveTurmasTreinamento(singleId = null) {
                     this.invalidateCoreCache();
-                    if (typeof firebase === 'undefined' || !firebase.database) return Promise.resolve();
                     try { localStorage.setItem('soft_turmas_treinamento_backup', JSON.stringify(app.turmasTreinamentoList || {})); } catch (e) {}
                     if (singleId) {
                         const item = (app.turmasTreinamentoList || {})[singleId];
                         if (!item) {
-                            return firebase.database().ref('sistema_bonificacao/turmas_treinamento/' + singleId).remove();
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/turmas_treinamento/' + singleId, undefined, 'DELETE');
                         }
                         const sanitized = this.sanitizeFirebaseObject(item);
-                        return firebase.database().ref('sistema_bonificacao/turmas_treinamento/' + singleId).set(sanitized);
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/turmas_treinamento/' + singleId, sanitized, 'PUT');
                     }
                     const sanitizedObj = this.sanitizeFirebaseObject(app.turmasTreinamentoList || {});
-                    return firebase.database().ref('sistema_bonificacao/turmas_treinamento').set(sanitizedObj);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/turmas_treinamento', sanitizedObj, 'PUT');
                 },
                 saveMonitorias() {
                     this.invalidateCoreCache();
-                    app.allMonitorias[app.currentMonth] = app.monitoriasData; 
-                    return firebase.database().ref('sistema_bonificacao/monitorias').set(app.allMonitorias || {}); 
+                    app.allMonitorias[app.currentMonth] = app.monitoriasData;
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/monitorias', app.allMonitorias || {}, 'PUT');
                 },
-                saveAnatel() { 
+                saveAnatel() {
                     this.invalidateCoreCache();
-                    app.allAnatel[app.currentMonth] = app.anatelData; 
-                    return firebase.database().ref('sistema_bonificacao/anatel').set(app.allAnatel || {}); 
+                    app.allAnatel[app.currentMonth] = app.anatelData;
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/anatel', app.allAnatel || {}, 'PUT');
                 },
                 saveHarmony(singleKey = null) {
                     const list = app.harmonyDeployList || {};
@@ -1940,42 +2080,39 @@ storage: {
                             localStorage.setItem('soft_harmony_history_backup', JSON.stringify(hist));
                         }
                     } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        if (singleKey) {
-                            let resolvedKey = singleKey;
-                            if (!Object.prototype.hasOwnProperty.call(list, resolvedKey)) {
-                                const cleanSingle = (app.ui && typeof app.ui._getHarmonyKey === 'function')
-                                    ? app.ui._getHarmonyKey(singleKey)
-                                    : singleKey;
-                                const foundEntry = Object.entries(list).find(([k, v]) =>
-                                    k === cleanSingle || (v && (v.id === singleKey || v.id === cleanSingle))
-                                );
-                                if (foundEntry) resolvedKey = foundEntry[0];
-                                else if (Object.prototype.hasOwnProperty.call(list, cleanSingle)) resolvedKey = cleanSingle;
-                            }
-                            const safePathKey = this.sanitizeFirebaseKey(resolvedKey);
-                            if (safePathKey) {
-                                const item = list[resolvedKey];
-                                if (!item) {
-                                    return firebase.database().ref('sistema_bonificacao/harmonyDeploy/' + safePathKey).remove().catch(err => {
-                                        console.warn("Aviso Firebase remove Harmony:", err);
-                                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover plano na nuvem.", "error");
-                                    });
-                                }
-                                const sanitizedItem = this.sanitizeFirebaseObject(item);
-                                return firebase.database().ref('sistema_bonificacao/harmonyDeploy/' + safePathKey).set(sanitizedItem).catch(err => {
-                                    console.warn("Aviso Firebase saveHarmony:", err);
-                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alteração do Gantt com a nuvem.", "error");
+                    if (singleKey) {
+                        let resolvedKey = singleKey;
+                        if (!Object.prototype.hasOwnProperty.call(list, resolvedKey)) {
+                            const cleanSingle = (app.ui && typeof app.ui._getHarmonyKey === 'function')
+                                ? app.ui._getHarmonyKey(singleKey)
+                                : singleKey;
+                            const foundEntry = Object.entries(list).find(([k, v]) =>
+                                k === cleanSingle || (v && (v.id === singleKey || v.id === cleanSingle))
+                            );
+                            if (foundEntry) resolvedKey = foundEntry[0];
+                            else if (Object.prototype.hasOwnProperty.call(list, cleanSingle)) resolvedKey = cleanSingle;
+                        }
+                        const safePathKey = this.sanitizeFirebaseKey(resolvedKey);
+                        if (safePathKey) {
+                            const item = list[resolvedKey];
+                            if (!item) {
+                                return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyDeploy/' + safePathKey, undefined, 'DELETE').catch(err => {
+                                    console.warn("Aviso Firebase remove Harmony:", err);
+                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover plano na nuvem.", "error");
                                 });
                             }
+                            const sanitizedItem = this.sanitizeFirebaseObject(item);
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyDeploy/' + safePathKey, sanitizedItem, 'PUT').catch(err => {
+                                console.warn("Aviso Firebase saveHarmony:", err);
+                                if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alteração do Gantt com a nuvem.", "error");
+                            });
                         }
-                        const sanitized = this.sanitizeFirebaseObject(list);
-                        return firebase.database().ref('sistema_bonificacao/harmonyDeploy').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveHarmony:", err);
-                            if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Gantt com a nuvem.", "error");
-                        });
                     }
-                    return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(list);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyDeploy', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveHarmony:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Gantt com a nuvem.", "error");
+                    });
                 },
                 saveHarmonyChecklist(singleId = null) {
                     const list = app.harmonyChecklistList || {};
@@ -1990,65 +2127,53 @@ storage: {
                             localStorage.setItem('soft_harmony_checklist_history', JSON.stringify(hist));
                         }
                     } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        if (singleId) {
-                            const safePathKey = this.sanitizeFirebaseKey(singleId);
-                            if (safePathKey) {
-                                const item = list[singleId];
-                                if (!item) {
-                                    return firebase.database().ref('sistema_bonificacao/harmonyChecklist/' + safePathKey).remove().catch(err => {
-                                        console.warn("Aviso Firebase remove HarmonyChecklist:", err);
-                                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover projeto Harmony na nuvem.", "error");
-                                        throw err;
-                                    });
-                                }
-                                const sanitizedItem = this.sanitizeFirebaseObject(item);
-                                return firebase.database().ref('sistema_bonificacao/harmonyChecklist/' + safePathKey).set(sanitizedItem).catch(err => {
-                                    console.warn("Aviso Firebase saveHarmonyChecklist:", err);
-                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alterações da aba Harmony com a nuvem (cópia local mantida).", "error");
+                    if (singleId) {
+                        const safePathKey = this.sanitizeFirebaseKey(singleId);
+                        if (safePathKey) {
+                            const item = list[singleId];
+                            if (!item) {
+                                return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyChecklist/' + safePathKey, undefined, 'DELETE').catch(err => {
+                                    console.warn("Aviso Firebase remove HarmonyChecklist:", err);
+                                    if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao remover projeto Harmony na nuvem.", "error");
                                     throw err;
                                 });
                             }
+                            const sanitizedItem = this.sanitizeFirebaseObject(item);
+                            return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyChecklist/' + safePathKey, sanitizedItem, 'PUT').catch(err => {
+                                console.warn("Aviso Firebase saveHarmonyChecklist:", err);
+                                if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar alterações da aba Harmony com a nuvem (cópia local mantida).", "error");
+                                throw err;
+                            });
                         }
-                        if (Object.keys(list).length === 0) return Promise.resolve();
-                        const sanitized = this.sanitizeFirebaseObject(list);
-                        return firebase.database().ref('sistema_bonificacao/harmonyChecklist').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveHarmonyChecklist:", err);
-                            if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Harmony com a nuvem.", "error");
-                            throw err;
-                        });
                     }
-                    return Promise.resolve();
+                    if (Object.keys(list).length === 0) return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(list);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/harmonyChecklist', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveHarmonyChecklist:", err);
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar Harmony com a nuvem.", "error");
+                        throw err;
+                    });
                 },
                 saveCsatNpsProvas() {
                     try { localStorage.setItem('soft_csat_nps_provas', JSON.stringify(app.csatNpsProvas || {})); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        const sanitized = this.sanitizeFirebaseObject(app.csatNpsProvas || {});
-                        return firebase.database().ref('sistema_bonificacao/csatNpsProvas').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveCsatNpsProvas:", err);
-                        });
-                    }
-                    return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(app.csatNpsProvas || {});
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/csatNpsProvas', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveCsatNpsProvas:", err);
+                    });
                 },
                 saveReportes() {
                     try { localStorage.setItem('portal_reportes_list', JSON.stringify(app.reportesList || {})); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        const sanitized = this.sanitizeFirebaseObject(app.reportesList || {});
-                        return firebase.database().ref('sistema_bonificacao/reportes').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveReportes:", err);
-                        });
-                    }
-                    return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(app.reportesList || {});
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/reportes', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveReportes:", err);
+                    });
                 },
                 saveFcrProvas() {
                     try { localStorage.setItem('portal_fcr_provas', JSON.stringify(app.fcrProvas || {})); } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        const sanitized = this.sanitizeFirebaseObject(app.fcrProvas || {});
-                        return firebase.database().ref('sistema_bonificacao/fcrProvas').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveFcrProvas:", err);
-                        });
-                    }
-                    return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(app.fcrProvas || {});
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/fcrProvas', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveFcrProvas:", err);
+                    });
                 },
                 saveBiBancoHoras() {
                     const payload = app.biBancoHorasData || null;
@@ -2056,18 +2181,15 @@ storage: {
                         if (payload) localStorage.setItem('portal_bi_banco_horas', JSON.stringify(payload));
                         else localStorage.removeItem('portal_bi_banco_horas');
                     } catch (e) {}
-                    if (typeof firebase !== 'undefined' && firebase.database) {
-                        if (!payload) {
-                            return firebase.database().ref('sistema_bonificacao/biBancoHoras').remove().catch(err => {
-                                console.warn("Aviso Firebase remove biBancoHoras:", err);
-                            });
-                        }
-                        const sanitized = this.sanitizeFirebaseObject(payload);
-                        return firebase.database().ref('sistema_bonificacao/biBancoHoras').set(sanitized).catch(err => {
-                            console.warn("Aviso Firebase saveBiBancoHoras:", err);
+                    if (!payload) {
+                        return this._writeFirebaseNodeFast('sistema_bonificacao/biBancoHoras', undefined, 'DELETE').catch(err => {
+                            console.warn("Aviso Firebase remove biBancoHoras:", err);
                         });
                     }
-                    return Promise.resolve();
+                    const sanitized = this.sanitizeFirebaseObject(payload);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/biBancoHoras', sanitized, 'PUT').catch(err => {
+                        console.warn("Aviso Firebase saveBiBancoHoras:", err);
+                    });
                 }
             },
 
@@ -2111,6 +2233,9 @@ storage: {
                 }
                 if (tabId === 'bi_banco_horas') {
                     return this.isAdmin || tipo === 'Dev';
+                }
+                if (tabId === 'faltas_integracao') {
+                    return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
                 if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
@@ -3895,6 +4020,40 @@ storage: {
                                 ctx.imageSmoothingQuality = 'high';
                                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                                 resolve(canvas.toDataURL('image/jpeg', 0.72));
+                            };
+                            img.onerror = () => resolve(event.target.result);
+                        };
+                    });
+                },
+                compressAvatarAsync(file) {
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onerror = () => resolve(null);
+                        reader.onload = event => {
+                            if (!file.type || !file.type.startsWith('image/')) {
+                                resolve(event.target.result);
+                                return;
+                            }
+                            const img = new Image();
+                            img.src = event.target.result;
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const MAX_DIM = 360;
+                                let width = img.width;
+                                let height = img.height;
+                                if (width > height) {
+                                    if (width > MAX_DIM) { height *= MAX_DIM / width; width = MAX_DIM; }
+                                } else {
+                                    if (height > MAX_DIM) { width *= MAX_DIM / height; height = MAX_DIM; }
+                                }
+                                canvas.width = Math.max(1, Math.round(width));
+                                canvas.height = Math.max(1, Math.round(height));
+                                const ctx = canvas.getContext('2d');
+                                ctx.imageSmoothingEnabled = true;
+                                ctx.imageSmoothingQuality = 'high';
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.78));
                             };
                             img.onerror = () => resolve(event.target.result);
                         };
@@ -7003,17 +7162,24 @@ storage: {
                 this.sincronizarLoginsAlunosTurma(t);
 
                 app.storage.saveTurmasTreinamento(t.id).then(() => {
+                    const faltasInt = (t.tipoTurma === 'integracao' && app.faltasIntegracao)
+                        ? app.faltasIntegracao.sinalizarFaltasTurma(t)
+                        : [];
+                    if (app.faltasIntegracao) app.faltasIntegracao.updateHeaderPill();
                     const tituloSucesso = t.tipoTurma === 'reciclagem'
                         ? "Reciclagem Salva!"
                         : (t.tipoTurma === 'integracao' && !travar
                             ? "Integração Salva em Aberto!"
                             : "Turma Salva e Bloqueada!");
-                    const msgSucesso = t.tipoTurma === 'reciclagem'
+                    let msgSucesso = t.tipoTurma === 'reciclagem'
                         ? `Turma de Reciclagem "${t.numeroTurma}" (${t.operacao}) registrada com ${t.quantidadeAlunos || 0} participante(s)!`
                         : (t.tipoTurma === 'integracao' && !travar
                             ? `Lista "${t.numeroTurma}" salva em aberto com ${t.colaboradores.length} participante(s). Integração não utiliza Diário de Bordo: baixe a lista em PDF para assinaturas e anexe a foto assinada depois.`
                             : `A turma "${t.numeroTurma}" (${t.operacao}) com ${t.colaboradores.length} alunos foi registrada. Logins dos alunos criados (Matrícula e Senha CPF).`);
-                    app.ui.showAlert(tituloSucesso, msgSucesso, "success");
+                    if (faltasInt.length > 0) {
+                        msgSucesso += `<br><br><div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs font-bold"><i class="fa-solid fa-triangle-exclamation text-amber-600 mr-1.5"></i>Sinalização: ${faltasInt.length} colaborador(es) com falta registrada nesta integração já foram sinalizados para Gestão/Dev na aba Faltas na Integração.</div>`;
+                    }
+                    app.ui.showAlert(tituloSucesso, msgSucesso, faltasInt.length > 0 ? "warning" : "success");
                     this.turmaEmEdicao = null;
                     this.viewMode = 'turmas';
                     app.ui.renderTab('diario_bordo', true);
@@ -7863,7 +8029,12 @@ storage: {
                 t.atualizadoEm = Date.now();
 
                 app.storage.saveTurmasTreinamento(turmaId).then(() => {
-                    app.ui.showAlert("Turma Finalizada como Integrados!", `${presentes.length} novos colaboradores foram confirmados e integrados com sucesso.`, "success");
+                    const faltasInt = app.faltasIntegracao ? app.faltasIntegracao.sinalizarFaltasTurma(t) : [];
+                    if (app.faltasIntegracao) app.faltasIntegracao.updateHeaderPill();
+                    const extraFaltaMsg = faltasInt.length > 0
+                        ? `<br><br><span class="text-amber-700 dark:text-amber-300 font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${faltasInt.length} falta(s) sinalizada(s) na aba Faltas na Integração.</span>`
+                        : '';
+                    app.ui.showAlert("Turma Finalizada como Integrados!", `${presentes.length} novos colaboradores foram confirmados e integrados com sucesso.${extraFaltaMsg}`, faltasInt.length > 0 ? "warning" : "success");
                     app.ui.renderTab('diario_bordo', true);
                 });
             },
@@ -8234,6 +8405,7 @@ storage: {
                 ta.value = '';
 
                 if (isIntegracao) {
+                    this._ordenarParticipantesIntegracaoAZ(t.colaboradores);
                     this.renderTabelaParticipantesIntegracao();
                     this.renderPainelPresenteismoIntegracao();
                 } else {
@@ -8376,6 +8548,13 @@ storage: {
                 el.value = v;
             },
 
+            _ordenarParticipantesIntegracaoAZ(lista) {
+                if (!Array.isArray(lista)) return [];
+                return lista.sort((a, b) =>
+                    String(a?.nome || '').trim().localeCompare(String(b?.nome || '').trim(), 'pt-BR', { sensitivity: 'base' })
+                );
+            },
+
             formatarInputTelefone(el) {
                 if (!el) return;
                 const d = el.value.replace(/\D/g, '').slice(0, 11);
@@ -8445,6 +8624,7 @@ storage: {
                 if (admEl) admEl.value = adm || t.dataInicio || '';
                 if (presEl) presEl.value = 'Presente';
 
+                this._ordenarParticipantesIntegracaoAZ(t.colaboradores);
                 this.renderTabelaParticipantesIntegracao();
                 this.renderPainelPresenteismoIntegracao();
             },
@@ -8556,7 +8736,7 @@ storage: {
                 const badgeTotal = document.getElementById('int-badge-total-colabs');
                 if (!t || !tbody) return;
 
-                const lista = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                const lista = this._ordenarParticipantesIntegracaoAZ(Array.isArray(t.colaboradores) ? t.colaboradores : []);
                 if (badgeTotal) badgeTotal.textContent = `${lista.length} participante${lista.length !== 1 ? 's' : ''}`;
 
                 if (lista.length === 0) {
@@ -8695,6 +8875,7 @@ storage: {
                 t.horario = '09:00 às 15:20';
                 t.tipoTurma = 'integracao';
                 t.numeroTurma = 'INTEGRAÇÃO ' + (t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '');
+                if (Array.isArray(t.colaboradores)) this._ordenarParticipantesIntegracaoAZ(t.colaboradores);
             },
 
             gerarListaAssinaturaIntegracaoPDF(turmaId = null) {
@@ -8707,7 +8888,7 @@ storage: {
                     this._sincronizarDadosHeaderIntegracao(t);
                 }
 
-                const lista = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+                const lista = this._ordenarParticipantesIntegracaoAZ([...(Array.isArray(t.colaboradores) ? t.colaboradores : [])]);
                 if (lista.length === 0) {
                     return app.ui.showAlert("Lista Vazia", "Adicione pelo menos 1 participante antes de gerar a lista em PDF para assinatura.", "warning");
                 }
@@ -8733,77 +8914,76 @@ storage: {
                     const conteudoProgramatico = 'PRESENCIAL: Como surgiu nossa Empresa, Nossa Missão, Visão, Valores, Nosso Time (CEO, Secretaria, Diretores, Gerentes, Recrutamento & Seleção, Departamento Pessoal, SESMT, Facilities - manutenção / controlador de acesso / zeladores, Endomarketing, Tecnologia da Informação, Inteligência, Monitoria de Qualidade, Treinamento & Desenvolvimento, Refeitório e Soft Café, Ambulatório SESMT, Softbreak, Área Externa, Jornada de Trabalho, Banco de Horas, Processos Seletivos, Vale Transporte, Vale Alimentação, Adiantamento Salarial, Cartão Bullla, Plano de Saúde, Plano Odontológico, Auxílio Creche, Salário Família, Softpartners, Dia "S", Rota Soft e Soft Market, Quem Indica Ganha, Responsabilidade Social, Jovem Aprendiz, Celulares, O que pode levar para operação, Armários, Dress Code, Coletes, EPIs, Uso do crachá, Atestados, Tecnologias, EaD; LGPD; NR17 (O que é SESMT; Ergonomia; Doenças ocupacionais e Medidas preventivas); Rota de fuga e entrega de atestados.';
 
                     const drawTopBanner = (startY = 8) => {
-                        const h = 16;
+                        const h = 14;
                         const colLeftW = 60;
                         const colRightW = 66;
                         const colCenterW = contentW - colLeftW - colRightW;
 
-                        // Caixa externa estilizada
+                        // Caixa externa monocromática (impressão P&B nítida)
                         doc.setFillColor(255, 255, 255);
-                        doc.setDrawColor(100, 116, 139);
+                        doc.setDrawColor(0, 0, 0);
                         doc.setLineWidth(0.35);
                         doc.rect(marginX, startY, contentW, h, 'FD');
 
-                        // Faixa sutil azul no topo esquerdo + divisor
-                        doc.setFillColor(2, 132, 199);
-                        doc.rect(marginX, startY, 2.2, h, 'F');
-                        doc.setDrawColor(148, 163, 184);
+                        // Faixa lateral preta + divisórias
+                        doc.setFillColor(0, 0, 0);
+                        doc.rect(marginX, startY, 2, h, 'F');
+                        doc.setDrawColor(80, 80, 80);
                         doc.setLineWidth(0.25);
                         doc.line(marginX + colLeftW, startY, marginX + colLeftW, startY + h);
                         doc.line(marginX + colLeftW + colCenterW, startY, marginX + colLeftW + colCenterW, startY + h);
 
-                        // Bloco Esquerdo: Treinamento & Desenvolvimento (ícone vetorial)
-                        doc.setFillColor(14, 165, 233);
-                        doc.circle(marginX + 10.5, startY + 8, 4.2, 'F');
+                        // Bloco Esquerdo: Treinamento & Desenvolvimento (P&B)
+                        doc.setFillColor(0, 0, 0);
+                        doc.circle(marginX + 10.5, startY + 7, 3.8, 'F');
                         doc.setTextColor(255, 255, 255);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(6.8);
-                        doc.text('T&D', marginX + 10.5, startY + 9.2, { align: 'center' });
+                        doc.setFontSize(6.5);
+                        doc.text('T&D', marginX + 10.5, startY + 8.1, { align: 'center' });
 
-                        doc.setTextColor(15, 23, 42);
+                        doc.setTextColor(0, 0, 0);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(8.2);
-                        doc.text('Treinamento &', marginX + 17, startY + 6.8);
-                        doc.setTextColor(2, 132, 199);
-                        doc.text('Desenvolvimento', marginX + 17, startY + 11.2);
+                        doc.setFontSize(8);
+                        doc.text('Treinamento &', marginX + 16.5, startY + 6);
+                        doc.text('Desenvolvimento', marginX + 16.5, startY + 10.1);
 
-                        // Bloco Central: Título principal
-                        doc.setTextColor(15, 23, 42);
+                        // Bloco Central: Título principal (P&B)
+                        doc.setTextColor(0, 0, 0);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(13.5);
-                        doc.text('Lista de Presença Integração', marginX + colLeftW + colCenterW / 2, startY + 9.5, { align: 'center' });
-                        doc.setDrawColor(2, 132, 199);
-                        doc.setLineWidth(0.6);
-                        doc.line(marginX + colLeftW + 38, startY + 12.2, marginX + colLeftW + colCenterW - 38, startY + 12.2);
-
-                        // Bloco Direito: Softmarketing Logo Vetorial
-                        const rx = marginX + colLeftW + colCenterW;
-                        doc.setDrawColor(15, 23, 42);
+                        doc.setFontSize(13);
+                        doc.text('Lista de Presença Integração', marginX + colLeftW + colCenterW / 2, startY + 8.3, { align: 'center' });
+                        doc.setDrawColor(0, 0, 0);
                         doc.setLineWidth(0.5);
-                        doc.circle(rx + 12, startY + 7.2, 4.2, 'S');
-                        doc.setDrawColor(234, 88, 12);
-                        doc.setLineWidth(0.45);
-                        doc.circle(rx + 12, startY + 7.2, 2.7, 'S');
-                        doc.setFillColor(2, 132, 199);
-                        doc.circle(rx + 12, startY + 7.2, 1.2, 'F');
+                        doc.line(marginX + colLeftW + 38, startY + 10.8, marginX + colLeftW + colCenterW - 38, startY + 10.8);
 
-                        doc.setTextColor(15, 23, 42);
+                        // Bloco Direito: Softmarketing Logo Vetorial (P&B)
+                        const rx = marginX + colLeftW + colCenterW;
+                        doc.setDrawColor(0, 0, 0);
+                        doc.setLineWidth(0.5);
+                        doc.circle(rx + 12, startY + 6.5, 3.8, 'S');
+                        doc.setDrawColor(90, 90, 90);
+                        doc.setLineWidth(0.4);
+                        doc.circle(rx + 12, startY + 6.5, 2.4, 'S');
+                        doc.setFillColor(0, 0, 0);
+                        doc.circle(rx + 12, startY + 6.5, 1.1, 'F');
+
+                        doc.setTextColor(0, 0, 0);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(10.5);
-                        doc.text('softmarketing', rx + 18.5, startY + 7.8);
-                        doc.setTextColor(100, 116, 139);
+                        doc.setFontSize(10);
+                        doc.text('softmarketing', rx + 18.5, startY + 7);
+                        doc.setTextColor(70, 70, 70);
                         doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(5.5);
-                        doc.text('SOLUÇÕES EM COMUNICAÇÃO', rx + 18.5, startY + 11.4);
+                        doc.setFontSize(5.3);
+                        doc.text('SOLUÇÕES EM COMUNICAÇÃO', rx + 18.5, startY + 10.3);
 
                         return startY + h;
                     };
 
-                    let curY = drawTopBanner(8);
-                    curY += 1.5;
+                    let curY = drawTopBanner(7);
+                    curY += 1.2;
 
-                    // Bloco de Metadados (3 linhas organizadas idênticas ao formulário)
-                    const rowH = 5.4;
+                    // Bloco de Metadados (compacto, estritamente P&B)
+                    const rowH = 4.6;
                     const metaRows = [
                         [{ label: 'Operação:', val: opCabecalho, w: 120 }, { label: 'Finalidade do treinamento:', val: 'Formação de Novos Colaboradores', w: contentW - 120 }],
                         [{ label: 'Módulo:', val: 'Integração', w: 90 }, { label: 'Analista:', val: respNome, w: contentW - 90 }],
@@ -8814,49 +8994,49 @@ storage: {
                         const y = curY + rIdx * rowH;
                         let cx = marginX;
                         cols.forEach(col => {
-                            doc.setFillColor(rIdx % 2 === 0 ? 248 : 255, rIdx % 2 === 0 ? 250 : 255, rIdx % 2 === 0 ? 252 : 255);
-                            doc.setDrawColor(148, 163, 184);
+                            doc.setFillColor(rIdx % 2 === 0 ? 245 : 255, rIdx % 2 === 0 ? 245 : 255, rIdx % 2 === 0 ? 245 : 255);
+                            doc.setDrawColor(60, 60, 60);
                             doc.setLineWidth(0.25);
                             doc.rect(cx, y, col.w, rowH, 'FD');
 
                             doc.setFont('helvetica', 'bold');
-                            doc.setFontSize(7.5);
-                            doc.setTextColor(30, 41, 59);
-                            doc.text(col.label, cx + 2.5, y + 3.7);
+                            doc.setFontSize(7.3);
+                            doc.setTextColor(0, 0, 0);
+                            doc.text(col.label, cx + 2.2, y + 3.2);
                             const labelW = doc.getTextWidth(col.label + ' ');
 
                             doc.setFont('helvetica', 'normal');
-                            doc.setTextColor(15, 23, 42);
-                            doc.text(this._fitPdfText(doc, col.val, col.w - labelW - 5), cx + 2.5 + labelW, y + 3.7);
+                            doc.setTextColor(0, 0, 0);
+                            doc.text(this._fitPdfText(doc, col.val, col.w - labelW - 4.5), cx + 2.2 + labelW, y + 3.2);
                             cx += col.w;
                         });
                     });
-                    curY += metaRows.length * rowH + 1.5;
+                    curY += metaRows.length * rowH + 1.2;
 
-                    // Caixa do Resumo do Conteúdo Programático
+                    // Caixa do Resumo do Conteúdo Programático (P&B)
                     doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(6.4);
-                    const progLines = doc.splitTextToSize(conteudoProgramatico, contentW - 6);
-                    const progBodyH = Math.max(12, progLines.length * 2.65 + 2.5);
-                    const progTitleH = 5;
+                    doc.setFontSize(6.2);
+                    const progLines = doc.splitTextToSize(conteudoProgramatico, contentW - 5);
+                    const progBodyH = Math.max(10, progLines.length * 2.4 + 2);
+                    const progTitleH = 4.2;
 
-                    doc.setFillColor(241, 245, 249);
-                    doc.setDrawColor(148, 163, 184);
+                    doc.setFillColor(235, 235, 235);
+                    doc.setDrawColor(60, 60, 60);
                     doc.setLineWidth(0.25);
                     doc.rect(marginX, curY, contentW, progTitleH, 'FD');
                     doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(7.5);
-                    doc.setTextColor(15, 23, 42);
-                    doc.text('Resumo do conteúdo Programático:', marginX + contentW / 2, curY + 3.6, { align: 'center' });
+                    doc.setFontSize(7.2);
+                    doc.setTextColor(0, 0, 0);
+                    doc.text('Resumo do conteúdo Programático:', marginX + contentW / 2, curY + 3, { align: 'center' });
 
                     doc.setFillColor(255, 255, 255);
                     doc.rect(marginX, curY + progTitleH, contentW, progBodyH, 'FD');
                     doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(6.4);
-                    doc.setTextColor(30, 41, 59);
-                    doc.text(progLines, marginX + 3, curY + progTitleH + 3.4);
+                    doc.setFontSize(6.2);
+                    doc.setTextColor(0, 0, 0);
+                    doc.text(progLines, marginX + 2.5, curY + progTitleH + 3);
 
-                    curY += progTitleH + progBodyH + 2;
+                    curY += progTitleH + progBodyH + 1.5;
 
                     const rows = lista.map((c, idx) => [
                         String(idx + 1).padStart(2, '0'),
@@ -8871,31 +9051,33 @@ storage: {
 
                     doc.autoTable({
                         startY: curY,
-                        margin: { left: marginX, right: marginX, top: 27, bottom: 13 },
+                        margin: { left: marginX, right: marginX, top: 23, bottom: 11 },
                         head: [['N', 'Matrícula', 'Colaborador', 'Operação', 'Assinatura', 'Onde Conheceu a Soft?', 'Doc pendente?', 'Telefone Celular']],
                         body: rows,
                         theme: 'grid',
                         showHead: 'everyPage',
                         styles: {
                             font: 'helvetica',
-                            fontSize: 7.8,
-                            textColor: [15, 23, 42],
-                            lineColor: [100, 116, 139],
+                            fontSize: 7.4,
+                            textColor: [0, 0, 0],
+                            lineColor: [60, 60, 60],
                             lineWidth: 0.25,
-                            cellPadding: { top: 2.6, bottom: 2.6, left: 2, right: 2 },
-                            minCellHeight: 10,
+                            cellPadding: { top: 1.4, bottom: 1.4, left: 1.8, right: 1.8 },
+                            minCellHeight: 6.8,
                             valign: 'middle'
                         },
                         headStyles: {
-                            fillColor: [15, 23, 42],
-                            textColor: [255, 255, 255],
+                            fillColor: [230, 230, 230],
+                            textColor: [0, 0, 0],
                             fontStyle: 'bold',
-                            fontSize: 7.5,
-                            minCellHeight: 7.5,
+                            fontSize: 7.3,
+                            minCellHeight: 6,
+                            lineColor: [0, 0, 0],
+                            lineWidth: 0.3,
                             halign: 'center'
                         },
                         alternateRowStyles: {
-                            fillColor: [248, 250, 252]
+                            fillColor: [247, 247, 247]
                         },
                         columnStyles: {
                             0: { cellWidth: 9, halign: 'center', fontStyle: 'bold' },
@@ -8909,15 +9091,15 @@ storage: {
                         },
                         didDrawPage: (data) => {
                             if (data.pageNumber > 1) {
-                                drawTopBanner(8);
+                                drawTopBanner(7);
                             }
                         },
                         didDrawCell: (data) => {
                             if (data.section === 'body' && data.column.index === 4) {
-                                doc.setDrawColor(148, 163, 184);
+                                doc.setDrawColor(100, 100, 100);
                                 doc.setLineWidth(0.2);
-                                const yLine = data.cell.y + data.cell.height - 2.2;
-                                doc.line(data.cell.x + 2.5, yLine, data.cell.x + data.cell.width - 2.5, yLine);
+                                const yLine = data.cell.y + data.cell.height - 1.5;
+                                doc.line(data.cell.x + 2.2, yLine, data.cell.x + data.cell.width - 2.2, yLine);
                             }
                         }
                     });
@@ -8926,10 +9108,10 @@ storage: {
                     for (let p = 1; p <= totalPages; p++) {
                         doc.setPage(p);
                         doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(7.2);
-                        doc.setTextColor(100, 116, 139);
-                        doc.text(`Softmarketing • Lista de Presença Integração (${dataBr}) — Analista: ${respNome}`, marginX, pageH - 6);
-                        doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 6, { align: 'right' });
+                        doc.setFontSize(7);
+                        doc.setTextColor(60, 60, 60);
+                        doc.text(`Softmarketing • Lista de Presença Integração (${dataBr}) — Analista: ${respNome}`, marginX, pageH - 5);
+                        doc.text(`Página ${p} de ${totalPages}`, pageW - marginX, pageH - 5, { align: 'right' });
                     }
 
                     doc.save(`Lista_Presenca_Integracao_${dataArquivo}.pdf`);
@@ -11571,8 +11753,8 @@ storage: {
                 const pctRetencao = totalInicial > 0 ? ((ativos / totalInicial) * 100).toFixed(1) : '100.0';
                 const pctTO = totalInicial > 0 ? ((toCount / totalInicial) * 100).toFixed(1) : '0.0';
 
-                const todosDiarios = Object.values(app.diarioBordoList || {}).filter(Boolean);
-                const diariosTurma = todosDiarios.filter(d => d && (d.turmaBaseId === turmaId || (d.operacao === t.operacao && d.turma === t.numeroTurma))).sort((a,b) => String(a.data||'').localeCompare(String(b.data||'')));
+                const todosDiarios = this.getDiariosDaTurma(t, true);
+                const diariosTurma = todosDiarios;
                 const diasSala = diariosTurma.filter(d => (d.faseDoDia || 'sala') === 'sala').length;
                 const diasAlo = diariosTurma.filter(d => d.faseDoDia === 'alo_acompanhado').length;
 
@@ -11718,22 +11900,55 @@ storage: {
                 const quadroStartPage = doc.internal.getNumberOfPages();
                 drawQuadroBanner();
 
-                const alunosRows = colabs.map((c, idx) => {
+                const operadoresConsolidados = [];
+                const seenOpKeys = new Set();
+                const pushOperadorConsolidado = (rawC) => {
+                    if (!rawC) return;
+                    const matKey = String(rawC.matricula || '').trim().toUpperCase();
+                    const nomeKey = this._normNomeDb(rawC.nome);
+                    const uid = matKey ? `M:${matKey}` : (nomeKey ? `N:${nomeKey}` : '');
+                    if (!uid || seenOpKeys.has(uid)) return;
+                    seenOpKeys.add(uid);
+                    operadoresConsolidados.push(rawC);
+                };
+                colabs.forEach(pushOperadorConsolidado);
+                diariosTurma.forEach(d => {
+                    (Array.isArray(d.chamada) ? d.chamada : []).forEach(item => pushOperadorConsolidado(item));
+                });
+
+                const perfisConsolidadosRows = [];
+                const alunosRows = operadoresConsolidados.map((c, idx) => {
                     const cMat = String(c.matricula || '').trim().toUpperCase();
+                    const cNomeNorm = this._normNomeDb(c.nome);
                     let isTO = (c.statusGeral === 'T.O' || c.statusGeral === 'Declínio');
                     let presCount = 0;
                     let absCount = 0;
                     let dataTO = '';
+                    const perfisList = [];
 
                     const timelineItems = diariosTurma.map((d, dIdx) => {
-                        const colabChamada = Array.isArray(d.chamada) ? d.chamada.find(item => String(item.matricula || '').trim().toUpperCase() === cMat) : null;
-                        const st = colabChamada ? colabChamada.statusDia : (isTO ? 'T.O' : 'Presente');
+                        const chamadaArr = Array.isArray(d.chamada) ? d.chamada : [];
+                        const colabChamada = chamadaArr.find(item => {
+                            if (!item) return false;
+                            const iMat = String(item.matricula || '').trim().toUpperCase();
+                            if (cMat && iMat && iMat === cMat) return true;
+                            return cNomeNorm && this._normNomeDb(item.nome) === cNomeNorm;
+                        });
+                        const st = colabChamada ? (colabChamada.statusDia || 'Presente') : (isTO ? 'T.O' : 'Presente');
+                        const dtCurta = d.data ? d.data.split('-').reverse().slice(0, 2).join('/') : '--/--';
+                        const faseCurta = d.faseDoDia === 'alo_acompanhado' ? 'Alô' : 'Sala';
+                        const perfilDiaTxt = String(colabChamada?.perfil || colabChamada?.perfilDia || '').trim();
+
+                        if (colabChamada && (perfilDiaTxt || st !== 'Presente')) {
+                            perfisList.push(`D${dIdx + 1} (${dtCurta} • ${faseCurta}) [${st}]: ${perfilDiaTxt || 'Sem observação registrada.'}`);
+                        }
+
                         if (st === 'Presente') {
                             presCount++;
                             return `D${dIdx + 1}:P`;
                         } else if (st === 'T.O' || st === 'Declínio') {
                             isTO = true;
-                            if (!dataTO && d.data) dataTO = d.data.split('-').reverse().slice(0, 2).join('/');
+                            if (!dataTO && d.data) dataTO = dtCurta;
                             return `D${dIdx + 1}:TO`;
                         } else {
                             absCount++;
@@ -11747,6 +11962,16 @@ storage: {
                     const situacaoTxt = isTO 
                         ? `DESLIGADO (T.O${dataTO ? ' em ' + dataTO : ''})` 
                         : (t.tipoTurma === 'integracao' ? 'INTEGRADO' : 'APROVADO / ENTREGUE');
+
+                    perfisConsolidadosRows.push([
+                        String(idx + 1),
+                        c.matricula || '-',
+                        c.nome || 'Colaborador',
+                        situacaoTxt,
+                        perfisList.length > 0
+                            ? perfisList.join('\n')
+                            : (diariosTurma.length > 0 ? 'Sem observações individuais registradas nos diários.' : 'Nenhum diário lançado para esta turma.')
+                    ]);
 
                     return [
                         String(idx + 1),
@@ -11765,7 +11990,7 @@ storage: {
                     rowPageBreak: 'avoid',
                     showHead: 'everyPage',
                     head: [['#', 'Matrícula', 'Nome Completo do Colaborador', 'Linha do Tempo (Dia a Dia)', 'Frequência', 'Situação Final / Parecer']],
-                    body: alunosRows,
+                    body: alunosRows.length > 0 ? alunosRows : [['-', '-', 'Nenhum operador vinculado a esta turma.', '-', '-', '-']],
                     theme: 'striped',
                     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, cellPadding: 2 },
                     bodyStyles: { fontSize: 6.8, cellPadding: 1.8, textColor: [30, 41, 59], overflow: 'linebreak' },
@@ -11781,6 +12006,52 @@ storage: {
                     didDrawPage: () => {
                         if (doc.internal.getNumberOfPages() > quadroStartPage) {
                             drawQuadroBanner();
+                        }
+                    }
+                });
+
+                // ==========================================
+                // PÁGINA 3+: PERFIS CONSOLIDADOS POR OPERADOR (TODOS OS DIÁRIOS)
+                // ==========================================
+                const drawPerfisBanner = () => {
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, pageWidth, 18, 'F');
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(10);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text("PERFIS CONSOLIDADOS POR OPERADOR (TODOS OS DIÁRIOS)", marginX, 12);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text(this._fitPdfText(doc, `Operação: ${String(t.operacao || '').toUpperCase()}  |  Turma: ${String(t.numeroTurma || '').toUpperCase()}  |  ${diariosTurma.length} diário(s) • ${operadoresConsolidados.length} operador(es)`, 135), pageWidth - marginX, 12, { align: 'right' });
+                };
+
+                doc.addPage();
+                const perfisStartPage = doc.internal.getNumberOfPages();
+                drawPerfisBanner();
+
+                doc.autoTable({
+                    startY: 23,
+                    margin: { top: 22, bottom: 16, left: marginX, right: marginX },
+                    tableWidth: contentWidth,
+                    rowPageBreak: 'avoid',
+                    showHead: 'everyPage',
+                    head: [['#', 'Matrícula', 'Operador', 'Situação Final', 'Perfis Consolidados em Todos os Diários (Dia a Dia)']],
+                    body: perfisConsolidadosRows.length > 0 ? perfisConsolidadosRows : [['-', '-', 'Nenhum operador registrado nos diários.', '-', '-']],
+                    theme: 'striped',
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.2, cellPadding: 2 },
+                    bodyStyles: { fontSize: 6.8, cellPadding: 2, textColor: [30, 41, 59], overflow: 'linebreak', valign: 'top' },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 9, halign: 'center' },
+                        1: { cellWidth: 23, halign: 'center' },
+                        2: { cellWidth: 50 },
+                        3: { cellWidth: 32, halign: 'center' },
+                        4: { cellWidth: contentWidth - 114 }
+                    },
+                    didDrawPage: () => {
+                        if (doc.internal.getNumberOfPages() > perfisStartPage) {
+                            drawPerfisBanner();
                         }
                     }
                 });
@@ -15677,7 +15948,7 @@ storage: {
                 menusAdmin: [
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
-                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
+                    { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'faltas_integracao', label:'Faltas na Integração'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
                     { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
@@ -15696,7 +15967,7 @@ storage: {
                         'Treinamento': [...new Set(treinoDefaults)],
                         'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'faltas_integracao', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds.filter(id => id !== 'harmony')
                     };
 
@@ -15734,6 +16005,11 @@ storage: {
                             base = base.filter(id => id !== 'bi_banco_horas');
                         } else if (!base.includes('bi_banco_horas')) {
                             base.push('bi_banco_horas');
+                        }
+                        if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
+                            base = base.filter(id => id !== 'faltas_integracao');
+                        } else if (!base.includes('faltas_integracao')) {
+                            base.push('faltas_integracao');
                         }
                         result[g] = [...new Set(base)];
                     });
@@ -15810,11 +16086,16 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni', 'faltas_integracao'];
                         if (tipo !== 'Dev') {
                             savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
                         } else if (!savedTabs.includes('bi_banco_horas')) {
                             savedTabs.push('bi_banco_horas');
+                        }
+                        if (!['Gestor', 'Gerente', 'Dev'].includes(tipo)) {
+                            savedTabs = savedTabs.filter(id => id !== 'faltas_integracao');
+                        } else if (!savedTabs.includes('faltas_integracao')) {
+                            savedTabs.push('faltas_integracao');
                         }
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) {
@@ -15824,8 +16105,8 @@ storage: {
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
-                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
-                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas'))];
+                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'faltas_integracao');
+                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'faltas_integracao'))];
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
@@ -16123,6 +16404,67 @@ storage: {
                         body.classList.add('custom-cursor');
                         localStorage.setItem('soft_cursor', 'enabled');
                     }
+                },
+                showToast(message, type = 'info', durationMs = 4000) {
+                    try {
+                        let tone = type;
+                        let ms = Number(durationMs) || 4000;
+                        if (typeof type === 'number') {
+                            ms = type;
+                            tone = 'info';
+                        }
+                        let stack = document.getElementById('soft-toast-stack');
+                        if (!stack) {
+                            stack = document.createElement('div');
+                            stack.id = 'soft-toast-stack';
+                            stack.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-6 z-[140] flex flex-col gap-2 items-center sm:items-end pointer-events-none max-w-[92vw] sm:max-w-sm';
+                            document.body.appendChild(stack);
+                        }
+                        const palette = tone === 'success'
+                            ? 'bg-emerald-600 text-white border-emerald-500'
+                            : (tone === 'error'
+                                ? 'bg-rose-600 text-white border-rose-500'
+                                : (tone === 'warning'
+                                    ? 'bg-amber-600 text-white border-amber-500'
+                                    : 'bg-slate-900 dark:bg-slate-800 text-white border-slate-700'));
+                        const icon = tone === 'success'
+                            ? 'fa-circle-check'
+                            : (tone === 'error'
+                                ? 'fa-circle-exclamation'
+                                : (tone === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-info'));
+                        const toast = document.createElement('div');
+                        toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl text-xs font-bold transition-all duration-300 opacity-0 translate-y-2 ${palette}`;
+                        toast.innerHTML = `<i class="fa-solid ${icon} text-sm shrink-0"></i><span class="leading-snug">${app.utils && app.utils.escapeHtml ? app.utils.escapeHtml(String(message || '')) : String(message || '')}</span>`;
+                        stack.appendChild(toast);
+                        requestAnimationFrame(() => {
+                            toast.classList.remove('opacity-0', 'translate-y-2');
+                        });
+                        setTimeout(() => {
+                            toast.classList.add('opacity-0', 'translate-y-2');
+                            setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 320);
+                        }, Math.max(1500, ms));
+                    } catch (e) {
+                        console.warn('Toast fallback:', message);
+                    }
+                },
+                refreshTabRegionInPlace(tabId, regionIds = []) {
+                    const viewDiv = document.getElementById(`view-${tabId}`);
+                    if (!viewDiv) return;
+                    const temp = document.createElement('div');
+                    if (tabId === 'diario_bordo') {
+                        this.renderView_DiarioBordo(temp);
+                    } else if (tabId === 'faltas_integracao' && app.faltasIntegracao) {
+                        app.faltasIntegracao.renderView(temp);
+                    } else {
+                        return;
+                    }
+                    regionIds.forEach(rid => {
+                        const liveEl = viewDiv.querySelector(`#${rid}`);
+                        const newEl = temp.querySelector(`#${rid}`);
+                        if (liveEl && newEl) {
+                            liveEl.innerHTML = newEl.innerHTML;
+                        }
+                    });
                 },
                 analiseFiltroMes: '', // Estado para o filtro de mês do CSV Dinâmico                
                 actionFilterUser: '',
@@ -18406,6 +18748,9 @@ storage: {
                 renderNav() {
                     const nav = document.getElementById('main-nav');
                     if (!nav) return;
+                    if (app.faltasIntegracao && typeof app.faltasIntegracao.updateHeaderPill === 'function') {
+                        app.faltasIntegracao.updateHeaderPill();
+                    }
 
                     // Operador: Tela 100% limpa sem nenhuma aba superior
                     const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
@@ -18429,8 +18774,8 @@ storage: {
                     } else if (app.currentUser) {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
-                        const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni'];
+                        const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni', 'faltas_integracao'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -18645,6 +18990,9 @@ storage: {
                     if (app.notifications && typeof app.notifications.updateIndicatorsHeaderPill === 'function') {
                         app.notifications.updateIndicatorsHeaderPill();
                     }
+                    if (app.faltasIntegracao && typeof app.faltasIntegracao.updateHeaderPill === 'function') {
+                        app.faltasIntegracao.updateHeaderPill();
+                    }
                     if (app.notifications && typeof app.notifications.checkTaskReminders === 'function') {
                         app.notifications.checkTaskReminders(false);
                     }
@@ -18679,6 +19027,7 @@ storage: {
                             else if(tabId === 'dashboard_adm') this.renderView_DashboardAdm(viewDiv);
                             else if(tabId === 'analitico_visao_geral') this.renderView_AnaliticoVisaoGeral(viewDiv);
                             else if(tabId === 'hierarquia' || tabId === 'operacoes') this.renderView_Hierarquia(viewDiv);
+                            else if(tabId === 'faltas_integracao') { if (app.faltasIntegracao) app.faltasIntegracao.renderView(viewDiv); }
                             else if(tabId === 'span_operacoes') this.renderView_Span(viewDiv);
                             else if(tabId === 'implantacao_ia') this.renderView_ImplantacaoIA(viewDiv);
                             else if(tabId === 'harmony') this.renderView_Harmony(viewDiv);
@@ -24256,9 +24605,9 @@ storage: {
                                     <!-- Barra de Filtros Compacta -->
                                     <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                                         <div class="flex flex-wrap items-center gap-2.5 flex-1 min-w-[260px]">
-                                            <div class="relative flex-1 min-w-[200px] max-w-sm">
+                                             <div class="relative flex-1 min-w-[200px] max-w-sm">
                                                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                                <input type="text" value="${esc(app.diarioBordo.filtroTurmaBusca || '')}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar turma, instrutor ou aluno..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                                <input type="text" id="db-turmas-search-input" value="${esc(app.diarioBordo.filtroTurmaBusca || '')}" oninput="app.diarioBordo.filtroTurmaBusca = this.value; app.ui.refreshTabRegionInPlace('diario_bordo', ['db-turmas-count', 'db-turmas-results-wrap']);" placeholder="Buscar turma, instrutor ou aluno..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
                                             </div>
                                             <select onchange="app.diarioBordo.filtroTurmaTipo = this.value; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
                                                 <option value="TODAS" ${filtroTipo === 'TODAS' ? 'selected' : ''}>Todas as Etapas (1 + 2)</option>
@@ -24272,10 +24621,11 @@ storage: {
                                                 ${operacoes.map(o => `<option value="${esc(o)}" ${filtroOp === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
                                             </select>
                                         </div>
-                                        <span class="text-xs font-bold text-slate-400">Exibindo ${turmasFiltradas.length} turma${turmasFiltradas.length === 1 ? '' : 's'}</span>
+                                        <span id="db-turmas-count" class="text-xs font-bold text-slate-400">Exibindo ${turmasFiltradas.length} turma${turmasFiltradas.length === 1 ? '' : 's'}</span>
                                     </div>
                                 </div>
 
+                                <div id="db-turmas-results-wrap">
                                 ${turmasFiltradas.length === 0 ? `
                                     <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
                                         <div class="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-2xl mx-auto">
@@ -24448,6 +24798,7 @@ storage: {
                                         }).join('')}
                                     </div>
                                 `}
+                                </div>
                             </div>
                         `;
                     } else if (mode === 'turma_form') {
@@ -25315,7 +25666,7 @@ storage: {
                                                             </tr>
                                                         </thead>
                                                         <tbody class="divide-y divide-slate-100 dark:divide-slate-700/60">
-                                                            ${(Array.isArray(t.colaboradores) ? t.colaboradores : []).map((col, idx) => {
+                                                            ${(Array.isArray(t.colaboradores) ? t.colaboradores : []).map((col, idx) => ({ col, idx })).sort((a, b) => String(a.col?.nome || '').trim().localeCompare(String(b.col?.nome || '').trim(), 'pt-BR', { sensitivity: 'base' })).map(({ col, idx }) => {
                                                                 const faltou = col.presenca === 'Faltou' || col.statusGeral === 'Faltou na Integração';
                                                                 return `
                                                                     <tr>
@@ -25499,6 +25850,7 @@ storage: {
                             </div>
                         `;
                     } else if (mode === 'lista') {
+                        const esc = (v) => app.diarioBordo._escapeDbHtml(v);
                         // Aplicação dos Filtros
                         const filtroOp = app.diarioBordo.filtroOp || 'TODAS';
                         const filtroData = app.diarioBordo.filtroData || '';
@@ -25528,7 +25880,7 @@ storage: {
                                     <h2 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
                                         <i class="fa-solid fa-list-check text-emerald-600"></i> 3. Diários de Bordo
                                     </h2>
-                                    <span class="text-xs font-bold text-slate-400">${listaFiltrada.length} registro(s)</span>
+                                    <span id="db-lista-count" class="text-xs font-bold text-slate-400">${listaFiltrada.length} registro(s)</span>
                                 </div>
 
                                 <!-- Barra de Filtros e Busca -->
@@ -25554,18 +25906,21 @@ storage: {
                                         <!-- Campo de Busca -->
                                         <div class="flex-1 min-w-[200px] flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
                                             <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
-                                            <input type="text" value="${app.diarioBordo.filtroBusca || ''}" oninput="app.diarioBordo.filtroBusca = this.value; app.ui.renderTab('diario_bordo', true);" placeholder="Buscar turma, instrutor ou operação..." class="w-full bg-transparent text-xs text-slate-700 dark:text-slate-200 outline-none placeholder:text-slate-400">
+                                            <input type="text" id="db-lista-search-input" value="${esc(app.diarioBordo.filtroBusca || '')}" oninput="app.diarioBordo.filtroBusca = this.value; app.ui.refreshTabRegionInPlace('diario_bordo', ['db-lista-count', 'db-lista-clear-wrap', 'db-lista-results-wrap']);" placeholder="Buscar turma, instrutor ou operação..." class="w-full bg-transparent text-xs text-slate-700 dark:text-slate-200 outline-none placeholder:text-slate-400">
                                         </div>
                                     </div>
 
+                                    <div id="db-lista-clear-wrap">
                                     ${(filtroOp !== 'TODAS' || filtroData || app.diarioBordo.filtroBusca) ? `
                                         <button type="button" onclick="app.diarioBordo.filtroOp = 'TODAS'; app.diarioBordo.filtroData = ''; app.diarioBordo.filtroBusca = ''; app.ui.renderTab('diario_bordo', true);" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition flex items-center gap-1.5 cursor-pointer">
                                             <i class="fa-solid fa-filter-circle-xmark"></i> Limpar Filtros
                                         </button>
                                     ` : ''}
+                                    </div>
                                 </div>
 
                                 <!-- Grid de Blocos de Turmas (Acesso para Treinador, Analista, Gestor e Dev) -->
+                                <div id="db-lista-results-wrap">
                                 ${listaFiltrada.length === 0 ? `
                                     <div class="p-16 text-center bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 shadow-xs">
                                         <div class="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4 text-2xl">
@@ -25699,6 +26054,7 @@ storage: {
                                         }).join('')}
                                     </div>
                                 `}
+                                </div>
                             </div>
                         `;
                     } else if (mode === 'form') {
@@ -28525,8 +28881,12 @@ storage: {
                     let html = `
                         <div class="max-w-4xl mx-auto">
                             <div class="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-t-3xl h-48 relative shadow-lg">
-                                <div class="absolute -bottom-16 left-8">
+                                <div class="absolute -bottom-16 left-8 group">
                                     <img src="${foto}" class="w-32 h-32 rounded-full border-4 border-white dark:border-slate-900 object-cover shadow-xl bg-white">
+                                    <label class="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white border-2 border-white dark:border-slate-900 shadow-lg flex items-center justify-center cursor-pointer transition hover:scale-105" title="Atualizar foto de perfil">
+                                        <i class="fa-solid fa-camera text-xs"></i>
+                                        <input type="file" accept="image/*" onchange="app.admin.atualizarFotoPerfilHierarquia(event, '${u.matricula}')" class="hidden">
+                                    </label>
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-slate-900 rounded-b-3xl p-8 pt-20 shadow-lg border border-t-0 border-slate-200 dark:border-slate-800 mb-8">
@@ -49161,35 +49521,63 @@ storage: {
                     }
                     const alvo = app.users[idx];
                     const tinhaFoto = Boolean(alvo.foto);
-                    app.actions.compressImageAsync(file).then(b64 => {
+                    if (app.ui && app.ui.showToast) app.ui.showToast(`Processando e salvando foto de ${alvo.nome}...`, 'info', 2500);
+                    const compressor = (app.actions && typeof app.actions.compressAvatarAsync === 'function')
+                        ? app.actions.compressAvatarAsync(file)
+                        : app.actions.compressImageAsync(file);
+                    compressor.then(b64 => {
                         if (inputEl) inputEl.value = '';
                         if (!b64) return app.ui.showAlert("Erro", "Não foi possível processar a imagem selecionada.", "error");
+                        const nowIso = new Date().toISOString();
+                        const nowTs = Date.now();
                         alvo.foto = b64;
-                        alvo.atualizadoEm = new Date().toISOString();
+                        alvo.fotoUpdatedAt = nowTs;
+                        alvo.atualizadoEm = nowIso;
                         if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
                             app.currentUser.foto = b64;
+                            app.currentUser.fotoUpdatedAt = nowTs;
+                            const hdrImg = document.getElementById('header-avatar');
+                            const hdrIcon = document.getElementById('header-avatar-icon');
+                            if (hdrImg) {
+                                hdrImg.src = b64;
+                                hdrImg.classList.remove('hidden');
+                            }
+                            if (hdrIcon) hdrIcon.classList.add('hidden');
                             app.ui.renderNav();
                         }
                         if (app.jovemAprendizAudit) {
                             app.jovemAprendizAudit.registrarSeAplicavel(
                                 'Alteração de Foto de Perfil',
                                 alvo,
-                                [tinhaFoto ? 'Foto de perfil substituída na aba Hierarquia' : 'Foto de perfil adicionada na aba Hierarquia'],
+                                [tinhaFoto ? 'Foto de perfil substituída' : 'Foto de perfil adicionada'],
                                 'foto'
                             );
                         }
                         return app.storage.saveUserByMatricula(alvo.matricula, {
                             foto: b64,
-                            atualizadoEm: alvo.atualizadoEm
-                        }).then(() => {
-                            if (app.ui && app.ui._refreshSpanOrHierarquiaInPlace) app.ui._refreshSpanOrHierarquiaInPlace();
-                            else app.ui.renderTab('hierarquia', true);
-                            if (app.ui && app.ui.showToast) app.ui.showToast(`Foto de ${alvo.nome} atualizada com sucesso!`, "success");
+                            fotoUpdatedAt: nowTs,
+                            atualizadoEm: nowIso
+                        }).then((saveRes) => {
+                            if (app.currentTab === 'perfil') {
+                                app.ui.renderTab('perfil', true);
+                            } else if (app.currentTab === 'gestao_equipe') {
+                                app.ui.renderTab('gestao_equipe', true);
+                            } else if (app.ui && app.ui._refreshSpanOrHierarquiaInPlace) {
+                                app.ui._refreshSpanOrHierarquiaInPlace();
+                            } else {
+                                app.ui.renderTab('hierarquia', true);
+                            }
+                            const syncedCloud = saveRes && saveRes.remoteSaved !== false;
+                            if (syncedCloud) {
+                                if (app.ui && app.ui.showToast) app.ui.showToast(`Foto de ${alvo.nome} salva na nuvem com sucesso!`, "success");
+                            } else {
+                                if (app.ui && app.ui.showToast) app.ui.showToast(`Foto de ${alvo.nome} salva localmente, mas o servidor não respondeu.`, "warning", 6000);
+                            }
                         });
                     }).catch(err => {
                         if (inputEl) inputEl.value = '';
                         console.error("Erro ao atualizar foto:", err);
-                        app.ui.showAlert("Erro", "Falha ao atualizar foto do colaborador.", "error");
+                        app.ui.showAlert("Erro", "Falha ao atualizar foto do colaborador na nuvem.", "error");
                     });
                 },
 
@@ -49213,7 +49601,8 @@ storage: {
                     const saveFinal = (fotoBase64) => {
                         const encPwd = app.utils.encryptPassword(pwd);
                         const isDef = !!(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(pwd));
-                        const novoUsuario = { nome, matricula: mat, senha: encPwd, primeiroAcesso: isDef, pwdUpdatedAt: Date.now(), tipoAcesso, subclasse, foto: fotoBase64, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 };
+                        const nowTs = Date.now();
+                        const novoUsuario = { nome, matricula: mat, senha: encPwd, primeiroAcesso: isDef, pwdUpdatedAt: nowTs, tipoAcesso, subclasse, foto: fotoBase64, fotoUpdatedAt: fotoBase64 ? nowTs : 0, operacoes, abasLiberadas, results: {}, aceiteTermos: null, aceiteDiretrizes: null, loginCount: 0 };
                         app.users.push(novoUsuario);
                         app.storage.markUserPasswordDirty(normMat);
                         if (app.jovemAprendizAudit) {
@@ -49236,7 +49625,10 @@ storage: {
                     };
 
                     if (fileInput.files && fileInput.files[0]) {
-                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => saveFinal(b64));
+                        const comp = (app.actions && typeof app.actions.compressAvatarAsync === 'function')
+                            ? app.actions.compressAvatarAsync(fileInput.files[0])
+                            : app.actions.compressImageAsync(fileInput.files[0]);
+                        comp.then(b64 => saveFinal(b64));
                     } else {
                         saveFinal(null);
                     }
@@ -49359,7 +49751,10 @@ storage: {
                             app.users[idx].pwdUpdatedAt = Date.now();
                             app.storage.markUserPasswordDirty(app.users[idx].matricula);
                         }
-                        if(fotoBase64 !== undefined) app.users[idx].foto = fotoBase64;
+                        if(fotoBase64 !== undefined) {
+                            app.users[idx].foto = fotoBase64;
+                            app.users[idx].fotoUpdatedAt = Date.now();
+                        }
 
                         if (app.jovemAprendizAudit) {
                             const diffs = [];
@@ -49388,13 +49783,49 @@ storage: {
                         if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(originalMat)) {
                             app.currentUser = app.users[idx];
                             localStorage.setItem("soft_session_mat", mat);
+                            if (fotoBase64 !== undefined) {
+                                const hdrImg = document.getElementById('header-avatar');
+                                const hdrIcon = document.getElementById('header-avatar-icon');
+                                if (hdrImg && fotoBase64) {
+                                    hdrImg.src = fotoBase64;
+                                    hdrImg.classList.remove('hidden');
+                                    if (hdrIcon) hdrIcon.classList.add('hidden');
+                                }
+                            }
                             app.ui.renderNav();
                         }
 
-                        app.storage.saveUsers().then(() => {
+                        const savePromise = (app.storage._normalizeMat(mat) === app.storage._normalizeMat(originalMat))
+                            ? (() => {
+                                const patch = {
+                                    nome,
+                                    tipoAcesso,
+                                    subclasse,
+                                    operacoes,
+                                    abasLiberadas,
+                                    atualizadoEm: new Date().toISOString()
+                                };
+                                if (pwd) {
+                                    patch.senha = app.users[idx].senha;
+                                    patch.primeiroAcesso = app.users[idx].primeiroAcesso;
+                                    patch.pwdUpdatedAt = app.users[idx].pwdUpdatedAt;
+                                }
+                                if (fotoBase64 !== undefined) {
+                                    patch.foto = app.users[idx].foto;
+                                    patch.fotoUpdatedAt = app.users[idx].fotoUpdatedAt;
+                                }
+                                return app.storage.saveUserByMatricula(mat, patch);
+                            })()
+                            : app.storage.saveUsers();
+
+                        savePromise.then((res) => {
                             document.getElementById('edit-user-modal').classList.add('hidden');
                             app.ui.renderTab(app.currentTab === 'gestao_equipe' ? 'gestao_equipe' : 'hierarquia', true);
-                            app.ui.showAlert("Sucesso", "Dados e permissões do colaborador salvos e sincronizados.", "success");
+                            if (res && res.remoteSaved === false) {
+                                app.ui.showAlert("Aviso", "Alteração salva localmente, mas o servidor não respondeu. Tente sincronizar em instantes.", "warning");
+                            } else {
+                                app.ui.showAlert("Sucesso", "Dados e permissões do colaborador salvos e sincronizados na nuvem.", "success");
+                            }
                         }).catch(err => {
                             console.error("Erro ao salvar edição:", err);
                             app.ui.showAlert("Erro", "Falha ao sincronizar alteração com o banco de dados.", "error");
@@ -49402,7 +49833,10 @@ storage: {
                     };
 
                     if (fileInput.files && fileInput.files[0]) {
-                        app.actions.compressImageAsync(fileInput.files[0]).then(b64 => executeSave(b64));
+                        const comp = (app.actions && typeof app.actions.compressAvatarAsync === 'function')
+                            ? app.actions.compressAvatarAsync(fileInput.files[0])
+                            : app.actions.compressImageAsync(fileInput.files[0]);
+                        comp.then(b64 => executeSave(b64));
                     } else {
                         executeSave(undefined);
                     }
@@ -60729,6 +61163,21 @@ app.recurringReminders = {
 
         this._updateHeaderBadge();
         if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) return Promise.resolve();
+        if (app.storage && typeof app.storage._writeFirebaseNodeFast === 'function') {
+            const cleanPayload = (typeof app.storage.sanitizeFirebaseObject === 'function')
+                ? app.storage.sanitizeFirebaseObject(payload)
+                : payload;
+            return app.storage._writeFirebaseNodeFast(`user_recurring_reminders/${mat}`, 'PUT', cleanPayload, 12000).then(ok => {
+                if (!ok && app.ui && typeof app.ui.showToast === 'function') {
+                    app.ui.showToast('Falha ao salvar demandas recorrentes na nuvem (cópia local mantida).', 'warning', 4500);
+                }
+            }).catch(err => {
+                console.warn('Aviso ao sincronizar demandas recorrentes:', err);
+                if (app.ui && typeof app.ui.showToast === 'function') {
+                    app.ui.showToast('Falha ao salvar demandas recorrentes na nuvem (cópia local mantida).', 'warning', 4500);
+                }
+            });
+        }
         if (typeof firebase !== 'undefined' && firebase.database) {
             const cleanPayload = (app.storage && typeof app.storage.sanitizeFirebaseObject === 'function')
                 ? app.storage.sanitizeFirebaseObject(payload)
@@ -60736,7 +61185,7 @@ app.recurringReminders = {
             return firebase.database().ref(`sistema_bonificacao/user_recurring_reminders/${mat}`).set(cleanPayload).catch(err => {
                 console.warn('Aviso ao sincronizar demandas recorrentes:', err);
                 if (app.ui && typeof app.ui.showToast === 'function') {
-                    app.ui.showToast('Falha ao salvar demandas recorrentes na nuvem (cópia local mantida).', 4500);
+                    app.ui.showToast('Falha ao salvar demandas recorrentes na nuvem (cópia local mantida).', 'warning', 4500);
                 }
             });
         }
@@ -60766,10 +61215,10 @@ app.recurringReminders = {
             this.updatedAt = local ? local.updatedAt : 0;
             this._updateHeaderBadge();
 
-            if (!window.__TEST_MODE__ && typeof firebase !== 'undefined' && firebase.database) {
-                firebase.database().ref(`sistema_bonificacao/user_recurring_reminders/${mat}`).once('value').then(snap => {
+            if (!window.__TEST_MODE__ && app.storage && typeof app.storage._fetchFirebaseNodeFast === 'function') {
+                app.storage._fetchFirebaseNodeFast(`user_recurring_reminders/${mat}`, 10000).then(({ ok, val }) => {
                     if (this._hydratedMat !== mat) return;
-                    const cloud = snap.val();
+                    const cloud = ok ? val : null;
                     if (cloud && typeof cloud === 'object') {
                         const cloudTs = Number(cloud.updatedAt) || 0;
                         if (cloudTs > this.updatedAt) {
@@ -66940,10 +67389,16 @@ app.jovemAprendizAudit = {
         this.logs[id] = entry;
         this._writeLocal(this.logs);
 
-        if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__ && typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref(`sistema_bonificacao/jovem_aprendiz_logs/${id}`).set(entry).catch(err => {
-                console.warn("Erro ao salvar log de Jovem Aprendiz no Firebase:", err);
-            });
+        if (!window.__TEST_MODE__ && !window.__DISABLE_FIREBASE_WRITE__) {
+            if (app.storage && typeof app.storage._writeFirebaseNodeFast === 'function') {
+                app.storage._writeFirebaseNodeFast(`jovem_aprendiz_logs/${id}`, 'PUT', entry, 10000).catch(err => {
+                    console.warn("Erro ao salvar log de Jovem Aprendiz na nuvem:", err);
+                });
+            } else if (typeof firebase !== 'undefined' && firebase.database) {
+                firebase.database().ref(`sistema_bonificacao/jovem_aprendiz_logs/${id}`).set(entry).catch(err => {
+                    console.warn("Erro ao salvar log de Jovem Aprendiz no Firebase:", err);
+                });
+            }
         }
         return entry;
     },
@@ -66951,10 +67406,16 @@ app.jovemAprendizAudit = {
     async carregarLogs(force = false) {
         const localMap = this._readLocal();
         this.logs = Object.assign({}, localMap, this.logs || {});
-        if ((!this._loadedFromCloud || force) && !window.__TEST_MODE__ && typeof firebase !== 'undefined' && firebase.database) {
+        if ((!this._loadedFromCloud || force) && !window.__TEST_MODE__) {
             try {
-                const snap = await firebase.database().ref('sistema_bonificacao/jovem_aprendiz_logs').once('value');
-                const val = snap.val();
+                let val = null;
+                if (app.storage && typeof app.storage._fetchFirebaseNodeFast === 'function') {
+                    const res = await app.storage._fetchFirebaseNodeFast('jovem_aprendiz_logs', 10000);
+                    if (res && res.ok) val = res.val;
+                } else if (typeof firebase !== 'undefined' && firebase.database) {
+                    const snap = await firebase.database().ref('sistema_bonificacao/jovem_aprendiz_logs').once('value');
+                    val = snap.val();
+                }
                 if (val && typeof val === 'object') {
                     this.logs = Object.assign({}, this.logs, val);
                     this._writeLocal(this.logs);
@@ -67203,5 +67664,455 @@ app.jovemAprendizAudit = {
         });
 
         doc.save(`Relatorio_Diario_Jovem_Aprendiz_${this._filtroData || this._todayIso()}.pdf`);
+    }
+};
+
+// =========================================================================
+// MÓDULO DEDICADO: FALTAS NA INTEGRAÇÃO (GESTORES, GERENTES & DEV)
+// =========================================================================
+app.faltasIntegracao = {
+    filtroSituacao: 'TODAS',
+    filtroTurmaId: 'TODAS',
+    filtroOp: 'TODAS',
+    filtroBusca: '',
+
+    _esc(v) {
+        return String(v ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    canView() {
+        if (app.isAdmin) return true;
+        const tipo = String(app.currentUser?.tipoAcesso || '').trim();
+        return ['Gestor', 'Gerente', 'Dev'].includes(tipo);
+    },
+
+    getFaltasList() {
+        const turmas = Object.values(app.turmasTreinamentoList || {}).filter(t => t && t.tipoTurma === 'integracao');
+        const items = [];
+        turmas.forEach(t => {
+            const colabs = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+            colabs.forEach((c, idx) => {
+                if (!c) return;
+                const faltou = c.presenca === 'Faltou' || c.statusGeral === 'Faltou na Integração';
+                if (!faltou) return;
+                const trat = (c.tratativaFalta && typeof c.tratativaFalta === 'object') ? c.tratativaFalta : {};
+                const situacao = trat.situacao || 'pendente_rh';
+                items.push({
+                    key: `${t.id}__${idx}`,
+                    turmaId: t.id,
+                    colabIdx: idx,
+                    turma: t,
+                    colab: c,
+                    dataIntegracao: t.dataInicio || '',
+                    numeroTurma: t.numeroTurma || ('INTEGRAÇÃO ' + (t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : '')),
+                    analista: t.responsavelIntegracaoNome || t.treinadorNome || 'Instrutor',
+                    situacao,
+                    motivo: trat.motivo || '',
+                    novaDataPrevista: trat.novaDataPrevista || '',
+                    observacoes: trat.observacoes || '',
+                    enviadoRhEm: trat.enviadoRhEm || null,
+                    atualizadoEm: trat.atualizadoEm || null,
+                    atualizadoPor: trat.atualizadoPor || ''
+                });
+            });
+        });
+        return items.sort((a, b) => String(b.dataIntegracao || '').localeCompare(String(a.dataIntegracao || '')));
+    },
+
+    updateHeaderPill() {
+        const pill = document.getElementById('header-faltas-int-pill');
+        const textEl = document.getElementById('header-faltas-int-text');
+        if (!pill || !textEl) return;
+        if (!this.canView() || app.isGuest) {
+            pill.classList.add('hidden');
+            pill.classList.remove('flex');
+            return;
+        }
+        const pendentes = this.getFaltasList().filter(i => i.situacao === 'pendente_rh');
+        if (pendentes.length > 0) {
+            textEl.textContent = String(pendentes.length > 99 ? '99+' : pendentes.length);
+            pill.title = `${pendentes.length} falta${pendentes.length === 1 ? '' : 's'} na integração aguardando contato RH / realocação`;
+            pill.classList.remove('hidden');
+            pill.classList.add('flex');
+        } else {
+            pill.classList.add('hidden');
+            pill.classList.remove('flex');
+        }
+    },
+
+    sinalizarFaltasTurma(t) {
+        if (!t || t.tipoTurma !== 'integracao') return [];
+        const colabs = Array.isArray(t.colaboradores) ? t.colaboradores : [];
+        const faltas = colabs.filter(c => c && (c.presenca === 'Faltou' || c.statusGeral === 'Faltou na Integração'));
+        if (faltas.length === 0) return [];
+
+        const gestoresUsers = (app.users || []).filter(u => u && ['Gestor', 'Gerente', 'Dev'].includes(String(u.tipoAcesso || '').trim()));
+        if (!app.notificationsList) app.notificationsList = {};
+        const dtBr = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : 'Sem data';
+        const nomesResumo = faltas.slice(0, 4).map(c => c.nome || c.matricula).join(', ') + (faltas.length > 4 ? ` (+${faltas.length - 4})` : '');
+        let mudouNotif = false;
+
+        gestoresUsers.forEach(u => {
+            const mat = String(u.matricula || '').trim();
+            if (!mat) return;
+            const nid = `notif_falta_int_${t.id}_${faltas.length}_${mat}`;
+            if (!app.notificationsList[nid]) {
+                app.notificationsList[nid] = {
+                    id: nid,
+                    userId: mat,
+                    title: `Falta na Integração (${dtBr}) — ${faltas.length} ausência(s)`,
+                    message: `Colaborador(es): ${nomesResumo}. Acesse "Faltas na Integração" para gerar texto ao RH e realocar.`,
+                    type: 'warning',
+                    read: false,
+                    timestamp: Date.now()
+                };
+                mudouNotif = true;
+            }
+        });
+
+        if (mudouNotif && app.storage && typeof app.storage.saveNotifications === 'function') {
+            app.storage.saveNotifications();
+        }
+        return faltas;
+    },
+
+    salvarTratativa(turmaId, colabIdx, patch = {}, rerenderAfter = false) {
+        const t = app.turmasTreinamentoList && app.turmasTreinamentoList[turmaId];
+        if (!t || !Array.isArray(t.colaboradores) || !t.colaboradores[colabIdx]) return;
+        const c = t.colaboradores[colabIdx];
+        const prev = (c.tratativaFalta && typeof c.tratativaFalta === 'object') ? c.tratativaFalta : {};
+        const curUser = app.currentUser || {};
+        c.tratativaFalta = Object.assign({}, prev, patch, {
+            atualizadoEm: Date.now(),
+            atualizadoPor: app.isAdmin ? 'ADMIN' : String(curUser.nome || curUser.matricula || 'Gestão').trim().toUpperCase()
+        });
+        t.atualizadoEm = Date.now();
+
+        const stEl = document.getElementById(`fi-save-status-${turmaId}-${colabIdx}`);
+        if (stEl) stEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-amber-500 mr-1"></i>Salvando...';
+
+        app.storage.saveTurmasTreinamento(turmaId).then(() => {
+            this.updateHeaderPill();
+            if (rerenderAfter && app.currentTab === 'faltas_integracao') {
+                const sy = window.scrollY;
+                app.ui.renderTab('faltas_integracao', true);
+                requestAnimationFrame(() => window.scrollTo(0, sy));
+                return;
+            }
+            if (stEl) stEl.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i>Salvo';
+        }).catch(err => {
+            console.error("Erro ao salvar tratativa de falta na integração:", err);
+            if (stEl) stEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-rose-500 mr-1"></i>Erro ao sincronizar';
+        });
+    },
+
+    _getFilteredItems() {
+        const all = this.getFaltasList();
+        const sit = this.filtroSituacao || 'TODAS';
+        const tid = this.filtroTurmaId || 'TODAS';
+        const op = this.filtroOp || 'TODAS';
+        const q = String(this.filtroBusca || '').trim().toLowerCase();
+
+        return all.filter(it => {
+            if (sit !== 'TODAS' && it.situacao !== sit) return false;
+            if (tid !== 'TODAS' && it.turmaId !== tid) return false;
+            if (op !== 'TODAS' && String(it.colab.operacao || '').trim().toUpperCase() !== op) return false;
+            if (q) {
+                const hay = `${it.colab.nome || ''} ${it.colab.matricula || ''} ${it.colab.cpf || ''} ${it.colab.operacao || ''} ${it.motivo || ''} ${it.observacoes || ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            return true;
+        });
+    },
+
+    gerarTextoRH(items) {
+        if (!Array.isArray(items) || items.length === 0) return '';
+        const grupos = {};
+        items.forEach(it => {
+            if (!grupos[it.turmaId]) {
+                grupos[it.turmaId] = {
+                    data: it.dataIntegracao ? it.dataIntegracao.split('-').reverse().join('/') : 'Data não informada',
+                    analista: it.analista || 'T&D',
+                    lista: []
+                };
+            }
+            grupos[it.turmaId].lista.push(it);
+        });
+
+        const blocos = Object.values(grupos).map(g => {
+            const linhas = g.lista.map((it, idx) => {
+                const c = it.colab;
+                const opTxt = c.operacao ? ` | Operação: ${String(c.operacao).toUpperCase()}` : '';
+                const telTxt = c.telefoneCelular ? ` | Tel: ${c.telefoneCelular}` : '';
+                const cpfTxt = c.cpf ? ` | CPF: ${c.cpf}` : '';
+                return `${idx + 1}. ${c.nome || '-'} (Mat: ${c.matricula || '-'}${cpfTxt}${opTxt}${telTxt})`;
+            }).join('\n');
+            return `Integração do dia ${g.data} (Analista: ${g.analista}):\n${linhas}`;
+        }).join('\n\n');
+
+        return `Olá equipe de RH, tudo bem?\n\nSinalizamos abaixo o(s) colaborador(es) convocado(s) que não compareceu(ram) à Integração:\n\n${blocos}\n\nPedimos a gentileza de entrar em contato com cada um para verificar o motivo da ausência e confirmar se devemos realocar para uma próxima data de integração ou seguir com o cancelamento/desistência.\n\nAssim que tiverem o retorno, atualizaremos o status por aqui. Obrigado!`;
+    },
+
+    abrirModalTextoRH(singleKey = null) {
+        const all = this.getFaltasList();
+        let alvoItems = [];
+        if (singleKey) {
+            alvoItems = all.filter(it => it.key === singleKey);
+        } else {
+            const filtrados = this._getFilteredItems();
+            const pendentes = filtrados.filter(it => it.situacao === 'pendente_rh');
+            alvoItems = pendentes.length > 0 ? pendentes : filtrados;
+        }
+        if (alvoItems.length === 0) {
+            return app.ui.showAlert("Sem Registros", "Não há faltas selecionadas/filtradas para gerar o texto ao RH.", "info");
+        }
+
+        const texto = this.gerarTextoRH(alvoItems);
+        this._rhModalItems = alvoItems.map(it => ({ turmaId: it.turmaId, colabIdx: it.colabIdx, situacao: it.situacao }));
+
+        document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-paper-plane text-amber-500 mr-2"></i> Texto Pronto para Contato com o RH (${alvoItems.length})`;
+        document.getElementById('modal-content').innerHTML = `
+            <div class="space-y-3 text-left">
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Revise ou edite se desejar antes de enviar via WhatsApp ou E-mail para o RH entrar em contato e realocar:
+                </p>
+                <textarea id="fi-rh-texto-area" rows="11" class="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed">${this._esc(texto)}</textarea>
+            </div>
+        `;
+        document.getElementById('modal-actions').innerHTML = `
+            <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-xs cursor-pointer">Fechar</button>
+            <button type="button" onclick="app.faltasIntegracao.copiarTextoModal(false)" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl font-bold text-xs cursor-pointer"><i class="fa-regular fa-copy mr-1.5"></i>Apenas Copiar</button>
+            <button type="button" onclick="app.faltasIntegracao.copiarTextoModal(true)" class="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-extrabold text-xs shadow-md cursor-pointer"><i class="fa-solid fa-check-double mr-1.5"></i>Copiar &amp; Marcar Enviado ao RH</button>
+        `;
+        document.getElementById('global-modal').classList.remove('hidden');
+    },
+
+    copiarTextoModal(marcarEnviado = false) {
+        const ta = document.getElementById('fi-rh-texto-area');
+        const txt = ta ? ta.value : '';
+        if (!txt.trim()) return;
+
+        navigator.clipboard.writeText(txt).then(() => {
+            if (marcarEnviado && Array.isArray(this._rhModalItems)) {
+                const turmasTouched = new Set();
+                const nowTs = Date.now();
+                const ator = app.isAdmin ? 'ADMIN' : String(app.currentUser?.nome || app.currentUser?.matricula || 'Gestão').trim().toUpperCase();
+                this._rhModalItems.forEach(ref => {
+                    const t = app.turmasTreinamentoList && app.turmasTreinamentoList[ref.turmaId];
+                    const c = t && Array.isArray(t.colaboradores) ? t.colaboradores[ref.colabIdx] : null;
+                    if (!c) return;
+                    const prev = (c.tratativaFalta && typeof c.tratativaFalta === 'object') ? c.tratativaFalta : {};
+                    if (!prev.situacao || prev.situacao === 'pendente_rh') {
+                        c.tratativaFalta = Object.assign({}, prev, {
+                            situacao: 'contatado_rh',
+                            enviadoRhEm: nowTs,
+                            atualizadoEm: nowTs,
+                            atualizadoPor: ator
+                        });
+                        t.atualizadoEm = nowTs;
+                        turmasTouched.add(ref.turmaId);
+                    }
+                });
+                Promise.all(Array.from(turmasTouched).map(tid => app.storage.saveTurmasTreinamento(tid))).then(() => {
+                    this.updateHeaderPill();
+                    document.getElementById('global-modal').classList.add('hidden');
+                    app.ui.renderTab('faltas_integracao', true);
+                    app.ui.showToast("Texto copiado e registros marcados como Enviado ao RH!", "success");
+                });
+            } else {
+                document.getElementById('global-modal').classList.add('hidden');
+                app.ui.showToast("Texto para o RH copiado com sucesso!", "success");
+            }
+        });
+    },
+
+    renderView(container) {
+        if (!container) return;
+        if (!this.canView()) {
+            container.innerHTML = `<div class="max-w-xl mx-auto mt-16 p-8 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 text-center space-y-2"><i class="fa-solid fa-lock text-rose-500 text-3xl"></i><h2 class="text-lg font-black text-slate-800 dark:text-white">Acesso Exclusivo</h2><p class="text-xs text-slate-500">Esta aba é restrita a Gestores, Gerentes e Desenvolvedores (Dev).</p></div>`;
+            return;
+        }
+
+        const all = this.getFaltasList();
+        const filtrados = this._getFilteredItems();
+
+        const cntTotal = all.length;
+        const cntPendente = all.filter(i => i.situacao === 'pendente_rh').length;
+        const cntContatado = all.filter(i => i.situacao === 'contatado_rh').length;
+        const cntRealocado = all.filter(i => i.situacao === 'realocado').length;
+        const cntDesistente = all.filter(i => i.situacao === 'desistente').length;
+
+        const turmasOptions = [];
+        const turmasSeen = new Set();
+        all.forEach(i => {
+            if (!turmasSeen.has(i.turmaId)) {
+                turmasSeen.add(i.turmaId);
+                turmasOptions.push({ id: i.turmaId, label: `${i.dataIntegracao ? i.dataIntegracao.split('-').reverse().join('/') : 'S/ Data'} — ${i.analista}` });
+            }
+        });
+
+        const opsOptions = [...new Set(all.map(i => String(i.colab.operacao || '').trim().toUpperCase()).filter(Boolean))].sort();
+
+        const sitBadge = {
+            pendente_rh: { label: 'Aguardando RH', cls: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800' },
+            contatado_rh: { label: 'Enviado ao RH', cls: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800' },
+            realocado: { label: 'Vai Vir / Realocado', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' },
+            desistente: { label: 'Não Virá Mais', cls: 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600' }
+        };
+
+        const esc = (v) => this._esc(v);
+
+        container.innerHTML = `
+            <div class="max-w-[1920px] mx-auto pb-16 space-y-5 animate-fade-in">
+                <!-- Cabeçalho Executivo -->
+                <div class="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div>
+                        <div class="text-[11px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Monitoramento Exclusivo • Gestão, Gerência &amp; Dev</div>
+                        <h2 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2.5 mt-0.5">
+                            <i class="fa-solid fa-user-clock text-amber-500"></i> Faltas na Integração &amp; Tratativa RH
+                        </h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Sinalização automática de ausências nas integrações. Gere o texto para acionar o RH e alimente abaixo o motivo, realocação ou desistência.
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                        <button type="button" onclick="app.ui.renderTab('diario_bordo', true)" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer">
+                            <i class="fa-solid fa-arrow-left mr-1.5"></i>Ir p/ Integrações
+                        </button>
+                        <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH()" class="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
+                            <i class="fa-solid fa-paper-plane"></i> Gerar Texto p/ RH (${cntPendente > 0 ? `${cntPendente} pendente(s)` : filtrados.length})
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 5 KPIs -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='TODAS'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-white dark:bg-slate-800 border ${this.filtroSituacao === 'TODAS' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700'} shadow-xs cursor-pointer transition">
+                        <div class="text-[10px] font-black uppercase text-slate-400">Total de Faltas</div>
+                        <div class="text-2xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${cntTotal}</div>
+                    </button>
+                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='pendente_rh'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border ${this.filtroSituacao === 'pendente_rh' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-rose-200 dark:border-rose-800'} shadow-xs cursor-pointer transition">
+                        <div class="text-[10px] font-black uppercase text-rose-700 dark:text-rose-400">Sinalizado (Pendente RH)</div>
+                        <div class="text-2xl font-black text-rose-800 dark:text-rose-200 mt-0.5 tabular-nums">${cntPendente}</div>
+                    </button>
+                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='contatado_rh'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border ${this.filtroSituacao === 'contatado_rh' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-amber-200 dark:border-amber-800'} shadow-xs cursor-pointer transition">
+                        <div class="text-[10px] font-black uppercase text-amber-700 dark:text-amber-400">Enviado ao RH</div>
+                        <div class="text-2xl font-black text-amber-800 dark:text-amber-200 mt-0.5 tabular-nums">${cntContatado}</div>
+                    </button>
+                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='realocado'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border ${this.filtroSituacao === 'realocado' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-emerald-200 dark:border-emerald-800'} shadow-xs cursor-pointer transition">
+                        <div class="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400">Vai Vir / Realocado</div>
+                        <div class="text-2xl font-black text-emerald-800 dark:text-emerald-200 mt-0.5 tabular-nums">${cntRealocado}</div>
+                    </button>
+                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='desistente'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border ${this.filtroSituacao === 'desistente' ? 'border-slate-500 ring-2 ring-slate-500/20' : 'border-slate-200 dark:border-slate-700'} shadow-xs cursor-pointer transition">
+                        <div class="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Não Virá Mais</div>
+                        <div class="text-2xl font-black text-slate-700 dark:text-slate-200 mt-0.5 tabular-nums">${cntDesistente}</div>
+                    </button>
+                </div>
+
+                <!-- Filtros -->
+                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-wrap items-center gap-3">
+                    <div class="relative flex-1 min-w-[220px]">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input type="text" id="fi-search-input" value="${esc(this.filtroBusca)}" oninput="app.faltasIntegracao.filtroBusca=this.value; app.ui.refreshTabRegionInPlace('faltas_integracao', ['fi-count-wrap', 'fi-results-wrap']);" placeholder="Buscar por nome, matrícula, CPF ou motivo..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                    </div>
+                    <select onchange="app.faltasIntegracao.filtroTurmaId=this.value; app.ui.renderTab('faltas_integracao', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
+                        <option value="TODAS" ${this.filtroTurmaId === 'TODAS' ? 'selected' : ''}>Todas as Integrações</option>
+                        ${turmasOptions.map(t => `<option value="${esc(t.id)}" ${this.filtroTurmaId === t.id ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
+                    </select>
+                    <select onchange="app.faltasIntegracao.filtroOp=this.value; app.ui.renderTab('faltas_integracao', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
+                        <option value="TODAS" ${this.filtroOp === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
+                        ${opsOptions.map(o => `<option value="${esc(o)}" ${this.filtroOp === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+                    </select>
+                    <span id="fi-count-wrap" class="text-xs font-bold text-slate-400">${filtrados.length} registro(s)</span>
+                </div>
+
+                <datalist id="fi-motivos-datalist">
+                    <option value="Não atendeu ao contato do RH"></option>
+                    <option value="Imprevisto pessoal / Transporte"></option>
+                    <option value="Motivo de saúde / Atestado"></option>
+                    <option value="Desistiu da vaga / Não virá mais"></option>
+                    <option value="Realocado para próxima turma"></option>
+                    <option value="Conflito de horário"></option>
+                </datalist>
+
+                <!-- Lista Focada Exclusivamente em Faltas -->
+                <div id="fi-results-wrap">
+                ${filtrados.length === 0 ? `
+                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 space-y-2">
+                        <i class="fa-solid fa-circle-check text-emerald-500 text-3xl"></i>
+                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">Nenhuma falta na integração encontrada neste filtro</h3>
+                        <p class="text-xs text-slate-500">Quando alguma lista de integração registrar ausência, ela aparecerá aqui automaticamente.</p>
+                    </div>
+                ` : `
+                    <div class="space-y-3">
+                        ${filtrados.map(it => {
+                            const c = it.colab;
+                            const badge = sitBadge[it.situacao] || sitBadge.pendente_rh;
+                            const dtBr = it.dataIntegracao ? it.dataIntegracao.split('-').reverse().join('/') : '-';
+                            return `
+                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border ${it.situacao === 'pendente_rh' ? 'border-rose-300 dark:border-rose-700/80 ring-1 ring-rose-500/15' : 'border-slate-200 dark:border-slate-700'} shadow-xs space-y-3">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div class="space-y-1">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase border ${badge.cls}">${badge.label}</span>
+                                                <span class="text-sm font-black text-slate-800 dark:text-white">${esc(c.nome || '-')}</span>
+                                                <span class="text-xs font-bold text-slate-500">#${esc(c.matricula || '-')}</span>
+                                                ${c.operacao ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[10px] font-black uppercase border border-sky-200 dark:border-sky-800">${esc(c.operacao)}</span>` : ''}
+                                            </div>
+                                            <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                                                <span><i class="fa-regular fa-calendar text-amber-500 mr-1"></i>Integração: <strong>${esc(dtBr)}</strong> (${esc(it.analista)})</span>
+                                                <span><i class="fa-solid fa-id-card text-slate-400 mr-1"></i>CPF: <strong>${esc(c.cpf || '-')}</strong></span>
+                                                <span><i class="fa-solid fa-phone text-emerald-500 mr-1"></i>Tel: <strong>${esc(c.telefoneCelular || 'Não informado')}</strong></span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0">
+                                            <span id="fi-save-status-${esc(it.turmaId)}-${it.colabIdx}" class="text-[11px] font-bold text-slate-400">
+                                                ${it.atualizadoPor ? `Atualizado por ${esc(it.atualizadoPor)}` : ''}
+                                            </span>
+                                            <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH('${esc(it.key)}')" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-extrabold cursor-pointer transition">
+                                                <i class="fa-solid fa-paper-plane mr-1"></i>Texto RH
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Campos Alimentados Posteriormente -->
+                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/70">
+                                        <div class="md:col-span-3">
+                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Retorno / Situação</label>
+                                            <select onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { situacao: this.value }, true)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-amber-500">
+                                                <option value="pendente_rh" ${it.situacao === 'pendente_rh' ? 'selected' : ''}>Aguardando RH (Sinalizado)</option>
+                                                <option value="contatado_rh" ${it.situacao === 'contatado_rh' ? 'selected' : ''}>Enviado ao RH (Em contato)</option>
+                                                <option value="realocado" ${it.situacao === 'realocado' ? 'selected' : ''}>Vai vir / Realocado</option>
+                                                <option value="desistente" ${it.situacao === 'desistente' ? 'selected' : ''}>Não virá mais (Desistência)</option>
+                                            </select>
+                                        </div>
+                                        ${it.situacao === 'realocado' ? `
+                                            <div class="md:col-span-2">
+                                                <label class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400 mb-1">Nova Data Prevista</label>
+                                                <input type="date" value="${esc(it.novaDataPrevista)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { novaDataPrevista: this.value }, false)" class="w-full px-2.5 py-2 rounded-xl bg-emerald-50/50 dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
+                                            </div>
+                                        ` : ''}
+                                        <div class="${it.situacao === 'realocado' ? 'md:col-span-3' : 'md:col-span-4'}">
+                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Motivo / Por que faltou</label>
+                                            <input type="text" list="fi-motivos-datalist" value="${esc(it.motivo)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { motivo: this.value }, false)" placeholder="Explique o motivo informado..." class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                                        </div>
+                                        <div class="${it.situacao === 'realocado' ? 'md:col-span-4' : 'md:col-span-5'}">
+                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Observações (Se vem, retorno RH, detalhes)</label>
+                                            <input type="text" value="${esc(it.observacoes)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { observacoes: this.value }, false)" placeholder="Detalhes do contato, realocação ou desistência..." class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `}
+                </div>
+            </div>
+        `;
     }
 };
