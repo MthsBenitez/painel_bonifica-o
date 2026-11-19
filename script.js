@@ -166,6 +166,7 @@ const app = {
             isUserOperador(u) {
                 if (!u) return true;
                 const tipo = String(u.tipoAcesso || '').trim().toLowerCase();
+                if (tipo && tipo !== 'operador') return false;
                 const cargo = String(u.cargo || '').trim().toLowerCase();
                 return tipo === 'operador' || Boolean(u.turmaId || u.turmaNumero) || cargo.includes('operador');
             },
@@ -1497,6 +1498,10 @@ storage: {
                     const keysByMat = new Map();
                     const bestEntryByMat = new Map();
                     const isPersonalizedRecord = (u) => !!(u && u.primeiroAcesso === false && u.senha && !(app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(u.senha)));
+                    const isPromotedRole = (u) => {
+                        const t = String(u && u.tipoAcesso || '').trim();
+                        return Boolean(t && t !== 'Operador');
+                    };
                     entries.forEach(item => {
                         const mKey = this._normalizeMat(item.user.matricula);
                         if (!mKey) return;
@@ -1507,11 +1512,19 @@ storage: {
                             bestEntryByMat.set(mKey, item);
                             keyByMat.set(mKey, item.key);
                         } else {
+                            const curRoleTs = Number(item.user.roleUpdatedAt || 0);
+                            const prevRoleTs = Number(prevBest.user.roleUpdatedAt || 0);
+                            const curProm = isPromotedRole(item.user) ? 1 : 0;
+                            const prevProm = isPromotedRole(prevBest.user) ? 1 : 0;
                             const curPers = isPersonalizedRecord(item.user) ? 1 : 0;
                             const prevPers = isPersonalizedRecord(prevBest.user) ? 1 : 0;
                             const curTs = Number(item.user.pwdUpdatedAt || 0);
                             const prevTs = Number(prevBest.user.pwdUpdatedAt || 0);
-                            if (curPers > prevPers || (curPers === prevPers && curTs > prevTs)) {
+                            const curBetter = (curRoleTs > prevRoleTs)
+                                || (curRoleTs === prevRoleTs && curProm > prevProm)
+                                || (curRoleTs === prevRoleTs && curProm === prevProm && curPers > prevPers)
+                                || (curRoleTs === prevRoleTs && curProm === prevProm && curPers === prevPers && curTs > prevTs);
+                            if (curBetter) {
                                 bestEntryByMat.set(mKey, item);
                                 keyByMat.set(mKey, item.key);
                             }
@@ -1531,6 +1544,47 @@ storage: {
                 },
                 _mergeUserRecord(existing, localU, mKey) {
                     const merged = Object.assign({}, existing, localU);
+                    // Proteção de Cargo/Grupo: preserva cargo mais recente (roleUpdatedAt) e nunca deixa sync automático rebaixar para Operador
+                    const exTipo = String(existing?.tipoAcesso || '').trim();
+                    const locTipo = String(localU?.tipoAcesso || '').trim();
+                    const exRoleTs = Number(existing?.roleUpdatedAt || (existing?.atualizadoEm ? Date.parse(existing.atualizadoEm) || 0 : 0));
+                    const locRoleTs = Number(localU?.roleUpdatedAt || (localU?.atualizadoEm ? Date.parse(localU.atualizadoEm) || 0 : 0));
+                    const exExplicitRoleTs = Number(existing?.roleUpdatedAt || 0);
+                    const locExplicitRoleTs = Number(localU?.roleUpdatedAt || 0);
+                    const exIsOp = !exTipo || exTipo === 'Operador';
+                    const locIsOp = !locTipo || locTipo === 'Operador';
+
+                    let winnerRole = merged;
+                    if (!exIsOp && locIsOp && !(locExplicitRoleTs > exRoleTs)) {
+                        // Servidor já tem cargo promovido (ex: Jovem Aprendiz) — bloqueia downgrade automático vindo de outra sessão/turma
+                        winnerRole = existing;
+                    } else if (exIsOp && !locIsOp && !(exExplicitRoleTs > locRoleTs)) {
+                        // Local já tem cargo promovido — bloqueia downgrade automático vindo de registro antigo de turma
+                        winnerRole = localU;
+                    } else if (exRoleTs > locRoleTs && exTipo) {
+                        winnerRole = existing;
+                    } else if (locRoleTs > exRoleTs && locTipo) {
+                        winnerRole = localU;
+                    }
+
+                    if (winnerRole && winnerRole.tipoAcesso) {
+                        merged.tipoAcesso = winnerRole.tipoAcesso;
+                        merged.subclasse = winnerRole.subclasse !== undefined ? winnerRole.subclasse : merged.subclasse;
+                        if (Array.isArray(winnerRole.abasLiberadas) && winnerRole.abasLiberadas.length > 0) {
+                            merged.abasLiberadas = [...winnerRole.abasLiberadas];
+                        }
+                        if (winnerRole.gestorMatricula !== undefined) merged.gestorMatricula = winnerRole.gestorMatricula;
+                        if (winnerRole.cargo !== undefined) merged.cargo = winnerRole.cargo;
+                    }
+                    const maxRoleTs = Math.max(exExplicitRoleTs, locExplicitRoleTs);
+                    if (maxRoleTs > 0) merged.roleUpdatedAt = maxRoleTs;
+                    if (merged.tipoAcesso && merged.tipoAcesso !== 'Operador') {
+                        merged.turmaId = null;
+                        merged.turmaNumero = null;
+                        if (String(merged.cargo || '').toLowerCase().includes('operador')) {
+                            merged.cargo = null;
+                        }
+                    }
                     const exFotoTs = Number(existing?.fotoUpdatedAt || 0);
                     const locFotoTs = Number(localU?.fotoUpdatedAt || 0);
                     if (!localU.foto && existing.foto) {
@@ -1679,7 +1733,7 @@ storage: {
                     }
 
                     const isAuthPayload = payload.senha !== undefined || payload.primeiroAcesso !== undefined;
-                    const isStructurePayload = payload.tipoAcesso !== undefined || payload.cargo !== undefined || payload.subclasse !== undefined || payload.abasLiberadas !== undefined || payload.gestorMatricula !== undefined || payload.turmaId !== undefined || payload.operacoes !== undefined || payload.nome !== undefined;
+                    const isStructurePayload = payload.tipoAcesso !== undefined || payload.cargo !== undefined || payload.subclasse !== undefined || payload.abasLiberadas !== undefined || payload.gestorMatricula !== undefined || payload.turmaId !== undefined || payload.turmaNumero !== undefined || payload.roleUpdatedAt !== undefined || payload.operacoes !== undefined || payload.nome !== undefined;
                     const isProfileSyncPayload = isAuthPayload || isStructurePayload || payload.foto !== undefined || payload.fotoUpdatedAt !== undefined;
                     let idx = -1;
                     (app.users || []).forEach((u, i) => {
@@ -7074,7 +7128,7 @@ storage: {
                 );
             },
 
-            sincronizarLoginsAlunosTurma(t) {
+            sincronizarLoginsAlunosTurma(t, persistirNaNuvem = true) {
                 if (!t || t.tipoTurma === 'reciclagem' || !Array.isArray(t.colaboradores) || t.colaboradores.length === 0) return;
                 if (!Array.isArray(app.users)) app.users = [];
 
@@ -7095,23 +7149,27 @@ storage: {
                     const existingIdx = app.users.findIndex(u => String(u.matricula || '').trim().toUpperCase() === mat);
                     if (existingIdx > -1) {
                         const u = app.users[existingIdx];
-                        if (!u.tipoAcesso || u.tipoAcesso === 'Operador') {
-                            u.tipoAcesso = 'Operador';
-                            u.cargo = 'Operador em Treinamento';
-                            u.subclasse = null;
-                            u.turmaId = t.id;
-                            u.turmaNumero = t.numeroTurma || '';
-                            u.turmaTreinadorMatricula = t.treinadorMatricula || '';
-                            u.turmaTreinadorNome = t.treinadorNome || '';
-                            if (!Array.isArray(u.abasLiberadas) || u.abasLiberadas.length === 0) {
-                                u.abasLiberadas = ['pesquisa_treinamento'];
+                        const tipoAtual = String(u.tipoAcesso || '').trim();
+                        if (!tipoAtual || tipoAtual === 'Operador') {
+                            const jaVinculado = u.tipoAcesso === 'Operador' && u.turmaId === t.id && u.cargo === 'Operador em Treinamento';
+                            if (!jaVinculado) {
+                                u.tipoAcesso = 'Operador';
+                                u.cargo = 'Operador em Treinamento';
+                                u.subclasse = null;
+                                u.turmaId = t.id;
+                                u.turmaNumero = t.numeroTurma || '';
+                                u.turmaTreinadorMatricula = t.treinadorMatricula || '';
+                                u.turmaTreinadorNome = t.treinadorNome || '';
+                                if (!Array.isArray(u.abasLiberadas) || u.abasLiberadas.length === 0) {
+                                    u.abasLiberadas = ['pesquisa_treinamento'];
+                                }
+                                usersModificados = true;
                             }
-                            usersModificados = true;
+                            if (rawCpf && !u.cpf) { u.cpf = rawCpf; usersModificados = true; }
+                            if (!Array.isArray(u.operacoes)) u.operacoes = [];
+                            if (t.operacao && !u.operacoes.includes(t.operacao)) { u.operacoes.push(t.operacao); usersModificados = true; }
                         }
-                        if (rawCpf && !u.cpf) { u.cpf = rawCpf; usersModificados = true; }
-                        if (!Array.isArray(u.operacoes)) u.operacoes = [];
-                        if (t.operacao && !u.operacoes.includes(t.operacao)) { u.operacoes.push(t.operacao); usersModificados = true; }
-                    } else {
+                    } else if (persistirNaNuvem) {
                         app.users.push({
                             matricula: mat,
                             nome: nome || ('OPERADOR ' + mat),
@@ -7140,7 +7198,7 @@ storage: {
                     }
                 });
 
-                if (usersModificados) {
+                if (usersModificados && persistirNaNuvem) {
                     app.storage.saveUsers();
                 }
             },
@@ -7149,7 +7207,8 @@ storage: {
                 if (!app.turmasTreinamentoList || typeof app.turmasTreinamentoList !== 'object') return;
                 const turmas = Object.values(app.turmasTreinamentoList).filter(t => t && t.id);
                 turmas.forEach(t => {
-                    this.sincronizarLoginsAlunosTurma(t);
+                    // No boot/hidratação, apenas refina em memória sem reescrever app.users na nuvem
+                    this.sincronizarLoginsAlunosTurma(t, false);
                 });
             },
 
@@ -13585,7 +13644,7 @@ storage: {
                     }
                     
                     // Operadores na pesquisa CSAT não precisam aceitar nenhum termo jurídico — vão direto ao portal/pesquisa com aviso de anonimato e sinceridade
-                    if (u.tipoAcesso === 'Operador' || u.cargo === 'Operador em Treinamento') {
+                    if (app.isUserOperador(u)) {
                         app.ui.showApp();
                         return;
                     }
@@ -16024,7 +16083,8 @@ storage: {
                 getEffectiveUserTabs(user) {
                     if (!user) return [];
                     // Operadores criados pelas turmas têm acesso exclusivo à aba de pesquisa de satisfação
-                    if (user && (user.turmaId || (user.tipoAcesso === 'Operador' && user.cargo === 'Operador em Treinamento'))) {
+                    const tipoExplicit = String(user.tipoAcesso || '').trim();
+                    if ((!tipoExplicit || tipoExplicit === 'Operador') && (user.turmaId || user.turmaNumero || user.cargo === 'Operador em Treinamento')) {
                         return ['pesquisa_treinamento'];
                     }
                     const presets = this.getPresetsGruposAcesso();
@@ -16035,7 +16095,7 @@ storage: {
                         : [...presetTabs];
                     if (!savedTabs.includes('home')) savedTabs.unshift('home');
                     // Operador vinculado a turma tem acesso garantido à aba de pesquisa CSAT
-                    if (user && (user.turmaId || user.tipoAcesso === 'Operador')) {
+                    if (!tipoExplicit || tipoExplicit === 'Operador') {
                         if (!savedTabs.includes('pesquisa_treinamento')) {
                             savedTabs.push('pesquisa_treinamento');
                         }
@@ -16136,11 +16196,14 @@ storage: {
                     } else {
                         alvo.cargo = null;
                         alvo.turmaId = null;
+                        alvo.turmaNumero = null;
                         alvo.abasLiberadas = [...(presets[novoGrupo] || [])];
                     }
                     if (novoGrupo === 'Gerente' || novoGrupo === 'Gestor') {
                         alvo.gestorMatricula = null;
                     }
+                    const nowRoleTs = Date.now();
+                    alvo.roleUpdatedAt = nowRoleTs;
                     alvo.atualizadoEm = new Date().toISOString();
 
                     if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
@@ -16161,8 +16224,10 @@ storage: {
                         subclasse: alvo.subclasse || null,
                         cargo: alvo.cargo || null,
                         turmaId: alvo.turmaId || null,
+                        turmaNumero: alvo.turmaNumero || null,
                         abasLiberadas: alvo.abasLiberadas,
                         gestorMatricula: alvo.gestorMatricula || null,
+                        roleUpdatedAt: nowRoleTs,
                         atualizadoEm: alvo.atualizadoEm
                     }).then(() => {
                         this._refreshSpanOrHierarquiaInPlace();
@@ -17829,7 +17894,7 @@ storage: {
                     app.notifications.checkDailySchedule();
                     
                     // Perfil Operador: Interface 100% limpa (sem seletor de mês global ou menus externos)
-                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    const isOpUser = !app.isAdmin && app.currentUser && app.isUserOperador(app.currentUser);
                     const gmContainer = document.getElementById('global-month')?.parentElement;
                     if (gmContainer) {
                         if (isOpUser) gmContainer.classList.add('hidden');
@@ -18116,7 +18181,7 @@ storage: {
                 checkGtdTutorialAutoShow() {
                     if (window.__TEST_MODE__ || app.isGuest) return;
                     if (!app.isAdmin && !app.currentUser) return;
-                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    const isOpUser = !app.isAdmin && app.currentUser && app.isUserOperador(app.currentUser);
                     if (isOpUser) return;
                     if (!app.isAdmin && app.currentUser) {
                         const allowed = this.getEffectiveUserTabs(app.currentUser);
@@ -19103,7 +19168,7 @@ storage: {
                     }
 
                     // Operador: Tela 100% limpa sem nenhuma aba superior
-                    const isOpUser = !app.isAdmin && app.currentUser && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                    const isOpUser = !app.isAdmin && app.currentUser && app.isUserOperador(app.currentUser);
                     if (isOpUser) {
                         nav.innerHTML = '';
                         nav.classList.add('hidden');
@@ -26885,7 +26950,7 @@ storage: {
         renderView_PesquisaTreinamento(viewDiv) {
             const u = app.currentUser;
             const isDev = app.isAdmin || (u && u.tipoAcesso === 'Dev');
-            const isOp = u && (u.tipoAcesso === 'Operador' || u.cargo === 'Operador em Treinamento');
+            const isOp = Boolean(u && app.isUserOperador(u));
             const turmas = Object.values(app.turmasTreinamentoList || {}).filter(t => t && t.id);
 
             // Se o Desenvolvedor (DEV) está em modo de teste em uma turma selecionada
@@ -29764,6 +29829,7 @@ storage: {
                     } else {
                         u.cargo = null;
                         u.turmaId = null;
+                        u.turmaNumero = null;
                         u.subclasse = novoCargo === 'Treinamento' ? (u.subclasse || 'Instrutor') : null;
                         if (presets[novoCargo]) {
                             u.abasLiberadas = [...presets[novoCargo]];
@@ -29772,6 +29838,8 @@ storage: {
                     if (novoCargo === 'Gerente' || novoCargo === 'Gestor') {
                         u.gestorMatricula = null;
                     }
+                    const nowRoleTs = Date.now();
+                    u.roleUpdatedAt = nowRoleTs;
                     u.atualizadoEm = new Date().toISOString();
                     app.ui._refreshSpanOrHierarquiaInPlace();
                     app.storage.saveUserByMatricula(u.matricula, {
@@ -29779,8 +29847,10 @@ storage: {
                         subclasse: u.subclasse || null,
                         cargo: u.cargo || null,
                         turmaId: u.turmaId || null,
+                        turmaNumero: u.turmaNumero || null,
                         abasLiberadas: u.abasLiberadas,
                         gestorMatricula: u.gestorMatricula || null,
+                        roleUpdatedAt: nowRoleTs,
                         atualizadoEm: u.atualizadoEm
                     }).then(() => {
                         if (app.ui && app.ui.showToast) app.ui.showToast(`Cargo de ${u.nome} alterado para ${novoCargo}!`, "success");
@@ -30054,6 +30124,7 @@ storage: {
                         } else {
                             u.cargo = null;
                             u.turmaId = null;
+                            u.turmaNumero = null;
                             const presets = this.getPresetsGruposAcesso();
                             if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
                         }
@@ -30065,6 +30136,8 @@ storage: {
                         u.subclasse = null;
                     }
                     u.gestorMatricula = (novoCargo === 'Gerente' || novoCargo === 'Gestor') ? null : (novoGestor || null);
+                    const nowRoleTs = Date.now();
+                    u.roleUpdatedAt = nowRoleTs;
                     u.atualizadoEm = new Date().toISOString();
                     if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
                         app.currentUser = u;
@@ -30085,9 +30158,11 @@ storage: {
                         tipoAcesso: u.tipoAcesso,
                         cargo: u.cargo || null,
                         turmaId: u.turmaId || null,
+                        turmaNumero: u.turmaNumero || null,
                         abasLiberadas: u.abasLiberadas,
                         subclasse: u.subclasse || null,
                         gestorMatricula: u.gestorMatricula || null,
+                        roleUpdatedAt: nowRoleTs,
                         atualizadoEm: u.atualizadoEm
                     }).then(() => {
                         if (app.ui && app.ui.showToast) app.ui.showToast(`Cargo de ${u.nome} salvo na nuvem!`, "success");
@@ -50141,10 +50216,13 @@ storage: {
                         } else {
                             app.users[idx].cargo = null;
                             app.users[idx].turmaId = null;
+                            app.users[idx].turmaNumero = null;
                         }
                         if (tipoAcesso === 'Gerente' || tipoAcesso === 'Gestor') {
                             app.users[idx].gestorMatricula = null;
                         }
+                        const nowRoleTs = Date.now();
+                        app.users[idx].roleUpdatedAt = nowRoleTs;
                         app.users[idx].atualizadoEm = new Date().toISOString();
                         if(pwd) {
                             app.users[idx].senha = app.utils.encryptPassword(pwd);
@@ -50204,6 +50282,8 @@ storage: {
                                     subclasse: subclasse || null,
                                     cargo: app.users[idx].cargo || null,
                                     turmaId: app.users[idx].turmaId || null,
+                                    turmaNumero: app.users[idx].turmaNumero || null,
+                                    roleUpdatedAt: nowRoleTs,
                                     gestorMatricula: app.users[idx].gestorMatricula || null,
                                     operacoes,
                                     abasLiberadas,
@@ -58953,7 +59033,7 @@ Object.assign(app.ui, {
                             this.stopGtdFloatingTimerMemoryOnly();
                             return;
                         }
-                        const isOpUser = !app.isAdmin && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                        const isOpUser = !app.isAdmin && app.isUserOperador(app.currentUser);
                         if (isOpUser) {
                             this.stopGtdFloatingTimerMemoryOnly();
                             return;
@@ -58972,7 +59052,7 @@ Object.assign(app.ui, {
                     syncGtdFloatingTimer() {
                         const loginView = document.getElementById('view-login');
                         const isLoginVisible = loginView && !loginView.classList.contains('hidden');
-                        const isOpUser = app.currentUser && !app.isAdmin && (app.currentUser.tipoAcesso === 'Operador' || app.currentUser.cargo === 'Operador em Treinamento');
+                        const isOpUser = app.currentUser && !app.isAdmin && app.isUserOperador(app.currentUser);
                         const focus = app.currentUser ? this.getGtdFocusState() : null;
                         const shouldShow = !!(
                             app.currentUser &&
