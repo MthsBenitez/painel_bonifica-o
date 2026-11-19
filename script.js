@@ -19411,6 +19411,12 @@ storage: {
                     if (app.notifications && typeof app.notifications.checkTaskReminders === 'function') {
                         app.notifications.checkTaskReminders(false);
                     }
+                    const mainShell = document.getElementById('main-content-shell');
+                    if (mainShell) {
+                        mainShell.className = (tabId === 'hierarquia' || tabId === 'gestao_equipe')
+                            ? 'w-full max-w-none mx-0 px-2 py-4 relative z-10 flex-1'
+                            : 'max-w-[1920px] w-[98%] mx-auto px-2 sm:px-4 lg:px-6 py-8 w-full relative z-10 flex-1';
+                    }
                     const mainContainer = document.getElementById('content-container');
                     
                     // Remove abas inativas do DOM para liberar memória e evitar peso com milhares de elementos ocultos
@@ -33919,7 +33925,7 @@ storage: {
                     ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5 tabular-nums">${r.count}</span></button>`).join('');
 
                     container.innerHTML = `
-                        <div class="space-y-5 animate-fade-in max-w-7xl mx-auto">
+                        <div class="space-y-4 animate-fade-in w-full max-w-none">
                             <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                                 <div>
                                     <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Equipe, Hierarquia & Span</h2>
@@ -48975,7 +48981,7 @@ storage: {
                 exportarAnalisePDF() {
                     document.getElementById('global-modal')?.classList.add('hidden');
                     if (app.ui && typeof app.ui.showToast === 'function') {
-                        app.ui.showToast("Preparando PDF Vertical em alta definição...", 4000);
+                        app.ui.showToast("Preparando PDF Vertical em alta definição...", 'info', 1100);
                     }
 
                     const oldMode = !!app.ui.analiseEditMode;
@@ -49082,7 +49088,7 @@ storage: {
                                 .pdf-clean-mode .md\\:h-\\[400px\\] { height: 400px !important; }
                                 .pdf-clean-mode .md\\:h-\\[420px\\] { height: 420px !important; }
                                 .pdf-clean-mode .scroll-reveal-card, .pdf-clean-mode .reveal-item, .scroll-reveal-card, .reveal-item { opacity: 1 !important; transform: none !important; visibility: visible !important; transition: none !important; }
-                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .btn-hide-chapter, #btn-sair-apresentacao, #particles-js, #story-dynamic-bg, header, nav, aside, #global-modal, #toast-container, #command-palette-modal { display: none !important; }
+                                .pdf-clean-mode button, .pdf-clean-mode input[type="file"], .pdf-clean-mode input[type="color"], .pdf-clean-mode .btn-hide-chapter, #btn-sair-apresentacao, #particles-js, #story-dynamic-bg, header, nav, aside, #global-modal, #toast-container, #soft-toast-stack, #undo-toast-container, #gtd-floating-timer, #rec-ping-floating, #legendary-overlay, #command-palette-modal { display: none !important; opacity: 0 !important; visibility: hidden !important; }
                                 .pdf-clean-mode .overflow-x-auto, .pdf-clean-mode .overflow-y-auto, .pdf-clean-mode .custom-scrollbar, .pdf-clean-mode details, .pdf-clean-mode [class*="max-h-"] { overflow: visible !important; max-height: none !important; }
                                 .pdf-clean-mode .chapter-marker {
                                     margin-top: 24px !important;
@@ -49181,6 +49187,8 @@ storage: {
                                 }
                             };
 
+                            const toastStack = document.getElementById('soft-toast-stack');
+                            if (toastStack) toastStack.innerHTML = '';
                             window.addEventListener('afterprint', cleanup, { once: true });
                             requestAnimationFrame(() => {
                                 window.print();
