@@ -615,7 +615,7 @@ storage: {
                 syncCloudFromServer(silent = true) {
                     if (window.__TEST_MODE__ || this._syncingCloudNow) return Promise.resolve();
                     this._syncingCloudNow = true;
-                    const syncKeys = ['config', 'users', 'operacoes', 'notifications', 'diario_bordo', 'turmas_treinamento', 'harmonyDeploy', 'harmonyChecklist'];
+                    const syncKeys = ['config', 'users', 'operacoes', 'notifications', 'diario_bordo', 'turmas_treinamento', 'harmonyDeploy', 'harmonyChecklist', 'apresentacoes'];
                     return Promise.all(
                         syncKeys.map(k =>
                             this._fetchFirebaseNodeFast('sistema_bonificacao/' + k, 400, 15000).then(res => ({
@@ -1128,7 +1128,9 @@ storage: {
                         'dashboard_adm': ['visaoGeralData', 'monitorias', 'anatel'],
                         'meu_painel': ['monitorias', 'visaoGeralData'],
                         'analise_csv_dinamico': ['apresentacoes'],
+                        'qualidade_treinamento': ['apresentacoes'],
                         'bi_banco_horas': ['biBancoHoras'],
+                        'pdca_teste': ['apresentacoes', 'actions', 'diarioBordo'],
                         'treinamentos': ['softlingo', 'softlingo_temas', 'csatNpsProvas', 'fcrProvas'],
                         'pesquisa_treinamento': ['turmas_treinamento', 'csatNpsProvas']
                     };
@@ -2065,6 +2067,58 @@ storage: {
                     }
                     return this._writeFirebaseNodeFast('sistema_bonificacao/apresentacoes', app.apresentacoesList || {}, 'PUT');
                 },
+                saveApresentacaoShareMeta(singleId, metaPatch) {
+                    if (!singleId || !metaPatch || typeof metaPatch !== 'object') return Promise.resolve();
+                    this.invalidateCoreCache();
+                    const sanitized = this.sanitizeFirebaseObject(metaPatch);
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/apresentacoes/' + singleId, sanitized, 'PATCH', 15000);
+                },
+                refreshApresentacoesFromCloud(force = false) {
+                    if (window.__TEST_MODE__ || this._refreshingAprNow) return Promise.resolve();
+                    const now = Date.now();
+                    if (!force && this._lastAprRefreshTs && (now - this._lastAprRefreshTs) < 20000) {
+                        return Promise.resolve();
+                    }
+                    this._refreshingAprNow = true;
+                    return this._fetchFirebaseNodeFast('sistema_bonificacao/apresentacoes', 350, 15000).then(res => {
+                        if (!res || !res.ok || !res.val || typeof res.val !== 'object') return;
+                        const prevMap = app.apresentacoesList || {};
+                        const nextMap = res.val || {};
+                        const prevKeys = Object.keys(prevMap);
+                        const nextKeys = Object.keys(nextMap);
+                        let changed = prevKeys.length !== nextKeys.length;
+                        if (!changed) {
+                            changed = nextKeys.some(k => {
+                                const a = prevMap[k];
+                                const b = nextMap[k];
+                                if (!a || !b) return true;
+                                return (a.atualizadoEm !== b.atualizadoEm)
+                                    || (a.timestamp !== b.timestamp)
+                                    || (a.setor !== b.setor)
+                                    || (a.retroalimentarQT !== b.retroalimentarQT)
+                                    || ((a.allowedUsers || []).length !== (b.allowedUsers || []).length);
+                            });
+                        }
+                        app.apresentacoesList = nextMap;
+                        this._lastAprRefreshTs = Date.now();
+                        if (changed) {
+                            if (app.currentTab === 'analise_csv_dinamico') {
+                                if (app.admin && typeof app.admin.filtrarPastasApresentacoesDOM === 'function' && document.getElementById('pastas-apresentacoes-grid')) {
+                                    app.admin.filtrarPastasApresentacoesDOM();
+                                } else if (app.ui) {
+                                    app.ui.renderTab('analise_csv_dinamico', true);
+                                }
+                            } else if (app.currentTab === 'qualidade_treinamento' && app.ui) {
+                                app.ui.renderTab('qualidade_treinamento', true);
+                            }
+                        }
+                        if (force && app.ui && app.ui.showToast) {
+                            app.ui.showToast("Lista de apresentações sincronizada da nuvem!", "success");
+                        }
+                    }).catch(() => {}).finally(() => {
+                        this._refreshingAprNow = false;
+                    });
+                },
                 saveEstoque() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/estoque', app.estoqueItems || {}, 'PUT'); },
                 saveEstoqueLogs() { this.invalidateCoreCache(); return this._writeFirebaseNodeFast('sistema_bonificacao/estoqueLogs', app.estoqueLogs || {}, 'PUT'); },
                 saveImpressoes(singleId = null) {
@@ -2286,7 +2340,7 @@ storage: {
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
-                if (tabId === 'bi_banco_horas') {
+                if (tabId === 'bi_banco_horas' || tabId === 'pdca_teste') {
                     return this.isAdmin || tipo === 'Dev';
                 }
                 if (tabId === 'faltas_integracao') {
@@ -16013,7 +16067,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'faltas_integracao', label:'Faltas na Integração'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -16066,9 +16120,10 @@ storage: {
                             if (!base.includes('treinamentos')) base.push('treinamentos');
                         }
                         if (g !== 'Dev') {
-                            base = base.filter(id => id !== 'bi_banco_horas');
-                        } else if (!base.includes('bi_banco_horas')) {
-                            base.push('bi_banco_horas');
+                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
+                        } else {
+                            if (!base.includes('bi_banco_horas')) base.push('bi_banco_horas');
+                            if (!base.includes('pdca_teste')) base.push('pdca_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
                             base = base.filter(id => id !== 'faltas_integracao');
@@ -16151,11 +16206,12 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni', 'faltas_integracao'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         if (tipo !== 'Dev') {
-                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas');
-                        } else if (!savedTabs.includes('bi_banco_horas')) {
-                            savedTabs.push('bi_banco_horas');
+                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
+                        } else {
+                            if (!savedTabs.includes('bi_banco_horas')) savedTabs.push('bi_banco_horas');
+                            if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(tipo)) {
                             savedTabs = savedTabs.filter(id => id !== 'faltas_integracao');
@@ -16165,13 +16221,13 @@ storage: {
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) {
                             const merged = [...new Set([...savedTabs, ...presetTabs])];
-                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas');
+                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
                         }
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
-                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'faltas_integracao');
-                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'faltas_integracao'))];
+                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao');
+                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao'))];
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
@@ -19194,7 +19250,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'apresentacao_dental_uni', 'faltas_integracao'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -19463,6 +19519,13 @@ storage: {
                             else if(tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps') this.renderView_Treinamentos(viewDiv);
                             else if(tabId === 'teste_duolingo') this.renderView_TesteDuolingo(viewDiv);
                             else if(tabId === 'bi_banco_horas') this.renderView_BIBancoHoras(viewDiv);
+                            else if(tabId === 'pdca_teste') {
+                                if (!app.hasAdminAccess('pdca_teste')) {
+                                    viewDiv.innerHTML = '<div class="max-w-xl mx-auto mt-16 p-8 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-rose-200/60 text-center"><i class="fa-solid fa-shield-halved text-3xl text-rose-500 mb-3"></i><h3 class="text-lg font-black text-slate-800 dark:text-white">Acesso restrito ao perfil Dev</h3><p class="text-xs text-slate-500 mt-1">Esta aba experimental está liberada exclusivamente para desenvolvedores.</p></div>';
+                                } else if (app.pdcaTeste) {
+                                    app.pdcaTeste.renderView(viewDiv);
+                                }
+                            }
                             else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
@@ -19507,9 +19570,15 @@ storage: {
                             else if(tabId === 'laudos_estudos') this.renderView_LaudosEstudos(viewDiv);
                             else if(tabId === 'dashboard_estudos') this.renderView_DashboardEstudos(viewDiv);
                             else if(tabId === 'pesquisas_anatel') this.renderView_PesquisasAnatel(viewDiv);
-                            else if(tabId === 'analise_csv_dinamico') this.renderView_AnaliseCSVDinamico(viewDiv);
+                            else if(tabId === 'analise_csv_dinamico') {
+                                this.renderView_AnaliseCSVDinamico(viewDiv);
+                                if (app.storage && typeof app.storage.refreshApresentacoesFromCloud === 'function') app.storage.refreshApresentacoesFromCloud(false);
+                            }
                             else if(tabId === 'apresentacao_dental_uni') this.renderView_ApresentacaoDentalUni(viewDiv);
-                            else if(tabId === 'qualidade_treinamento') this.renderView_QualidadeTreinamento(viewDiv);
+                            else if(tabId === 'qualidade_treinamento') {
+                                this.renderView_QualidadeTreinamento(viewDiv);
+                                if (app.storage && typeof app.storage.refreshApresentacoesFromCloud === 'function') app.storage.refreshApresentacoesFromCloud(false);
+                            }
                             else if(tabId === 'pesquisa_treinamento') this.renderView_PesquisaTreinamento(viewDiv);
                             else if(tabId === 'diario_bordo') this.renderView_DiarioBordo(viewDiv);
                             else if(tabId === 'controle_estoque') this.renderView_ControleEstoque(viewDiv);
@@ -48371,16 +48440,29 @@ storage: {
                     const sugestaoRaw = (data.consolidado?.infoOperacao || '').replace('Filtro Ativo: ', '').trim();
                     const sugestaoNome = (sugestaoRaw && sugestaoRaw !== 'Visão Consolidada (Geral)') ? sugestaoRaw : (data.consolidado?.customTitle || '');
 
-                    // Coleta setores conhecidos do sistema e das apresentações salvas
+                    // Coleta operações existentes no sistema (RH/Span + Diário + Apresentações salvas)
                     const setoresSet = new Set();
+                    if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
+                        (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => {
+                            if (op) setoresSet.add(String(op).trim());
+                        });
+                    }
                     if (app.getOperacoesSetoriais) {
-                        (app.getOperacoesSetoriais() || []).forEach(s => { if (s) setoresSet.add(String(s).trim()); });
+                        (app.getOperacoesSetoriais() || []).forEach(s => {
+                            const nm = typeof s === 'string' ? s : s?.nome;
+                            if (nm) setoresSet.add(String(nm).trim());
+                        });
                     }
                     Object.values(app.apresentacoesList || {}).forEach(a => {
-                        if (a.setor) setoresSet.add(String(a.setor).trim());
-                        else if (a.pasta) setoresSet.add(String(a.pasta).trim());
+                        if (a?.operacao) setoresSet.add(String(a.operacao).trim());
+                        if (a?.setor) setoresSet.add(String(a.setor).trim());
+                        else if (a?.pasta) setoresSet.add(String(a.pasta).trim());
                     });
-                    const setoresConhecidos = Array.from(setoresSet).sort();
+                    const setoresConhecidos = Array.from(setoresSet).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+                    const normOpTxt = (v) => String(v || '').trim().toUpperCase();
+                    const operacaoMatchInicial = setoresConhecidos.find(s => normOpTxt(s) === normOpTxt(sugestaoNome))
+                        || setoresConhecidos.find(s => sugestaoNome && (normOpTxt(sugestaoNome).includes(normOpTxt(s)) || normOpTxt(s).includes(normOpTxt(sugestaoNome))))
+                        || '';
 
                     // Separa usuários de Qualidade e de Treinamento
                     const todosUsuarios = app.users || [];
@@ -48422,24 +48504,26 @@ storage: {
                         <div class="space-y-4 max-h-[68vh] overflow-y-auto pr-1 custom-scrollbar">
                             <div class="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                                 <div class="md:col-span-6">
-                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">1. Setor / Operação Alvo *</label>
-                                    <input type="text" id="save-apres-op" list="save-apres-setores-datalist" oninput="app.admin.autoMarkEquipePorSetor(this.value)" value="${sugestaoNome}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white" placeholder="Ex: SAC, Retenção, Vendas, Cobrança...">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">1. Operação Existente Vinculada *</label>
+                                    <select id="save-apres-operacao" onchange="const v = this.value; const opInp = document.getElementById('save-apres-op'); if(v && opInp && !opInp.dataset.edited) { opInp.value = v; } if(v) app.admin.autoMarkEquipePorSetor(v);" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
+                                        <option value="">-- Selecione uma operação cadastrada --</option>
+                                        ${setoresConhecidos.map(s => `<option value="${String(s).replace(/"/g, '&quot;')}" ${normOpTxt(s) === normOpTxt(operacaoMatchInicial) ? 'selected' : ''}>${s}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="md:col-span-6">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Pasta / Rótulo da Apresentação *</label>
+                                    <input type="text" id="save-apres-op" list="save-apres-setores-datalist" oninput="this.dataset.edited='1'; app.admin.autoMarkEquipePorSetor(this.value)" value="${sugestaoNome || operacaoMatchInicial}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white" placeholder="Ex: SAC, Retenção, WEPINK...">
                                     <datalist id="save-apres-setores-datalist">
                                         ${setoresConhecidos.map(s => `<option value="${s}">`).join('')}
                                     </datalist>
-                                    ${setoresConhecidos.length > 0 ? `
-                                    <div class="flex flex-wrap gap-1 mt-1.5">
-                                        <span class="text-[9px] font-bold text-slate-400 self-center mr-1">Setores rápidos:</span>
-                                        ${setoresConhecidos.slice(0, 8).map(s => `<button type="button" onclick="const inp = document.getElementById('save-apres-op'); inp.value = '${s.replace(/'/g, "\\'")}'; app.admin.autoMarkEquipePorSetor(inp.value);" class="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-colors">${s}</button>`).join('')}
-                                    </div>` : ''}
                                 </div>
-                                <div class="md:col-span-3">
+                                <div class="md:col-span-6">
                                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Mês de Referência *</label>
                                     <select id="save-apres-mes" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${mesesLista.map((m, i) => `<option value="${m}" ${i === mesAtualNum ? 'selected' : ''}>${m}</option>`).join('')}
                                     </select>
                                 </div>
-                                <div class="md:col-span-3">
+                                <div class="md:col-span-6">
                                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Ano *</label>
                                     <select id="save-apres-ano" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${anosDisponiveis.map(a => `<option value="${a}">${a}</option>`).join('')}
@@ -48536,18 +48620,21 @@ storage: {
                             const id = 'apr_' + Date.now();
 
                             // Verifica se veio do modal de arquivamento ou do clique direto
+                            const opSelect = document.getElementById('save-apres-operacao');
                             const opInput = document.getElementById('save-apres-op');
                             const mesInput = document.getElementById('save-apres-mes');
                             const anoInput = document.getElementById('save-apres-ano');
                             const retroInput = document.getElementById('save-apres-retro-qt');
                             
+                            const operacaoVinculada = opSelect && opSelect.value ? opSelect.value.trim() : '';
                             const customOp = opInput && opInput.value ? opInput.value.trim() : '';
                             const customMes = mesInput ? mesInput.value : '';
                             const customAno = anoInput ? anoInput.value : '';
                             const retroalimentarQT = retroInput ? !!retroInput.checked : true;
 
                             const nome = (customMes && customAno) ? `${customMes}/${customAno}` : `${app.ui.formatMonthLabel(app.currentMonth)}`;
-                            const pasta = customOp || app.analiseCSVDinamicoData.consolidado.customTitle || 'Geral';
+                            const pasta = customOp || operacaoVinculada || app.analiseCSVDinamicoData.consolidado.customTitle || 'Geral';
+                            const operacaoFinal = operacaoVinculada || pasta;
 
                             // Congela snapshot de Tempo de Casa (RH) dentro do consolidado para que a aba Qualidade & Treinamento saiba quem está ativo
                             if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
@@ -48613,6 +48700,7 @@ storage: {
                                 nome: nome,
                                 pasta: pasta,
                                 setor: pasta,
+                                operacao: operacaoFinal,
                                 mesRef: customMes || '',
                                 anoRef: customAno || '',
                                 retroalimentarQT: retroalimentarQT,
@@ -48845,6 +48933,7 @@ storage: {
                                     <td class="p-3.5 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${idEsc}')">
                                         <div class="flex items-center gap-1.5 flex-wrap">
                                             <span class="text-sm font-extrabold text-slate-800 dark:text-white hover:text-blue-600 transition">${esc(apr.nome || 'Sem nome')}</span>
+                                            ${apr.operacao ? `<span class="bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-sky-200 dark:border-sky-800">${esc(apr.operacao)}</span>` : ''}
                                             ${isAtiva ? `<span class="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-black uppercase">ABERTA</span>` : ''}
                                             ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-emerald-200 dark:border-emerald-700">MEU PROJETO</span>` : ''}
                                             ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700">Q&T</span>` : ''}
@@ -48924,6 +49013,7 @@ storage: {
                                         <div class="flex-1 min-w-0 pr-3 cursor-pointer" onclick="app.admin.loadApresentacaoFromDB('${idEsc}')">
                                             <div class="text-sm font-bold text-slate-700 dark:text-slate-200 truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5 flex-wrap">
                                                 <span class="truncate">${esc(apr.nome || 'Sem nome')}</span>
+                                                ${apr.operacao ? `<span class="bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-sky-200 dark:border-sky-800 shrink-0">${esc(apr.operacao)}</span>` : ''}
                                                 ${isAtiva ? `<span class="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide shrink-0">ABERTA</span>` : ''}
                                                 ${isAutor ? `<span class="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide border border-emerald-200 dark:border-emerald-700 shrink-0">MEU PROJETO</span>` : ''}
                                                 ${apr.retroalimentarQT !== false ? `<span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[9px] px-1.5 py-0.5 rounded font-black border border-indigo-200 dark:border-indigo-700 shrink-0" title="Retroalimenta a aba Qualidade & Treinamento"><i class="fa-solid fa-arrows-spin mr-0.5"></i>Q&T</span>` : ''}
@@ -48973,6 +49063,9 @@ storage: {
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <span id="apr-nuvem-count" class="text-xs font-bold text-slate-500 dark:text-slate-400 tabular-nums">${countTxt}</span>
+                                        <button type="button" onclick="app.storage && app.storage.refreshApresentacoesFromCloud(true)" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-slate-900 dark:hover:bg-blue-950/50 text-slate-600 hover:text-blue-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition cursor-pointer" title="Atualizar lista de apresentações da nuvem agora">
+                                            <i class="fa-solid fa-rotate mr-1"></i>Atualizar
+                                        </button>
                                         <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
                                             <button type="button" onclick="app.admin.setAprNuvemFiltro({ layout: 'pastas' }, true)" class="px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${st.layout === 'pastas' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs' : 'text-slate-400'}" title="Agrupado por Setor">
                                                 <i class="fa-solid fa-grip mr-1"></i>Por Setor
@@ -49025,6 +49118,10 @@ storage: {
                     const respT = (apr.responsaveisTreinamento || []).map(m => String(m).trim().toUpperCase());
                     const criadorMat = String(apr.criadorMatricula || '').trim().toUpperCase();
                     const setorAtual = apr.setor || apr.pasta || '';
+                    const operacaoAtual = apr.operacao || setorAtual || '';
+                    const operacoesExistentes = (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function')
+                        ? app.diarioBordo.getOperacoesDisponiveis()
+                        : [];
                     
                     let userCheckboxes = (app.users || []).map(u => {
                         const uMat = String(u.matricula || '').trim().toUpperCase();
@@ -49056,15 +49153,26 @@ storage: {
                         `;
                     }).join('');
 
+                    const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (v => String(v ?? ''));
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-user-shield text-teal-500"></i> Setor & Permissões de Qualidade e Treinamento`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">Defina o <strong>Setor</strong> e quais analistas de <strong>Qualidade</strong> e <strong>Treinamento</strong> terão acesso a esta apresentação (<strong>${apr.nome}</strong>) tanto na aba de Apresentação quanto no Backoffice Q&T.</p>
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">Defina o <strong>Setor</strong> e quais analistas de <strong>Qualidade</strong> e <strong>Treinamento</strong> terão acesso a esta apresentação (<strong>${esc(apr.nome)}</strong>) tanto na aba de Apresentação quanto no Backoffice Q&T.</p>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
                             <div>
-                                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Setor / Operação Vinculada</label>
-                                <input type="text" id="share-apres-setor" value="${setorAtual}" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-bold dark:text-white outline-none">
+                                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Operação Existente Vinculada</label>
+                                <select id="share-apres-operacao" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-bold dark:text-white outline-none cursor-pointer">
+                                    <option value="">-- Selecione a operação --</option>
+                                    ${operacoesExistentes.map(op => `<option value="${esc(op)}" ${String(op).toUpperCase() === String(operacaoAtual).toUpperCase() ? 'selected' : ''}>${esc(op)}</option>`).join('')}
+                                    ${operacaoAtual && !operacoesExistentes.some(op => String(op).toUpperCase() === String(operacaoAtual).toUpperCase())
+                                        ? `<option value="${esc(operacaoAtual)}" selected>${esc(operacaoAtual)}</option>`
+                                        : ''}
+                                </select>
                             </div>
-                            <div class="flex items-end">
+                            <div>
+                                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Pasta / Setor de Exibição</label>
+                                <input type="text" id="share-apres-setor" value="${esc(setorAtual)}" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-bold dark:text-white outline-none">
+                            </div>
+                            <div class="md:col-span-2 flex items-end">
                                 <label class="flex items-center gap-2 p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 cursor-pointer w-full">
                                     <input type="checkbox" id="share-apres-retro-qt" ${apr.retroalimentarQT !== false ? 'checked' : ''} class="w-4 h-4 accent-indigo-600 rounded">
                                     <span class="text-xs font-bold text-indigo-900 dark:text-indigo-200">Ativo no Backoffice Qualidade & Treinamento</span>
@@ -49088,7 +49196,7 @@ storage: {
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white rounded-xl font-bold text-sm shadow-sm transition-colors">Cancelar</button>
-                        <button onclick="app.admin.saveShareApresentacao('${id}')" class="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Setor e Permissões</button>
+                        <button type="button" onclick="app.admin.saveShareApresentacao('${esc(id)}', this)" class="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all hover:-translate-y-0.5"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Setor e Permissões</button>
                     `;
                     
                     const modalBox = document.querySelector('#global-modal > div');
@@ -49097,24 +49205,25 @@ storage: {
                     document.getElementById('global-modal').classList.remove('hidden');
                 },
 
-                saveShareApresentacao(id) {
+                saveShareApresentacao(id, btnEl = null) {
                     const checkboxes = document.querySelectorAll('.share-user-check:checked');
-                    const allowedUsers = Array.from(checkboxes).map(cb => String(cb.value).trim());
-                    const respQ = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Qualidade"]:checked')).map(cb => String(cb.value).trim());
-                    const respT = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Treinamento"]:checked')).map(cb => String(cb.value).trim());
+                    const allowedUsers = Array.from(checkboxes).map(cb => String(cb.value).trim().toUpperCase()).filter(Boolean);
+                    const respQ = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Qualidade"]:checked')).map(cb => String(cb.value).trim().toUpperCase()).filter(Boolean);
+                    const respT = Array.from(document.querySelectorAll('.share-user-check[data-cargo="Treinamento"]:checked')).map(cb => String(cb.value).trim().toUpperCase()).filter(Boolean);
                     const novoSetorEl = document.getElementById('share-apres-setor');
+                    const novaOperacaoEl = document.getElementById('share-apres-operacao');
                     const retroEl = document.getElementById('share-apres-retro-qt');
                     
                     if (app.apresentacoesList && app.apresentacoesList[id]) {
                         const apr = app.apresentacoesList[id];
                         const allowedSet = new Set(allowedUsers);
 
-                        if (apr.criadorMatricula) allowedSet.add(String(apr.criadorMatricula).trim());
+                        if (apr.criadorMatricula) allowedSet.add(String(apr.criadorMatricula).trim().toUpperCase());
 
                         (app.users || []).forEach(u => {
                             const cargo = String(u.tipoAcesso || '').trim();
                             if (cargo === 'Dev' || cargo === 'Gerente' || cargo === 'Gestor' || cargo === 'Jovem Aprendiz' || u.isAdmin) {
-                                if (u.matricula) allowedSet.add(String(u.matricula).trim());
+                                if (u.matricula) allowedSet.add(String(u.matricula).trim().toUpperCase());
                             }
                         });
 
@@ -49122,18 +49231,51 @@ storage: {
                             apr.setor = novoSetorEl.value.trim();
                             apr.pasta = novoSetorEl.value.trim();
                         }
+                        if (novaOperacaoEl && novaOperacaoEl.value.trim()) {
+                            apr.operacao = novaOperacaoEl.value.trim();
+                        } else if (!apr.operacao) {
+                            apr.operacao = apr.setor || apr.pasta || 'Geral';
+                        }
                         if (retroEl) {
                             apr.retroalimentarQT = !!retroEl.checked;
                         }
                         apr.responsaveisQualidade = respQ;
                         apr.responsaveisTreinamento = respT;
                         apr.allowedUsers = Array.from(allowedSet);
+                        apr.atualizadoEm = new Date().toISOString();
 
-                        app.storage.saveApresentacoes(id).then(() => {
+                        if (btnEl) {
+                            btnEl.disabled = true;
+                            btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Salvando...';
+                        }
+
+                        const metaPatch = {
+                            operacao: apr.operacao || apr.setor || apr.pasta || 'Geral',
+                            setor: apr.setor || apr.pasta || 'Geral',
+                            pasta: apr.pasta || apr.setor || 'Geral',
+                            retroalimentarQT: apr.retroalimentarQT !== false,
+                            responsaveisQualidade: apr.responsaveisQualidade,
+                            responsaveisTreinamento: apr.responsaveisTreinamento,
+                            allowedUsers: apr.allowedUsers,
+                            atualizadoEm: apr.atualizadoEm
+                        };
+
+                        const saveReq = (app.storage && typeof app.storage.saveApresentacaoShareMeta === 'function')
+                            ? app.storage.saveApresentacaoShareMeta(id, metaPatch)
+                            : app.storage.saveApresentacoes(id);
+
+                        saveReq.then(() => {
                             document.getElementById('global-modal').classList.add('hidden');
                             const activeTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
                             app.ui.renderTab(activeTab, true);
-                            app.ui.showAlert("Setor & Permissões Atualizados!", "Os analistas de Qualidade e Treinamento selecionados já possuem acesso restrito a este fechamento.", "success");
+                            app.ui.showAlert("Setor & Permissões Atualizados!", "As permissões foram salvas na nuvem e já ficam disponíveis para os usuários selecionados.", "success");
+                        }).catch(err => {
+                            console.error("Erro ao salvar permissões da apresentação:", err);
+                            if (btnEl) {
+                                btnEl.disabled = false;
+                                btnEl.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Setor e Permissões';
+                            }
+                            app.ui.showAlert("Erro ao Compartilhar", "Não foi possível gravar as permissões na nuvem agora. Verifique sua conexão e tente novamente.", "error");
                         });
                     }
                 },
@@ -58015,280 +58157,266 @@ Object.assign(app.ui, {
                             rapido: { badge: 'REGRA 2m', badgeCls: 'bg-amber-500/20 text-amber-300 border-amber-400/40' }
                         }[focus.phase] || { badge: 'FOCO 25m', badgeCls: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40' };
 
-                        const toneCardCls = {
-                            ideal: 'border-emerald-300 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200',
-                            urgente: 'border-rose-300 dark:border-rose-800/70 bg-rose-50/70 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200',
-                            circunstancial: 'border-amber-300 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200',
-                            equilibrio: 'border-indigo-300 dark:border-indigo-800/70 bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200',
-                            neutral: 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
-                        }[metrics.diagnostico.tone] || '';
+                        const toneDotCls = {
+                            ideal: 'bg-emerald-500 text-emerald-700 dark:text-emerald-300',
+                            urgente: 'bg-rose-500 text-rose-700 dark:text-rose-300',
+                            circunstancial: 'bg-amber-500 text-amber-700 dark:text-amber-300',
+                            equilibrio: 'bg-indigo-500 text-indigo-700 dark:text-indigo-300',
+                            neutral: 'bg-slate-400 text-slate-600 dark:text-slate-300'
+                        }[metrics.diagnostico.tone] || 'bg-slate-400 text-slate-600 dark:text-slate-300';
 
                         container.innerHTML = `
-                            <div class="w-full px-2 sm:px-6 py-6 animate-fade-in space-y-6">
-                                <!-- Cabeçalho Executivo + Cronômetro Contínuo de Foco (25m / 5m / 2m) -->
-                                <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
-                                    <div>
-                                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-2 border border-amber-300/60 dark:border-amber-800/60">
-                                            <i class="fa-solid fa-bullseye"></i> Sincronizado com os Post-its da Página Inicial
+                            <div class="w-full max-w-[1680px] mx-auto px-2 sm:px-6 py-4 animate-fade-in space-y-4">
+                                <!-- Cabeçalho Executivo Neutro + Cronômetro Compacto -->
+                                <div class="rounded-2xl bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <h1 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">Produtividade GTD &amp; Tríade do Tempo</h1>
+                                            <span class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                                <i class="fa-solid fa-arrows-rotate text-[9px]"></i> Home
+                                            </span>
                                         </div>
-                                        <h1 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">
-                                            Produtividade GTD & Tríade do Tempo
-                                        </h1>
-                                        <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                                            Tire tudo da cabeça na Caixa de Entrada, separe o que é Importante do que é Urgente e execute com foco real.
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                            Capture na Caixa de Entrada, equilibre a Tríade (70/20/10) e execute em blocos de foco.
                                         </p>
                                     </div>
 
-                                    <!-- Bloco Guia Rápido + Timer Persistente -->
-                                    <div class="flex flex-wrap items-center gap-3">
-                                        <button type="button" onclick="app.ui.openGtdTutorialModal(0, false)" class="px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 text-xs font-extrabold shadow-xs transition flex items-center gap-2 cursor-pointer" title="Abrir apresentação completa passo a passo sobre GTD, Tríade e esta aba">
-                                            <i class="fa-solid fa-graduation-cap text-sm"></i>
-                                            <span>Tutorial Completo</span>
-                                        </button>
-                                        <button type="button" onclick="app.ui.openEnviarTarefaModal()" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2 cursor-pointer" title="Enviar tarefa para colaboradores com alerta em pop-up">
-                                            <i class="fa-solid fa-paper-plane text-xs"></i>
-                                            <span>Enviar Tarefa</span>
-                                        </button>
-                                        <button type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 text-xs font-extrabold shadow-xs transition flex items-center gap-2 cursor-pointer" title="Configurar suas demandas recorrentes que pingam automaticamente na tela">
-                                            <i class="fa-solid fa-repeat text-xs"></i>
-                                            <span>Demandas Recorrentes</span>
-                                        </button>
-                                        <button type="button" onclick="app.ui.gtdToggleHelp()" class="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-extrabold shadow-xs transition flex items-center gap-2">
-                                            <i class="fa-solid fa-circle-question text-indigo-500 text-sm"></i>
-                                            <span>${st.showHelp ? 'Ocultar Guia Rápido' : 'Como usar em 30s'}</span>
-                                        </button>
+                                    <!-- Ações Agrupadas + Timer Limpo -->
+                                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                        <div class="flex flex-wrap items-center gap-1 bg-slate-100/90 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/70">
+                                            <button type="button" onclick="app.ui.openGtdTutorialModal(0, false)" class="h-8 px-2.5 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Abrir apresentação completa passo a passo sobre GTD, Tríade e esta aba">
+                                                <i class="fa-solid fa-graduation-cap text-[11px] text-slate-400"></i>
+                                                <span>Tutorial</span>
+                                            </button>
+                                            <button type="button" onclick="app.ui.openEnviarTarefaModal()" class="h-8 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-black transition flex items-center gap-1.5 cursor-pointer" title="Enviar tarefa para colaboradores com alerta em pop-up">
+                                                <i class="fa-solid fa-paper-plane text-[10px]"></i>
+                                                <span>Enviar Tarefa</span>
+                                            </button>
+                                            <button type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="h-8 px-2.5 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer" title="Configurar suas demandas recorrentes que pingam automaticamente na tela">
+                                                <i class="fa-solid fa-repeat text-[11px] text-slate-400"></i>
+                                                <span>Recorrentes</span>
+                                            </button>
+                                            <button type="button" onclick="app.ui.gtdToggleHelp()" class="h-8 px-2.5 rounded-lg transition flex items-center gap-1.5 text-xs font-bold cursor-pointer ${st.showHelp ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'}">
+                                                <i class="fa-solid fa-circle-question text-[11px] text-slate-400"></i>
+                                                <span>${st.showHelp ? 'Ocultar Guia' : 'Guia 30s'}</span>
+                                            </button>
+                                        </div>
 
-                                        <div class="flex flex-wrap items-center gap-2.5 px-4 py-2 rounded-2xl bg-slate-900 dark:bg-slate-950 text-white border border-slate-800 shadow-lg">
-                                            <span id="gtd-timer-phase-badge" class="px-2 py-0.5 rounded-lg border text-[10px] font-black tracking-wide ${phaseMeta.badgeCls}">
+                                        <div class="flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-950 text-white border border-slate-800 shadow-sm">
+                                            <span id="gtd-timer-phase-badge" class="px-2 py-0.5 rounded-md border text-[10px] font-black tracking-wide ${phaseMeta.badgeCls}">
                                                 ${phaseMeta.badge}
                                             </span>
-                                            <div class="flex items-center gap-1">
-                                                <button type="button" onclick="app.ui.gtdSetFocusMode(2)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 2 ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Regra GTD dos 2 Minutos: tarefas rápidas para matar agora">2m</button>
-                                                <button type="button" onclick="app.ui.gtdSetFocusMode(25)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 25 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Foco Total de 25 min em 1 única Próxima Ação">25m</button>
-                                                <button type="button" onclick="app.ui.gtdSetFocusMode(5)" class="px-2 py-1 rounded-lg text-[11px] font-black transition ${focus.mode === 5 ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}" title="Descanso de 5 min após bloco de 25 min">5m</button>
+                                            <div class="flex items-center gap-0.5 bg-slate-800/90 p-0.5 rounded-lg">
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(2)" class="px-2 py-0.5 rounded-md text-[11px] font-black transition ${focus.mode === 2 ? 'bg-amber-500 text-white' : 'text-slate-300 hover:text-white'}" title="Regra GTD dos 2 Minutos">2m</button>
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(25)" class="px-2 py-0.5 rounded-md text-[11px] font-black transition ${focus.mode === 25 ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'}" title="Foco Total de 25 min">25m</button>
+                                                <button type="button" onclick="app.ui.gtdSetFocusMode(5)" class="px-2 py-0.5 rounded-md text-[11px] font-black transition ${focus.mode === 5 ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:text-white'}" title="Descanso de 5 min">5m</button>
                                             </div>
-                                            <div id="gtd-timer-display" class="text-lg font-black tabular-nums tracking-tight px-1">${app.gtd.formatClock(focus.remainingSeconds)}</div>
-                                            <button id="gtd-timer-toggle-btn" type="button" onclick="app.ui.gtdToggleFocusRun()" class="px-3 py-1.5 rounded-xl ${focus.running ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-xs font-black transition flex items-center gap-1">
-                                                <i class="fa-solid ${focus.running ? 'fa-pause' : 'fa-play'}"></i>
+                                            <div id="gtd-timer-display" class="text-base font-black tabular-nums tracking-tight px-1">${app.gtd.formatClock(focus.remainingSeconds)}</div>
+                                            <button id="gtd-timer-toggle-btn" type="button" onclick="app.ui.gtdToggleFocusRun()" class="h-7 px-2.5 rounded-lg ${focus.running ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-600 hover:bg-emerald-500'} text-white text-xs font-black transition flex items-center gap-1">
+                                                <i class="fa-solid ${focus.running ? 'fa-pause' : 'fa-play'} text-[10px]"></i>
                                                 <span>${focus.running ? 'Pausar' : (focus.phase === 'pausa' ? 'Descansar' : 'Focar')}</span>
                                             </button>
-                                            <button type="button" onclick="app.ui.gtdResetFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Reiniciar cronômetro">
-                                                <i class="fa-solid fa-rotate-left"></i>
+                                            <button type="button" onclick="app.ui.gtdResetFocus()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition flex items-center justify-center" title="Reiniciar cronômetro">
+                                                <i class="fa-solid fa-rotate-left text-[11px]"></i>
                                             </button>
-                                            <button type="button" onclick="app.ui.openGtdTimerPipPopup()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white text-[11px] font-black transition flex items-center gap-1.5 cursor-pointer" title="Destacar cronômetro em pop-up flutuante sobre outras abas ou aplicativos (Picture-in-Picture)">
-                                                <i class="fa-solid fa-up-right-from-square"></i>
+                                            <button type="button" onclick="app.ui.openGtdTimerPipPopup()" class="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer" title="Destacar cronômetro em pop-up flutuante">
+                                                <i class="fa-solid fa-up-right-from-square text-[10px]"></i>
                                                 <span class="hidden sm:inline">Pop-up</span>
                                             </button>
                                             ${focus.active ? `
-                                                <button type="button" onclick="app.ui.gtdClearFocus()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-xs transition" title="Encerrar sessão do cronômetro">
+                                                <button type="button" onclick="app.ui.gtdClearFocus()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-xs transition flex items-center justify-center" title="Encerrar sessão do cronômetro">
                                                     <i class="fa-solid fa-xmark"></i>
                                                 </button>
                                             ` : ''}
                                             ${focus.completedCycles > 0 ? `
-                                                <span class="px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-bold text-slate-200" title="Blocos de 25 min concluídos nesta sessão">
-                                                    ${focus.completedCycles}x 25m
-                                                </span>
+                                                <span class="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold text-slate-200 tabular-nums" title="Blocos de 25 min concluídos">${focus.completedCycles}x</span>
                                             ` : ''}
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Faixa Didática + Escolha de Alvo ("Dedicar 25 min no quê + Descansar 5 min") -->
+                                <!-- Barra Enxuta de Foco (1 linha limpa, sem paredão de texto) -->
                                 ${focus.phase === 'pausa' ? `
-                                    <div class="p-4 rounded-3xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                        <div class="flex items-start gap-3">
-                                            <div class="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center shrink-0 text-lg">
+                                    <div class="p-3.5 rounded-2xl bg-emerald-600 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
                                                 <i class="fa-solid fa-mug-hot animate-pulse"></i>
                                             </div>
                                             <div>
-                                                <div class="text-sm font-black">Hora do Descanso (5 minutos) — Recupere o Foco</div>
-                                                <p class="text-xs text-emerald-50 mt-0.5">
-                                                    Você finalizou um bloco de foco! Agora <strong>levante, beba água, alongue e tire os olhos da tela por 5 min</strong>. Evite iniciar outra tarefa pesada durante a pausa para não acumular fadiga mental.
-                                                </p>
+                                                <div class="text-xs font-black">Hora do Descanso (5 min) — Recupere o Foco</div>
+                                                <p class="text-[11px] text-emerald-50">Levante, beba água e descanse os olhos antes do próximo bloco de 25m.</p>
                                             </div>
                                         </div>
                                         <div class="flex items-center gap-2 shrink-0">
-                                            <button type="button" onclick="app.ui.gtdSkipBreak()" class="px-3.5 py-2 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 text-xs font-black transition flex items-center gap-1.5 shadow-sm">
-                                                <i class="fa-solid fa-forward-step"></i> Pular pausa e voltar p/ 25m
+                                            <button type="button" onclick="app.ui.gtdSkipBreak()" class="px-3 py-1.5 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 text-xs font-black transition flex items-center gap-1.5">
+                                                <i class="fa-solid fa-forward-step"></i> Pular pausa
                                             </button>
-                                            <button type="button" onclick="app.ui.gtdClearFocus()" class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition">
+                                            <button type="button" onclick="app.ui.gtdClearFocus()" class="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition">
                                                 Encerrar
                                             </button>
                                         </div>
                                     </div>
                                 ` : `
-                                    <div class="p-4 rounded-3xl bg-white dark:bg-slate-900 border ${activeTargetText ? 'border-indigo-300 dark:border-indigo-800/80' : 'border-slate-200 dark:border-slate-800'} shadow-sm grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                                        <div class="lg:col-span-6 space-y-2">
-                                            ${activeTargetText && !st.changingFocusTarget ? `
-                                                <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-indigo-600 text-white shadow-md">
-                                                    <div class="flex items-center gap-2.5 min-w-0">
-                                                        <i class="fa-solid fa-crosshairs text-amber-300 ${focus.running ? 'animate-pulse' : ''}"></i>
-                                                        <div class="min-w-0">
-                                                            <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-200">Em Foco Agora (${focus.mode === 2 ? 'Regra 2 min' : 'Bloco 25 min'}):</div>
-                                                            <div class="text-sm font-black truncate">${esc(activeTargetText)}</div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="flex items-center gap-1.5 shrink-0">
-                                                        ${focusNote ? `
-                                                            <button type="button" onclick="app.ui.gtdToggleDone('${focusNote.id}', true)" class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black transition flex items-center gap-1">
-                                                                <i class="fa-solid fa-check"></i> Concluir
-                                                            </button>
-                                                        ` : ''}
-                                                        <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(true)" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition" title="Escolher outra tarefa para os 25 min">
-                                                            Trocar
-                                                        </button>
-                                                        <button type="button" onclick="app.ui.gtdClearFocus()" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-rose-500 text-white text-xs font-bold transition" title="Limpar foco atual">
-                                                            Sair
-                                                        </button>
-                                                    </div>
+                                    <div class="px-4 py-3 rounded-2xl bg-white/85 dark:bg-slate-900 border ${activeTargetText ? 'border-slate-300 dark:border-indigo-700/70' : 'border-slate-200/80 dark:border-slate-800'} shadow-xs">
+                                        ${activeTargetText && !st.changingFocusTarget ? `
+                                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                                <div class="flex items-center gap-2.5 min-w-0">
+                                                    <span class="w-2 h-2 rounded-full bg-indigo-500 ${focus.running ? 'animate-pulse' : ''} shrink-0"></span>
+                                                    <span class="text-[11px] font-black uppercase tracking-wider text-slate-400 shrink-0">Em Foco (${focus.mode === 2 ? '2m' : '25m'}):</span>
+                                                    <span class="text-sm font-black text-slate-900 dark:text-white truncate">${esc(activeTargetText)}</span>
                                                 </div>
-                                            ` : `
-                                                <div>
-                                                    <div class="flex items-center justify-between mb-1.5">
-                                                        <label class="text-[11px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                                                            <i class="fa-solid fa-crosshairs"></i> Em qual tarefa vai dedicar os 25 min?
-                                                        </label>
-                                                        ${st.changingFocusTarget && activeTargetText ? `
-                                                            <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(false)" class="text-[11px] font-bold text-slate-400 hover:text-slate-700">Cancelar</button>
-                                                        ` : ''}
-                                                    </div>
-                                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        <select id="gtd-focus-task-select" onchange="app.ui.gtdSelectFocusTask(this.value)"
-                                                            class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
-                                                            <option value="">Escolher tarefa da lista...</option>
-                                                            ${activeCandidates.map(c => {
-                                                                const stLbl = app.gtd.GTD_STAGES[c.gtdStatus]?.short || 'Lista';
-                                                                const trLbl = c.triad ? (' · ' + (app.gtd.TRIAD_SPHERES[c.triad]?.short || '')) : '';
-                                                                const txtShort = String(c.text || '').trim().slice(0, 52);
-                                                                return `<option value="${c.id}" ${focus.noteId === c.id ? 'selected' : ''}>[${stLbl}${trLbl}] ${esc(txtShort)}</option>`;
-                                                            }).join('')}
-                                                        </select>
-                                                        <input type="text" value="${esc(focus.noteId ? '' : (focus.focusText || ''))}"
-                                                            placeholder="Ou digite no quê focar agora..."
-                                                            onchange="app.ui.gtdSetFocusCustomText(this.value)"
-                                                            onkeydown="if(event.key==='Enter'){event.preventDefault();app.ui.gtdSetFocusCustomText(this.value, true);}"
-                                                            class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500" />
-                                                    </div>
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    ${focusNote ? `
+                                                        <button type="button" onclick="app.ui.gtdToggleDone('${focusNote.id}', true)" class="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition flex items-center gap-1">
+                                                            <i class="fa-solid fa-check"></i> Concluir
+                                                        </button>
+                                                    ` : ''}
+                                                    <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(true)" class="h-8 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition">Trocar</button>
+                                                    <button type="button" onclick="app.ui.gtdClearFocus()" class="h-8 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 hover:text-rose-600 text-slate-500 text-xs font-bold transition">Sair</button>
                                                 </div>
-                                            `}
-                                        </div>
-
-                                        <div class="lg:col-span-6 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/70 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                            <div class="font-black text-slate-800 dark:text-white flex items-center gap-1.5 mb-1">
-                                                <i class="fa-solid fa-stopwatch text-indigo-500"></i> Como funciona o ciclo 25 min Foco + 5 min Descanso:
                                             </div>
-                                            <p>
-                                                <strong>25 min (No quê focar):</strong> escolha <strong>1 única Próxima Ação</strong> (de preferência esfera <em>Importante</em>) e trabalhe nela sem trocar de assunto ou abrir distrações.
-                                                <strong>5 min (Descanso):</strong> ao terminar os 25 min, o relógio muda sozinho para 5 min de pausa (água, alongar, olhos longe da tela). Ao sair da aba, o timer continua rodando no cantinho da tela.
-                                            </p>
-                                        </div>
+                                        ` : `
+                                            <div class="flex flex-col lg:flex-row lg:items-center gap-2.5">
+                                                <div class="flex items-center gap-2 shrink-0">
+                                                    <i class="fa-solid fa-crosshairs text-xs text-slate-400"></i>
+                                                    <span class="text-xs font-black text-slate-700 dark:text-slate-200 whitespace-nowrap">Em qual tarefa focar (25m)?</span>
+                                                    ${st.changingFocusTarget && activeTargetText ? `
+                                                        <button type="button" onclick="app.ui.gtdToggleChangeFocusTarget(false)" class="text-[11px] font-bold text-slate-400 hover:text-slate-700">Cancelar</button>
+                                                    ` : ''}
+                                                </div>
+                                                <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <select id="gtd-focus-task-select" onchange="app.ui.gtdSelectFocusTask(this.value)"
+                                                        class="w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-slate-300">
+                                                        <option value="">Escolher tarefa da lista...</option>
+                                                        ${activeCandidates.map(c => {
+                                                            const stLbl = app.gtd.GTD_STAGES[c.gtdStatus]?.short || 'Lista';
+                                                            const trLbl = c.triad ? (' · ' + (app.gtd.TRIAD_SPHERES[c.triad]?.short || '')) : '';
+                                                            const txtShort = String(c.text || '').trim().slice(0, 52);
+                                                            return `<option value="${c.id}" ${focus.noteId === c.id ? 'selected' : ''}>[${stLbl}${trLbl}] ${esc(txtShort)}</option>`;
+                                                        }).join('')}
+                                                    </select>
+                                                    <input type="text" value="${esc(focus.noteId ? '' : (focus.focusText || ''))}"
+                                                        placeholder="Ou digite no quê focar agora..."
+                                                        onchange="app.ui.gtdSetFocusCustomText(this.value)"
+                                                        onkeydown="if(event.key==='Enter'){event.preventDefault();app.ui.gtdSetFocusCustomText(this.value, true);}"
+                                                        class="w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-300" />
+                                                </div>
+                                                <div class="hidden xl:flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 shrink-0">
+                                                    <i class="fa-solid fa-stopwatch"></i>
+                                                    <span>25m foco + 5m pausa</span>
+                                                </div>
+                                            </div>
+                                        `}
                                     </div>
                                 `}
 
                                 ${st.showHelp ? `
-                                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-fade-in">
-                                        <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 shadow-sm">
-                                            <h3 class="text-sm font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-2 mb-3">
-                                                <i class="fa-solid fa-diagram-next"></i> Método GTD em 4 passos práticos
+                                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 animate-fade-in">
+                                        <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                            <h3 class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-2 mb-2.5 uppercase tracking-wider">
+                                                <i class="fa-solid fa-diagram-next text-slate-400"></i> Método GTD em 4 passos
                                             </h3>
-                                            <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>1. Capturar:</strong> Anote tudo na Caixa de Entrada sem filtrar na hora.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>2. Regra dos 2 Minutos:</strong> Se leva menos de 2 min, use o modo <strong>2m</strong> e conclua imediatamente.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>3. Organizar:</strong> Separe entre <em>Próxima Ação</em> (eu faço), <em>Aguardando</em> (cobrar) ou <em>Projeto</em>.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>4. Revisar & Agir:</strong> Filtre por Objetivo (Aumentar Faturamento, Fidelizar ou Diminuir Custos) e zere sua Caixa de Entrada.</div>
+                                            <div class="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>1. Capturar:</strong> Anote tudo na Caixa de Entrada sem filtrar na hora.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>2. Regra 2 Minutos:</strong> Se leva menos de 2 min, use <strong>2m</strong> e resolva já.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>3. Organizar:</strong> Separe entre <em>Próxima Ação</em>, <em>Aguardando</em> ou <em>Projeto</em>.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>4. Revisar &amp; Agir:</strong> Filtre por Objetivo e zere sua Caixa de Entrada.</div>
                                             </div>
                                         </div>
-                                        <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 shadow-sm">
-                                            <h3 class="text-sm font-black text-emerald-700 dark:text-emerald-300 flex items-center gap-2 mb-3">
-                                                <i class="fa-solid fa-chart-pie"></i> Tríade do Tempo (Meta 70 / 20 / 10)
+                                        <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                            <h3 class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-2 mb-2.5 uppercase tracking-wider">
+                                                <i class="fa-solid fa-chart-pie text-slate-400"></i> Tríade do Tempo (70 / 20 / 10)
                                             </h3>
-                                            <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                                                <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-emerald-500"><strong>Importante (Meta 70%):</strong> Gera resultado real, metas, projetos, prevenção — feita no prazo sem desespero.</div>
-                                                <div class="p-2.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border-l-4 border-rose-500"><strong>Urgente (Meta até 20%):</strong> Estoura hoje ou virou incêndio por falta de planejamento ou imprevisto.</div>
-                                                <div class="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border-l-4 border-amber-500"><strong>Circunstancial (Meta até 10%):</strong> Tarefas sem ganho real, interrupções e burocracias. Delegue ou corte.</div>
+                                            <div class="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-l-2 border-emerald-500"><strong>Importante (70%):</strong> Gera resultado real, metas e prevenção sem desespero.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-l-2 border-rose-500"><strong>Urgente (até 20%):</strong> Estoura hoje ou virou incêndio por imprevisto.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-l-2 border-amber-500"><strong>Circunstancial (até 10%):</strong> Tarefas sem ganho real e interrupções. Delegue ou corte.</div>
                                             </div>
                                         </div>
-                                        <div class="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 shadow-sm">
-                                            <h3 class="text-sm font-black text-amber-700 dark:text-amber-300 flex items-center gap-2 mb-3">
-                                                <i class="fa-solid fa-stopwatch"></i> Ciclo 25 min Foco + 5 min Descanso
+                                        <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                                            <h3 class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-2 mb-2.5 uppercase tracking-wider">
+                                                <i class="fa-solid fa-stopwatch text-slate-400"></i> Ciclo 25 min Foco + 5 min Pausa
                                             </h3>
-                                            <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                                                <div class="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border-l-4 border-indigo-500"><strong>Dedicar 25 min no quê:</strong> Escolha <strong>apenas 1 Próxima Ação</strong> clara (ex.: um relatório, monitoria ou plano de ação). Não alterne tarefas nem pare para olhar mensagens no meio do bloco.</div>
-                                                <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-emerald-500"><strong>Descansar 5 min (Por quê):</strong> Pausar 5 minutos reais (água, respirar, sair da tela) evita fadiga de decisão e mantém seu rendimento alto nos blocos seguintes.</div>
-                                                <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>Sempre visível no portal:</strong> Você pode navegar para qualquer outra aba do portal — o relógio segue ativo no cantinho inferior esquerdo!</div>
+                                            <div class="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>25 min (Foco):</strong> Escolha apenas 1 Próxima Ação e trabalhe nela sem distrações.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>5 min (Pausa):</strong> Ao concluir, o relógio entra em pausa automática para descansar a mente.</div>
+                                                <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/70"><strong>Sempre visível:</strong> Ao navegar em outras abas, o timer segue no canto inferior esquerdo.</div>
                                             </div>
                                         </div>
                                     </div>
                                 ` : ''}
 
-                                <!-- Painel Termômetro Tríade + KPIs GTD -->
-                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                                    <div class="lg:col-span-6 p-5 rounded-3xl border shadow-sm ${toneCardCls}">
-                                        <div class="flex items-center justify-between gap-2 mb-2">
-                                            <h2 class="text-sm font-black flex items-center gap-2">
-                                                <i class="fa-solid fa-gauge"></i> Termômetro da Tríade do Tempo
-                                            </h2>
-                                            <span class="text-[11px] font-extrabold opacity-80">Ideal: 70% Imp · 20% Urg · 10% Circ</span>
-                                        </div>
-                                        <div class="w-full h-3.5 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden flex mb-3 shadow-inner">
-                                            ${metrics.classifiedCount > 0 ? `
-                                                <div style="width:${metrics.triadPct.importante}%" class="bg-emerald-500 transition-all duration-300" title="Importante: ${metrics.triadPct.importante}%"></div>
-                                                <div style="width:${metrics.triadPct.urgente}%" class="bg-rose-500 transition-all duration-300" title="Urgente: ${metrics.triadPct.urgente}%"></div>
-                                                <div style="width:${metrics.triadPct.circunstancial}%" class="bg-amber-500 transition-all duration-300" title="Circunstancial: ${metrics.triadPct.circunstancial}%"></div>
-                                            ` : ''}
-                                        </div>
-                                        <div class="grid grid-cols-3 gap-2 text-center mb-2.5">
-                                            <div class="p-2 rounded-xl bg-white/70 dark:bg-slate-900/60">
-                                                <div class="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">Importante</div>
-                                                <div class="text-base font-black">${metrics.triadPct.importante}% <span class="text-[11px] font-bold opacity-70">(${metrics.triadCounts.importante})</span></div>
+                                <!-- Painel Limpo & Neutro: Termômetro + Caixa de Entrada + Radar -->
+                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+                                    <div class="lg:col-span-6 p-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                                        <div>
+                                            <div class="flex items-center justify-between gap-2 mb-2">
+                                                <h2 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                                    <span class="w-2 h-2 rounded-full ${toneDotCls.split(' ')[0]}"></span>
+                                                    <span>Termômetro da Tríade</span>
+                                                </h2>
+                                                <span class="text-[11px] font-bold text-slate-400">Ideal: 70% Imp · 20% Urg · 10% Circ</span>
                                             </div>
-                                            <div class="p-2 rounded-xl bg-white/70 dark:bg-slate-900/60">
-                                                <div class="text-[10px] font-black uppercase text-rose-600 dark:text-rose-400">Urgente</div>
-                                                <div class="text-base font-black">${metrics.triadPct.urgente}% <span class="text-[11px] font-bold opacity-70">(${metrics.triadCounts.urgente})</span></div>
+                                            <div class="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex mb-3">
+                                                ${metrics.classifiedCount > 0 ? `
+                                                    <div style="width:${metrics.triadPct.importante}%" class="bg-emerald-500 transition-all duration-300" title="Importante: ${metrics.triadPct.importante}%"></div>
+                                                    <div style="width:${metrics.triadPct.urgente}%" class="bg-rose-500 transition-all duration-300" title="Urgente: ${metrics.triadPct.urgente}%"></div>
+                                                    <div style="width:${metrics.triadPct.circunstancial}%" class="bg-amber-500 transition-all duration-300" title="Circunstancial: ${metrics.triadPct.circunstancial}%"></div>
+                                                ` : ''}
                                             </div>
-                                            <div class="p-2 rounded-xl bg-white/70 dark:bg-slate-900/60">
-                                                <div class="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400">Circunstancial</div>
-                                                <div class="text-base font-black">${metrics.triadPct.circunstancial}% <span class="text-[11px] font-bold opacity-70">(${metrics.triadCounts.circunstancial})</span></div>
+                                            <div class="grid grid-cols-3 gap-2 mb-2.5 tabular-nums">
+                                                <div class="px-3 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Imp</span>
+                                                    <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.triadPct.importante}% <span class="text-[10px] font-bold text-slate-400">(${metrics.triadCounts.importante})</span></span>
+                                                </div>
+                                                <div class="px-3 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>Urg</span>
+                                                    <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.triadPct.urgente}% <span class="text-[10px] font-bold text-slate-400">(${metrics.triadCounts.urgente})</span></span>
+                                                </div>
+                                                <div class="px-3 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Circ</span>
+                                                    <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.triadPct.circunstancial}% <span class="text-[10px] font-bold text-slate-400">(${metrics.triadCounts.circunstancial})</span></span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <p class="text-xs font-bold leading-snug"><strong>${metrics.diagnostico.title}:</strong> ${metrics.diagnostico.text}</p>
+                                        <p class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-snug"><strong class="text-slate-700 dark:text-slate-200">${metrics.diagnostico.title}:</strong> ${metrics.diagnostico.text}</p>
                                     </div>
 
-                                    <!-- Processar Caixa de Entrada (Clarificação Guiada GTD) -->
-                                    <div class="lg:col-span-3 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                                    <!-- Caixa de Entrada GTD -->
+                                    <div class="lg:col-span-3 p-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
                                         <div>
-                                            <div class="flex items-center justify-between mb-2">
-                                                <span class="text-[11px] font-black uppercase tracking-wider text-slate-400">Caixa de Entrada GTD</span>
-                                                <span class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center"><i class="fa-solid fa-inbox"></i></span>
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-[11px] font-black uppercase tracking-wider text-slate-400">Caixa de Entrada</span>
+                                                <i class="fa-solid fa-inbox text-slate-400 text-xs"></i>
                                             </div>
-                                            <div class="text-3xl font-black text-slate-800 dark:text-white">${metrics.byStage.inbox}</div>
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${metrics.byStage.inbox > 0 ? 'Itens aguardando decisão rápida de próximo passo.' : 'Caixa de entrada zerada! Mente limpa.'}</p>
+                                            <div class="text-2xl font-black text-slate-900 dark:text-white tabular-nums">${metrics.byStage.inbox}</div>
+                                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${metrics.byStage.inbox > 0 ? 'Aguardando decisão rápida.' : 'Caixa zerada! Mente limpa.'}</p>
                                         </div>
                                         <button type="button" onclick="app.ui.gtdOpenWizard()" ${metrics.byStage.inbox === 0 ? 'disabled' : ''}
-                                            class="mt-4 w-full py-2.5 px-3 rounded-xl font-extrabold text-xs transition flex items-center justify-center gap-2 ${metrics.byStage.inbox > 0 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'}">
-                                            <i class="fa-solid fa-wand-magic-sparkles"></i> Processar Entrada (${metrics.byStage.inbox})
+                                            class="mt-3 w-full h-9 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 ${metrics.byStage.inbox > 0 ? 'bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'}">
+                                            <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i> Processar Entrada (${metrics.byStage.inbox})
                                         </button>
                                     </div>
 
-                                    <!-- Radar GTD de Execução -->
-                                    <div class="lg:col-span-3 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-                                        <div class="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Radar de Execução & Prazos</div>
-                                        <div class="grid grid-cols-2 gap-2 text-xs">
-                                            <div class="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-900/60">
-                                                <div class="text-[10px] font-bold text-indigo-600 dark:text-indigo-300">Próximas Ações</div>
-                                                <div class="text-lg font-black text-indigo-900 dark:text-white">${metrics.byStage.proxima}</div>
+                                    <!-- Radar GTD de Execução (Neutro com pontinhos discretos) -->
+                                    <div class="lg:col-span-3 p-4 rounded-2xl bg-white/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+                                        <div class="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Radar de Execução</div>
+                                        <div class="grid grid-cols-2 gap-2 text-xs tabular-nums">
+                                            <div class="px-2.5 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>Próximas</span>
+                                                <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.byStage.proxima}</span>
                                             </div>
-                                            <div class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/60">
-                                                <div class="text-[10px] font-bold text-amber-700 dark:text-amber-300">Ação 2 Minutos</div>
-                                                <div class="text-lg font-black text-amber-900 dark:text-white">${metrics.twoMinCount}</div>
+                                            <div class="px-2.5 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>2 Min</span>
+                                                <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.twoMinCount}</span>
                                             </div>
-                                            <div class="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/70 dark:border-rose-900/60">
-                                                <div class="text-[10px] font-bold text-rose-700 dark:text-rose-300">Prazos Vencidos</div>
-                                                <div class="text-lg font-black text-rose-900 dark:text-white">${metrics.overdueCount}</div>
+                                            <div class="px-2.5 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>Vencidas</span>
+                                                <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.overdueCount}</span>
                                             </div>
-                                            <div class="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900/60 cursor-pointer" onclick="app.ui.gtdSetViewTab('revisao')">
-                                                <div class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">Concluídas</div>
-                                                <div class="text-lg font-black text-emerald-900 dark:text-white">${metrics.byStage.concluida}</div>
+                                            <div class="px-2.5 py-2 rounded-xl bg-slate-50/90 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer transition" onclick="app.ui.gtdSetViewTab('revisao')">
+                                                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Feitas</span>
+                                                <span class="text-sm font-black text-slate-800 dark:text-white">${metrics.byStage.concluida}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -68799,76 +68927,82 @@ app.faltasIntegracao = {
         const opsOptions = [...new Set(all.map(i => String(i.colab.operacao || '').trim().toUpperCase()).filter(Boolean))].sort();
 
         const sitBadge = {
-            pendente_rh: { label: 'Aguardando RH', cls: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800' },
-            contatado_rh: { label: 'Enviado ao RH', cls: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800' },
-            realocado: { label: 'Vai Vir / Realocado', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' },
-            desistente: { label: 'Não Virá Mais', cls: 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600' }
+            pendente_rh: { label: 'Aguardando RH', dot: 'bg-rose-500', pill: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800/60' },
+            contatado_rh: { label: 'Enviado ao RH', dot: 'bg-amber-500', pill: 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60' },
+            realocado: { label: 'Vai Vir / Realocado', dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800/60' },
+            desistente: { label: 'Não Virá Mais', dot: 'bg-slate-400', pill: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700/70 dark:text-slate-300 dark:border-slate-600' }
         };
+
+        const statusTabs = [
+            { id: 'TODAS', label: 'Todas', count: cntTotal, dot: 'bg-slate-400' },
+            { id: 'pendente_rh', label: 'Aguardando RH', count: cntPendente, dot: 'bg-rose-500' },
+            { id: 'contatado_rh', label: 'Enviado RH', count: cntContatado, dot: 'bg-amber-500' },
+            { id: 'realocado', label: 'Realocado', count: cntRealocado, dot: 'bg-emerald-500' },
+            { id: 'desistente', label: 'Desistência', count: cntDesistente, dot: 'bg-slate-400' }
+        ];
 
         const esc = (v) => this._esc(v);
 
         container.innerHTML = `
-            <div class="max-w-[1920px] mx-auto pb-16 space-y-5 animate-fade-in">
-                <!-- Cabeçalho Executivo -->
-                <div class="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div>
-                        <div class="text-[11px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Monitoramento Exclusivo • Gestão, Gerência &amp; Dev</div>
-                        <h2 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white flex items-center gap-2.5 mt-0.5">
-                            <i class="fa-solid fa-user-clock text-amber-500"></i> Faltas na Integração &amp; Tratativa RH
-                        </h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Sinalização automática de ausências nas integrações. Gere o texto para acionar o RH e alimente abaixo o motivo, realocação ou desistência.
-                        </p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2.5 shrink-0">
-                        <button type="button" onclick="app.ui.renderTab('diario_bordo', true)" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer">
-                            <i class="fa-solid fa-arrow-left mr-1.5"></i>Ir p/ Integrações
-                        </button>
-                        <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH()" class="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95">
-                            <i class="fa-solid fa-paper-plane"></i> Gerar Texto p/ RH (${cntPendente > 0 ? `${cntPendente} pendente(s)` : filtrados.length})
-                        </button>
-                    </div>
-                </div>
+            <div class="max-w-[1680px] mx-auto pb-14 space-y-4 animate-fade-in">
+                <!-- Barra Unificada Limpa (Título + Ações + Abas de Status + Busca) -->
+                <div class="rounded-2xl bg-white/85 dark:bg-slate-800/85 backdrop-blur-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm p-4 sm:p-5 space-y-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200/70 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-user-clock text-base"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-black text-slate-800 dark:text-white tracking-tight leading-tight">Faltas na Integração &amp; Tratativa RH</h2>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Ausências registradas automaticamente a partir das turmas de integração.</p>
+                            </div>
+                        </div>
 
-                <!-- 5 KPIs -->
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='TODAS'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-white dark:bg-slate-800 border ${this.filtroSituacao === 'TODAS' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700'} shadow-xs cursor-pointer transition">
-                        <div class="text-[10px] font-black uppercase text-slate-400">Total de Faltas</div>
-                        <div class="text-2xl font-black text-slate-800 dark:text-white mt-0.5 tabular-nums">${cntTotal}</div>
-                    </button>
-                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='pendente_rh'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border ${this.filtroSituacao === 'pendente_rh' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-rose-200 dark:border-rose-800'} shadow-xs cursor-pointer transition">
-                        <div class="text-[10px] font-black uppercase text-rose-700 dark:text-rose-400">Sinalizado (Pendente RH)</div>
-                        <div class="text-2xl font-black text-rose-800 dark:text-rose-200 mt-0.5 tabular-nums">${cntPendente}</div>
-                    </button>
-                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='contatado_rh'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border ${this.filtroSituacao === 'contatado_rh' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-amber-200 dark:border-amber-800'} shadow-xs cursor-pointer transition">
-                        <div class="text-[10px] font-black uppercase text-amber-700 dark:text-amber-400">Enviado ao RH</div>
-                        <div class="text-2xl font-black text-amber-800 dark:text-amber-200 mt-0.5 tabular-nums">${cntContatado}</div>
-                    </button>
-                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='realocado'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border ${this.filtroSituacao === 'realocado' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-emerald-200 dark:border-emerald-800'} shadow-xs cursor-pointer transition">
-                        <div class="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400">Vai Vir / Realocado</div>
-                        <div class="text-2xl font-black text-emerald-800 dark:text-emerald-200 mt-0.5 tabular-nums">${cntRealocado}</div>
-                    </button>
-                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='desistente'; app.ui.renderTab('faltas_integracao', true);" class="text-left p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border ${this.filtroSituacao === 'desistente' ? 'border-slate-500 ring-2 ring-slate-500/20' : 'border-slate-200 dark:border-slate-700'} shadow-xs cursor-pointer transition">
-                        <div class="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">Não Virá Mais</div>
-                        <div class="text-2xl font-black text-slate-700 dark:text-slate-200 mt-0.5 tabular-nums">${cntDesistente}</div>
-                    </button>
-                </div>
-
-                <!-- Filtros -->
-                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-wrap items-center gap-3">
-                    <div class="relative flex-1 min-w-[220px]">
-                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                        <input type="text" id="fi-search-input" value="${esc(this.filtroBusca)}" oninput="app.faltasIntegracao.filtroBusca=this.value; app.ui.refreshTabRegionInPlace('faltas_integracao', ['fi-count-wrap', 'fi-results-wrap']);" placeholder="Buscar por nome, matrícula, CPF ou motivo..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                            <button type="button" onclick="app.ui.renderTab('diario_bordo', true)" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5">
+                                <i class="fa-solid fa-arrow-left text-[11px]"></i>
+                                <span>Integrações</span>
+                            </button>
+                            <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH()" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-slate-950 font-black text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95 tabular-nums">
+                                <i class="fa-solid fa-paper-plane text-[11px]"></i>
+                                <span>Gerar Texto RH (${cntPendente > 0 ? cntPendente : filtrados.length})</span>
+                            </button>
+                        </div>
                     </div>
-                    <select onchange="app.faltasIntegracao.filtroTurmaId=this.value; app.ui.renderTab('faltas_integracao', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
-                        <option value="TODAS" ${this.filtroTurmaId === 'TODAS' ? 'selected' : ''}>Todas as Integrações</option>
-                        ${turmasOptions.map(t => `<option value="${esc(t.id)}" ${this.filtroTurmaId === t.id ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
-                    </select>
-                    <select onchange="app.faltasIntegracao.filtroOp=this.value; app.ui.renderTab('faltas_integracao', true);" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-white outline-none cursor-pointer">
-                        <option value="TODAS" ${this.filtroOp === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
-                        ${opsOptions.map(o => `<option value="${esc(o)}" ${this.filtroOp === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
-                    </select>
-                    <span id="fi-count-wrap" class="text-xs font-bold text-slate-400">${filtrados.length} registro(s)</span>
+
+                    <!-- Segmented Status Pills + Filtros na mesma grade limpa -->
+                    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-700/70">
+                        <div class="flex flex-wrap items-center gap-1 bg-slate-100/90 dark:bg-slate-900/70 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
+                            ${statusTabs.map(st => {
+                                const active = this.filtroSituacao === st.id;
+                                return `
+                                    <button type="button" onclick="app.faltasIntegracao.filtroSituacao='${st.id}'; app.ui.renderTab('faltas_integracao', true);" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer tabular-nums ${active
+                                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}">
+                                        <span class="w-1.5 h-1.5 rounded-full ${st.dot}"></span>
+                                        <span>${st.label}</span>
+                                        <span class="px-1.5 py-0.5 rounded-md text-[10px] font-black ${active ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200' : 'text-slate-400'}">${st.count}</span>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2 flex-1 xl:max-w-2xl xl:justify-end">
+                            <div class="relative flex-1 min-w-[200px] max-w-xs">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+                                <input type="text" id="fi-search-input" value="${esc(this.filtroBusca)}" oninput="app.faltasIntegracao.filtroBusca=this.value; app.ui.refreshTabRegionInPlace('faltas_integracao', ['fi-count-wrap', 'fi-results-wrap']);" placeholder="Buscar nome, matrícula, CPF ou motivo..." class="w-full h-9 pl-8 pr-3 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600">
+                            </div>
+                            <select onchange="app.faltasIntegracao.filtroTurmaId=this.value; app.ui.renderTab('faltas_integracao', true);" class="h-9 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer max-w-[210px]">
+                                <option value="TODAS" ${this.filtroTurmaId === 'TODAS' ? 'selected' : ''}>Todas Integrações</option>
+                                ${turmasOptions.map(t => `<option value="${esc(t.id)}" ${this.filtroTurmaId === t.id ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
+                            </select>
+                            <select onchange="app.faltasIntegracao.filtroOp=this.value; app.ui.renderTab('faltas_integracao', true);" class="h-9 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                <option value="TODAS" ${this.filtroOp === 'TODAS' ? 'selected' : ''}>Operações</option>
+                                ${opsOptions.map(o => `<option value="${esc(o)}" ${this.filtroOp === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+                            </select>
+                            <span id="fi-count-wrap" class="text-[11px] font-bold text-slate-400 tabular-nums whitespace-nowrap">${filtrados.length} item(ns)</span>
+                        </div>
+                    </div>
                 </div>
 
                 <datalist id="fi-motivos-datalist">
@@ -68880,78 +69014,1277 @@ app.faltasIntegracao = {
                     <option value="Conflito de horário"></option>
                 </datalist>
 
-                <!-- Lista Focada Exclusivamente em Faltas -->
+                <!-- Lista Limpa Estilo Tabela (Sem Rótulos Repetidos) -->
                 <div id="fi-results-wrap">
                 ${filtrados.length === 0 ? `
-                    <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 space-y-2">
-                        <i class="fa-solid fa-circle-check text-emerald-500 text-3xl"></i>
-                        <h3 class="text-base font-extrabold text-slate-800 dark:text-white">Nenhuma falta na integração encontrada neste filtro</h3>
+                    <div class="bg-white/80 dark:bg-slate-800/80 rounded-2xl p-12 text-center border border-slate-200/80 dark:border-slate-700 space-y-2">
+                        <i class="fa-solid fa-circle-check text-emerald-500 text-2xl"></i>
+                        <h3 class="text-sm font-black text-slate-800 dark:text-white">Nenhuma falta encontrada neste filtro</h3>
                         <p class="text-xs text-slate-500">Quando alguma lista de integração registrar ausência, ela aparecerá aqui automaticamente.</p>
                     </div>
                 ` : `
-                    <div class="space-y-3">
-                        ${filtrados.map(it => {
-                            const c = it.colab;
-                            const badge = sitBadge[it.situacao] || sitBadge.pendente_rh;
-                            const dtBr = it.dataIntegracao ? it.dataIntegracao.split('-').reverse().join('/') : '-';
-                            return `
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 border ${it.situacao === 'pendente_rh' ? 'border-rose-300 dark:border-rose-700/80 ring-1 ring-rose-500/15' : 'border-slate-200 dark:border-slate-700'} shadow-xs space-y-3">
-                                    <div class="flex flex-wrap items-start justify-between gap-3">
-                                        <div class="space-y-1">
-                                            <div class="flex flex-wrap items-center gap-2">
-                                                <span class="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase border ${badge.cls}">${badge.label}</span>
-                                                <span class="text-sm font-black text-slate-800 dark:text-white">${esc(c.nome || '-')}</span>
-                                                <span class="text-xs font-bold text-slate-500">#${esc(c.matricula || '-')}</span>
-                                                ${c.operacao ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 text-[10px] font-black uppercase border border-sky-200 dark:border-sky-800">${esc(c.operacao)}</span>` : ''}
+                    <div class="rounded-2xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs overflow-hidden">
+                        <!-- Cabeçalho único no Desktop -->
+                        <div class="hidden lg:grid lg:grid-cols-12 gap-3 px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/60 border-b border-slate-200/80 dark:border-slate-700/80 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            <div class="col-span-3">Colaborador</div>
+                            <div class="col-span-2">Integração / Contato</div>
+                            <div class="col-span-2">Situação RH</div>
+                            <div class="col-span-4">Motivo &amp; Observações</div>
+                            <div class="col-span-1 text-right">Ação</div>
+                        </div>
+
+                        <div class="divide-y divide-slate-100 dark:divide-slate-700/70">
+                            ${filtrados.map(it => {
+                                const c = it.colab;
+                                const badge = sitBadge[it.situacao] || sitBadge.pendente_rh;
+                                const dtBr = it.dataIntegracao ? it.dataIntegracao.split('-').reverse().join('/') : '-';
+                                return `
+                                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-2.5 lg:gap-3 items-center px-4 py-3 hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors">
+                                        <!-- Colaborador -->
+                                        <div class="lg:col-span-3 min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-full ${badge.dot} shrink-0" title="${badge.label}"></span>
+                                                <span class="text-xs font-extrabold text-slate-800 dark:text-white truncate">${esc(c.nome || '-')}</span>
                                             </div>
-                                            <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                                                <span><i class="fa-regular fa-calendar text-amber-500 mr-1"></i>Integração: <strong>${esc(dtBr)}</strong> (${esc(it.analista)})</span>
-                                                <span><i class="fa-solid fa-id-card text-slate-400 mr-1"></i>CPF: <strong>${esc(c.cpf || '-')}</strong></span>
-                                                <span><i class="fa-solid fa-phone text-emerald-500 mr-1"></i>Tel: <strong>${esc(c.telefoneCelular || 'Não informado')}</strong></span>
+                                            <div class="flex flex-wrap items-center gap-1.5 mt-0.5 pl-4 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                                                <span>#${esc(c.matricula || '-')}</span>
+                                                ${c.operacao ? `<span class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase">${esc(c.operacao)}</span>` : ''}
+                                                <span id="fi-save-status-${esc(it.turmaId)}-${it.colabIdx}" class="text-[10px] text-slate-400 truncate">${it.atualizadoPor ? `• ${esc(it.atualizadoPor)}` : ''}</span>
                                             </div>
                                         </div>
-                                        <div class="flex items-center gap-2 shrink-0">
-                                            <span id="fi-save-status-${esc(it.turmaId)}-${it.colabIdx}" class="text-[11px] font-bold text-slate-400">
-                                                ${it.atualizadoPor ? `Atualizado por ${esc(it.atualizadoPor)}` : ''}
-                                            </span>
-                                            <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH('${esc(it.key)}')" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-extrabold cursor-pointer transition">
-                                                <i class="fa-solid fa-paper-plane mr-1"></i>Texto RH
+
+                                        <!-- Integração / Contato -->
+                                        <div class="lg:col-span-2 min-w-0 text-[11px] text-slate-600 dark:text-slate-300 space-y-0.5 tabular-nums">
+                                            <div class="font-bold truncate"><i class="fa-regular fa-calendar text-slate-400 mr-1"></i>${esc(dtBr)} <span class="font-normal text-slate-400">• ${esc(it.analista)}</span></div>
+                                            <div class="text-slate-500 dark:text-slate-400 truncate">
+                                                <span>${esc(c.telefoneCelular || 'Sem tel')}</span>
+                                                ${c.cpf ? ` <span class="opacity-60">• ${esc(c.cpf)}</span>` : ''}
+                                            </div>
+                                        </div>
+
+                                        <!-- Situação RH -->
+                                        <div class="lg:col-span-2 space-y-1.5">
+                                            <select onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { situacao: this.value }, true)" class="w-full h-8 px-2.5 rounded-lg border text-[11px] font-extrabold outline-none cursor-pointer transition-colors ${badge.pill}">
+                                                <option value="pendente_rh" ${it.situacao === 'pendente_rh' ? 'selected' : ''}>Aguardando RH</option>
+                                                <option value="contatado_rh" ${it.situacao === 'contatado_rh' ? 'selected' : ''}>Enviado ao RH</option>
+                                                <option value="realocado" ${it.situacao === 'realocado' ? 'selected' : ''}>Vai vir / Realocado</option>
+                                                <option value="desistente" ${it.situacao === 'desistente' ? 'selected' : ''}>Não virá mais</option>
+                                            </select>
+                                            ${it.situacao === 'realocado' ? `
+                                                <input type="date" value="${esc(it.novaDataPrevista)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { novaDataPrevista: this.value }, false)" title="Nova data prevista" class="w-full h-7 px-2 rounded-lg bg-emerald-50/60 dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 outline-none">
+                                            ` : ''}
+                                        </div>
+
+                                        <!-- Motivo & Observações Inline -->
+                                        <div class="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                            <input type="text" list="fi-motivos-datalist" value="${esc(it.motivo)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { motivo: this.value }, false)" placeholder="Motivo da falta..." class="w-full h-8 px-2.5 rounded-lg bg-slate-50/80 hover:bg-slate-100/80 focus:bg-white dark:bg-slate-900/70 dark:focus:bg-slate-900 border border-slate-200/70 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600">
+                                            <input type="text" value="${esc(it.observacoes)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { observacoes: this.value }, false)" placeholder="Observações / retorno..." class="w-full h-8 px-2.5 rounded-lg bg-slate-50/80 hover:bg-slate-100/80 focus:bg-white dark:bg-slate-900/70 dark:focus:bg-slate-900 border border-slate-200/70 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600">
+                                        </div>
+
+                                        <!-- Ação -->
+                                        <div class="lg:col-span-1 flex items-center justify-end">
+                                            <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH('${esc(it.key)}')" title="Gerar texto individual para RH" class="h-8 px-2.5 rounded-lg bg-slate-100 hover:bg-amber-100 dark:bg-slate-700/70 dark:hover:bg-amber-950/60 text-slate-600 hover:text-amber-700 dark:text-slate-300 dark:hover:text-amber-300 text-[11px] font-bold cursor-pointer transition flex items-center gap-1 whitespace-nowrap">
+                                                <i class="fa-solid fa-paper-plane text-[10px]"></i>
+                                                <span>RH</span>
                                             </button>
                                         </div>
                                     </div>
-
-                                    <!-- Campos Alimentados Posteriormente -->
-                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2 border-t border-slate-100 dark:border-slate-700/70">
-                                        <div class="md:col-span-3">
-                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Retorno / Situação</label>
-                                            <select onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { situacao: this.value }, true)" class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer focus:ring-2 focus:ring-amber-500">
-                                                <option value="pendente_rh" ${it.situacao === 'pendente_rh' ? 'selected' : ''}>Aguardando RH (Sinalizado)</option>
-                                                <option value="contatado_rh" ${it.situacao === 'contatado_rh' ? 'selected' : ''}>Enviado ao RH (Em contato)</option>
-                                                <option value="realocado" ${it.situacao === 'realocado' ? 'selected' : ''}>Vai vir / Realocado</option>
-                                                <option value="desistente" ${it.situacao === 'desistente' ? 'selected' : ''}>Não virá mais (Desistência)</option>
-                                            </select>
-                                        </div>
-                                        ${it.situacao === 'realocado' ? `
-                                            <div class="md:col-span-2">
-                                                <label class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400 mb-1">Nova Data Prevista</label>
-                                                <input type="date" value="${esc(it.novaDataPrevista)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { novaDataPrevista: this.value }, false)" class="w-full px-2.5 py-2 rounded-xl bg-emerald-50/50 dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-xs font-bold text-slate-800 dark:text-white outline-none">
-                                            </div>
-                                        ` : ''}
-                                        <div class="${it.situacao === 'realocado' ? 'md:col-span-3' : 'md:col-span-4'}">
-                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Motivo / Por que faltou</label>
-                                            <input type="text" list="fi-motivos-datalist" value="${esc(it.motivo)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { motivo: this.value }, false)" placeholder="Explique o motivo informado..." class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
-                                        </div>
-                                        <div class="${it.situacao === 'realocado' ? 'md:col-span-4' : 'md:col-span-5'}">
-                                            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Observações (Se vem, retorno RH, detalhes)</label>
-                                            <input type="text" value="${esc(it.observacoes)}" onchange="app.faltasIntegracao.salvarTratativa('${esc(it.turmaId)}', ${it.colabIdx}, { observacoes: this.value }, false)" placeholder="Detalhes do contato, realocação ou desistência..." class="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
+                                `;
+                            }).join('')}
+                        </div>
                     </div>
                 `}
                 </div>
+            </div>
+        `;
+    }
+};
+
+// =========================================================================
+// MÓDULO EXPERIMENTAL DEV: MÉTODO PDCA VISUAL (APRESENTAÇÃO + Q&T)
+// =========================================================================
+app.pdcaTeste = {
+    STORAGE_KEY: 'soft_pdca_teste_backup_v1',
+    FIREBASE_NODE: 'sistema_bonificacao/pdca_ciclos',
+    ciclos: {},
+    selectedAprId: '__atual__',
+    filtroArea: 'TODOS',
+    filtroOperacao: 'TODAS',
+    showCriterios: false,
+    sourceDropdownOpen: false,
+    sourceSearch: '',
+    modalState: null,
+    _loadedCloud: false,
+    _loadingCloud: false,
+
+    _stages: [
+        { key: 'P', num: '1', title: 'Identificar', hint: 'O que dói nos Resultados?', accent: 'blue', badgeBg: 'bg-blue-500', softBg: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-300/60 dark:border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', icon: 'fa-bullseye' },
+        { key: 'D', num: '2', title: 'Executar', hint: 'Ação na Qualidade & Trein.', accent: 'amber', badgeBg: 'bg-amber-500', softBg: 'from-amber-500/15 to-orange-500/5', border: 'border-amber-300/60 dark:border-amber-500/30', text: 'text-amber-700 dark:text-amber-300', icon: 'fa-play' },
+        { key: 'C', num: '3', title: 'Conferir', hint: 'Comparar Antes × Depois', accent: 'violet', badgeBg: 'bg-violet-500', softBg: 'from-violet-500/15 to-fuchsia-500/5', border: 'border-violet-300/60 dark:border-violet-500/30', text: 'text-violet-700 dark:text-violet-300', icon: 'fa-scale-balanced' },
+        { key: 'A', num: '4', title: 'Ação Contínua', hint: 'Evolução constante ou Novo Ciclo', accent: 'emerald', badgeBg: 'bg-emerald-500', softBg: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-300/60 dark:border-emerald-500/30', text: 'text-emerald-700 dark:text-emerald-300', icon: 'fa-infinity' }
+    ],
+
+    _isDevUser() {
+        return app.isAdmin || app.currentUser?.tipoAcesso === 'Dev';
+    },
+
+    _loadLocalBackup() {
+        try {
+            const raw = localStorage.getItem(this.STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    },
+
+    _saveLocalBackup() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.ciclos || {}));
+        } catch (e) {}
+    },
+
+    async ensureLoaded(force = false) {
+        if (!this._isDevUser()) return;
+        if (this._loadedCloud && !force) return;
+        if (Object.keys(this.ciclos || {}).length === 0) {
+            this.ciclos = this._loadLocalBackup();
+        }
+        if (this._loadingCloud) return;
+        this._loadingCloud = true;
+        try {
+            const res = await app.storage._fetchFirebaseNodeFast(this.FIREBASE_NODE, 350, 12000);
+            if (res && res.ok && res.val && typeof res.val === 'object') {
+                this.ciclos = res.val;
+                this._saveLocalBackup();
+            }
+            this._loadedCloud = true;
+        } catch (e) {
+            console.warn('[PDCA Teste] Fallback local:', e);
+        } finally {
+            this._loadingCloud = false;
+            if (app.currentTab === 'pdca_teste') {
+                this.renderView();
+            }
+        }
+    },
+
+    async _persistCiclo(ciclo) {
+        if (!ciclo || !ciclo.id) return;
+        this.ciclos[ciclo.id] = ciclo;
+        this._saveLocalBackup();
+        try {
+            const clean = app.storage.sanitizeFirebaseObject(ciclo);
+            await app.storage._writeFirebaseNodeFast(`${this.FIREBASE_NODE}/${ciclo.id}`, clean, 'PUT', 12000);
+        } catch (e) {
+            console.warn('[PDCA Teste] Erro ao salvar ciclo na nuvem:', e);
+        }
+    },
+
+    async _deleteCiclo(id) {
+        if (!id || !this.ciclos[id]) return;
+        delete this.ciclos[id];
+        this._saveLocalBackup();
+        this.renderView();
+        try {
+            await app.storage._writeFirebaseNodeFast(`${this.FIREBASE_NODE}/${id}`, null, 'DELETE', 12000);
+        } catch (e) {
+            console.warn('[PDCA Teste] Erro ao remover ciclo na nuvem:', e);
+        }
+    },
+
+    _readConsolidadoFromApr(aprId) {
+        if (!aprId || aprId === '__atual__') {
+            return app.analiseCSVDinamicoData?.consolidado || null;
+        }
+        const apr = (app.apresentacoesList || {})[aprId];
+        if (!apr || !apr.payloadData) return null;
+        try {
+            if (typeof apr.payloadData === 'object') {
+                return apr.payloadData?.consolidado || null;
+            }
+            const isCompressed = !String(apr.payloadData).trim().startsWith('{');
+            const jsonStr = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
+            const parsed = JSON.parse(jsonStr);
+            return parsed?.consolidado || null;
+        } catch (e) {
+            return null;
+        }
+    },
+
+    _getOperacoesExistentes() {
+        const set = new Set();
+        try {
+            if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
+                (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => { if (op) set.add(String(op).trim()); });
+            }
+            Object.values(app.apresentacoesList || {}).forEach(a => {
+                if (a?.operacao) set.add(String(a.operacao).trim());
+            });
+            Object.values(this.ciclos || {}).forEach(c => {
+                if (c?.operacao) set.add(String(c.operacao).trim());
+            });
+        } catch (e) {}
+        return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    },
+
+    _resolveOperacaoCiclo(c) {
+        if (c?.operacao) return String(c.operacao).trim();
+        if (c?.aprId && app.apresentacoesList?.[c.aprId]?.operacao) {
+            return String(app.apresentacoesList[c.aprId].operacao).trim();
+        }
+        const m = String(c?.origemApres || '').match(/^\[([^\]]+)\]/);
+        return m ? m[1].trim() : 'Geral';
+    },
+
+    async vincularOperacaoFonteAtual(novaOp) {
+        const aprId = this.selectedAprId;
+        const opVal = String(novaOp || '').trim();
+        if (!aprId || aprId === '__atual__' || !app.apresentacoesList?.[aprId] || !opVal) return;
+        const apr = app.apresentacoesList[aprId];
+        apr.operacao = opVal;
+        apr.atualizadoEm = new Date().toISOString();
+        try {
+            if (app.storage && typeof app.storage.saveApresentacaoShareMeta === 'function') {
+                await app.storage.saveApresentacaoShareMeta(aprId, {
+                    operacao: opVal,
+                    setor: apr.setor || apr.pasta || opVal,
+                    pasta: apr.pasta || apr.setor || opVal,
+                    atualizadoEm: apr.atualizadoEm
+                });
+            }
+            app.ui?.showToast?.(`Apresentação vinculada à operação ${opVal}!`, 'success');
+        } catch (e) {}
+        this.renderView();
+    },
+
+    _getAvailableSources() {
+        const list = [];
+        if (app.analiseCSVDinamicoData?.consolidado) {
+            const atualSetor = app.analiseCSVDinamicoData.setor || app.analiseCSVDinamicoData.pasta || 'Sessão Ativa';
+            list.push({
+                id: '__atual__',
+                nome: 'Sessão Atual (Apres. de Resultados)',
+                pasta: atualSetor,
+                operacao: app.analiseCSVDinamicoData.operacao || atualSetor,
+                hasOperacaoExplicita: Boolean(app.analiseCSVDinamicoData.operacao),
+                label: `${atualSetor} • Sessão Atual`,
+                dataStr: 'Agora',
+                criador: app.currentUser?.nome ? String(app.currentUser.nome).split(' ').slice(0, 2).join(' ') : 'Ativa',
+                tratCount: 0,
+                isAtual: true
+            });
+        }
+        const aprs = Object.entries(app.apresentacoesList || {})
+            .map(([id, a]) => ({ id, ...(a || {}) }))
+            .filter(a => a && (a.nome || a.titulo))
+            .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+        aprs.forEach(a => {
+            const pasta = String(a.pasta || a.setor || 'Geral').trim();
+            const operacao = String(a.operacao || a.setor || a.pasta || 'Geral').trim();
+            const nome = String(a.nome || a.titulo || 'Apresentação').trim();
+            const criador = a.criadorNome ? String(a.criadorNome).split(' ').slice(0, 2).join(' ') : '';
+            const tratCount = a.tratativasQT && typeof a.tratativasQT === 'object' ? Object.keys(a.tratativasQT).length : 0;
+            const dataCurta = a.dataStr ? String(a.dataStr).replace(' às ', ' ') : '';
+            list.push({
+                id: a.id,
+                nome,
+                pasta,
+                operacao,
+                hasOperacaoExplicita: Boolean(a.operacao),
+                label: `[${operacao}] ${nome}`,
+                dataStr: dataCurta,
+                criador,
+                tratCount,
+                isAtual: false
+            });
+        });
+        return list;
+    },
+
+    toggleSourceDropdown(forceState = null) {
+        this.sourceDropdownOpen = forceState !== null ? Boolean(forceState) : !this.sourceDropdownOpen;
+        this.renderView();
+        if (this.sourceDropdownOpen) {
+            setTimeout(() => document.getElementById('pdca-source-search')?.focus(), 20);
+        }
+    },
+
+    selectSource(aprId) {
+        this.selectedAprId = aprId;
+        this.sourceDropdownOpen = false;
+        this.sourceSearch = '';
+        this.renderView();
+    },
+
+    filterSourceList(query) {
+        this.sourceSearch = String(query || '');
+        const listEl = document.getElementById('pdca-source-list');
+        if (!listEl) return;
+        listEl.innerHTML = this._renderSourceOptionsHtml(this._getAvailableSources());
+    },
+
+    _renderSourceOptionsHtml(sources) {
+        const esc = app.utils.escapeHtml;
+        const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const q = norm(this.sourceSearch);
+        const filtered = q
+            ? sources.filter(s => norm(`${s.pasta} ${s.nome} ${s.criador} ${s.dataStr}`).includes(q))
+            : sources;
+
+        if (filtered.length === 0) {
+            return `<div class="py-8 text-center text-xs font-bold text-slate-400">Nenhuma apresentação encontrada para "${esc(this.sourceSearch)}".</div>`;
+        }
+
+        // Agrupa por pasta/setor mantendo ordem do mais recente
+        const groups = new Map();
+        filtered.forEach(s => {
+            const gKey = s.isAtual ? 'Em andamento agora' : (s.pasta || 'Geral');
+            if (!groups.has(gKey)) groups.set(gKey, []);
+            groups.get(gKey).push(s);
+        });
+
+        return Array.from(groups.entries()).map(([pastaLabel, items]) => `
+            <div class="mb-2 last:mb-0">
+                <div class="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                    <i class="fa-solid ${pastaLabel === 'Em andamento agora' ? 'fa-bolt text-amber-500' : 'fa-folder-open text-blue-500'} text-[10px]"></i>
+                    <span>${esc(pastaLabel)}</span>
+                    <span class="text-[9px] font-bold opacity-70 tabular-nums">(${items.length})</span>
+                </div>
+                <div class="space-y-1">
+                    ${items.map(s => {
+                        const isSel = this.selectedAprId === s.id;
+                        return `
+                            <button type="button" onclick="app.pdcaTeste.selectSource('${esc(s.id)}')" class="w-full text-left px-3 py-2 rounded-xl border transition-all flex items-center justify-between gap-2 ${isSel
+                                ? 'bg-blue-50/90 dark:bg-blue-950/50 border-blue-300 dark:border-blue-600/60 shadow-sm'
+                                : 'bg-white/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 border-transparent hover:border-slate-200 dark:hover:border-white/10'}">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs font-black text-slate-800 dark:text-white truncate">${esc(s.nome)}</span>
+                                        ${s.tratCount > 0 ? `<span class="shrink-0 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-[9px] font-black text-amber-700 dark:text-amber-300 tabular-nums">${s.tratCount} Q&T</span>` : ''}
+                                    </div>
+                                    <div class="text-[10px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-2 truncate mt-0.5 tabular-nums">
+                                        ${s.dataStr ? `<span><i class="fa-regular fa-clock mr-0.5"></i> ${esc(s.dataStr)}</span>` : ''}
+                                        ${s.criador ? `<span><i class="fa-regular fa-user mr-0.5"></i> ${esc(s.criador)}</span>` : ''}
+                                    </div>
+                                </div>
+                                ${isSel ? '<i class="fa-solid fa-circle-check text-blue-600 dark:text-blue-400 text-sm shrink-0"></i>' : ''}
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `).join('');
+    },
+
+    _getQTContextStats() {
+        let tratMap = {};
+        try {
+            const selectedApr = (this.selectedAprId && this.selectedAprId !== '__atual__')
+                ? (app.apresentacoesList || {})[this.selectedAprId]
+                : null;
+            if (selectedApr && selectedApr.tratativasQT && typeof selectedApr.tratativasQT === 'object') {
+                tratMap = selectedApr.tratativasQT;
+            } else if (app.ui && typeof app.ui.getTratativasAtivasMap === 'function') {
+                tratMap = app.ui.getTratativasAtivasMap() || {};
+            }
+        } catch (e) {
+            tratMap = {};
+        }
+        const tratEntries = Object.entries(tratMap || {});
+        const actsArr = Array.isArray(app.actionsList) ? app.actionsList : Object.values(app.actionsList || {});
+        const pendingActions = actsArr.filter(a => a && a.status !== 'Concluída' && a.status !== 'Cancelada').length;
+        const diarioArr = Array.isArray(app.diarioBordoList) ? app.diarioBordoList : Object.values(app.diarioBordoList || {});
+        return {
+            tratMap,
+            tratCount: tratEntries.length,
+            pendingActions,
+            diarioCount: diarioArr.length
+        };
+    },
+
+    _formatNum(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return '—';
+        return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+    },
+
+    async importarDasDuasPaginas() {
+        const consolidado = this._readConsolidadoFromApr(this.selectedAprId);
+        const qt = this._getQTContextStats();
+        const sourceObj = this._getAvailableSources().find(s => s.id === this.selectedAprId) || null;
+        const sourceLabel = sourceObj?.label || 'Apresentação';
+        const operacaoFonte = sourceObj?.operacao || sourceObj?.pasta || 'Geral';
+
+        if (!consolidado && qt.tratCount === 0) {
+            app.ui?.showToast?.('Abra ou selecione uma Apresentação de Resultados ou clique em Exemplo para testar.', 'info');
+            return;
+        }
+
+        const existingKeys = new Set(Object.values(this.ciclos || {}).map(c => String(c.origemKey || '').toLowerCase()));
+        const novos = [];
+        const mediaGeral = Number(consolidado?.mediaTotal || 0);
+
+        if (consolidado) {
+            // 1) Top falhas críticas da Apresentação de Resultados -> entram direto em P
+            const criticas = Array.isArray(consolidado.falhasCriticasArray) ? consolidado.falhasCriticasArray : [];
+            criticas.slice(0, 2).forEach((f, idx) => {
+                const nome = String(f?.nome || '').trim();
+                const qtd = Number(f?.qtd || 0);
+                if (!nome || existingKeys.has(`crit:${nome.toLowerCase()}`)) return;
+                const antes = mediaGeral > 0 ? Number(mediaGeral.toFixed(1)) : 75;
+                const meta = mediaGeral > 0 ? Number(Math.min(100, mediaGeral + 8).toFixed(1)) : 88;
+                const areaDona = qtd >= 5 ? 'Treinamento' : 'Qualidade + Treinamento';
+                novos.push({
+                    id: `pdca_${Date.now()}_c${idx}_${Math.random().toString(36).slice(2, 6)}`,
+                    origemKey: `crit:${nome.toLowerCase()}`,
+                    titulo: nome,
+                    alvo: `${qtd} ocorrência(s) crítica(s)`,
+                    criterioTipo: 'critica',
+                    criterioGap: `Top #${idx + 1} Falha Crítica (${qtd} ocorr.) • Impacto coletivo`,
+                    areaResponsavel: areaDona,
+                    operacao: operacaoFonte,
+                    aprId: this.selectedAprId !== '__atual__' ? this.selectedAprId : '',
+                    origemApres: sourceLabel,
+                    qtLink: areaDona === 'Treinamento' ? 'Reciclagem técnica em Treinamento' : 'Ação conjunta Qualidade + Treinamento',
+                    responsavel: app.currentUser?.nome || areaDona,
+                    etapa: 'P',
+                    acaoPlanejada: areaDona === 'Treinamento'
+                        ? 'Reciclagem técnica dirigida e material visual do processo crítico'
+                        : 'Checklist de auditoria + alinhamento corretivo em sala',
+                    antesValor: antes,
+                    metaValor: meta,
+                    depoisValor: null,
+                    cicloNumero: 1,
+                    atualizadoEm: new Date().toISOString()
+                });
+            });
+
+            // 2) Top ofensores do ranking (< 92%) -> se já possuem tratativa em Q&T, já nascem em D!
+            const ops = Array.isArray(consolidado.rankOperadores) ? [...consolidado.rankOperadores] : [];
+            ops.sort((a, b) => Number(a?.media ?? a?.notaMedia ?? 999) - Number(b?.media ?? b?.notaMedia ?? 999));
+            ops.slice(0, 3).forEach((op, idx) => {
+                const opNome = String(op?.nome || op?.operador || '').trim();
+                if (!opNome || existingKeys.has(`op:${opNome.toLowerCase()}`)) return;
+                const nota = Number(op?.media ?? op?.notaMedia ?? 0);
+                if (nota >= 92) return;
+                const normOp = opNome.toUpperCase();
+                const matchedTrat = Object.entries(qt.tratMap).find(([k]) => String(k).toUpperCase().includes(normOp));
+                const emTratativa = Boolean(matchedTrat);
+                const statusTrat = String(matchedTrat?.[1]?.status || '').toLowerCase();
+                const metaAlvo = Number(Math.min(95, Math.max(85, nota + 10)).toFixed(1));
+                const gapPP = Number(Math.max(0, metaAlvo - nota).toFixed(1));
+                const areaDona = (statusTrat.includes('trein') || statusTrat.includes('recicl'))
+                    ? 'Treinamento'
+                    : (nota < 75 ? 'Treinamento' : 'Qualidade');
+
+                novos.push({
+                    id: `pdca_${Date.now()}_o${idx}_${Math.random().toString(36).slice(2, 6)}`,
+                    origemKey: `op:${opNome.toLowerCase()}`,
+                    titulo: opNome,
+                    alvo: op?.setor ? `${op.setor} • ${op.monitorias || 0} mon.` : `${op.monitorias || 0} monitorias`,
+                    criterioTipo: 'nota',
+                    criterioGap: `Nota ${this._formatNum(nota)} (< 92%) • Faltam ${gapPP.toFixed(1)} p.p. p/ meta`,
+                    areaResponsavel: areaDona,
+                    operacao: op?.setor || operacaoFonte,
+                    aprId: this.selectedAprId !== '__atual__' ? this.selectedAprId : '',
+                    origemApres: sourceLabel,
+                    qtLink: emTratativa ? `Em tratativa Q&T (${matchedTrat[1]?.status || 'Ativa'})` : `Aguardando ação (${areaDona})`,
+                    responsavel: op?.supervisor || app.currentUser?.nome || areaDona,
+                    etapa: emTratativa ? 'D' : 'P',
+                    acaoPlanejada: emTratativa
+                        ? (matchedTrat[1]?.observacao || 'Acompanhamento ativo na aba Qualidade & Treinamento')
+                        : (areaDona === 'Treinamento'
+                            ? 'Reciclagem focada + simulado prático (nota abaixo de 75%)'
+                            : 'Feedback individual + monitoria assistida de qualidade'),
+                    antesValor: Number(nota.toFixed(1)),
+                    metaValor: metaAlvo,
+                    depoisValor: null,
+                    cicloNumero: 1,
+                    atualizadoEm: new Date().toISOString()
+                });
+            });
+        }
+
+        if (novos.length === 0) {
+            app.ui?.showToast?.('Todos os principais gaps desta apresentação já estão no quadro PDCA.', 'info');
+            return;
+        }
+
+        for (const c of novos) {
+            await this._persistCiclo(c);
+        }
+        app.ui?.showToast?.(`${novos.length} item(ns) importados conectando Apresentação + Q&T!`, 'success');
+        this.renderView();
+    },
+
+    async popularExemploTeste() {
+        const now = Date.now();
+        const opsDisp = this._getOperacoesExistentes();
+        const op0 = opsDisp[0] || 'SAC';
+        const op1 = opsDisp[1] || opsDisp[0] || 'RETENÇÃO';
+        const exemplos = [
+            {
+                id: `pdca_demo_p_${now}`,
+                origemKey: `demo:p:${now}`,
+                titulo: 'Confirmação de Dados Cadastrais',
+                alvo: 'Gap Crítico #1 • 14 ocorrências',
+                criterioTipo: 'critica',
+                criterioGap: 'Top #1 Falha Crítica (14 ocorr.) • Impacto coletivo',
+                areaResponsavel: 'Qualidade',
+                operacao: op0,
+                origemApres: `[${op0}] Exemplo`,
+                qtLink: 'Auditoria e Feedback (Qualidade)',
+                responsavel: 'Ana (Qualidade)',
+                etapa: 'P',
+                acaoPlanejada: 'Criar script visual de 2 passos antes do encerramento',
+                antesValor: 74.2,
+                metaValor: 88.0,
+                depoisValor: null,
+                cicloNumero: 1,
+                atualizadoEm: new Date().toISOString()
+            },
+            {
+                id: `pdca_demo_d_${now}`,
+                origemKey: `demo:d:${now}`,
+                titulo: 'Quebra de Procedimento em Atendimento',
+                alvo: 'Nota abaixo da meta (78,5%)',
+                criterioTipo: 'nota',
+                criterioGap: 'Nota 78,5% (< 92%) • Faltam 8,5 p.p. p/ meta',
+                areaResponsavel: 'Treinamento',
+                operacao: op1,
+                origemApres: `[${op1}] Exemplo`,
+                qtLink: 'Reciclagem + Diário de Bordo',
+                responsavel: 'Instrutor Trein.',
+                etapa: 'D',
+                acaoPlanejada: 'Reciclagem em sala (30 min) + 3 monitorias assistidas',
+                antesValor: 78.5,
+                metaValor: 87.0,
+                depoisValor: null,
+                cicloNumero: 1,
+                atualizadoEm: new Date().toISOString()
+            },
+            {
+                id: `pdca_demo_c_${now}`,
+                origemKey: `demo:c:${now}`,
+                titulo: 'Tempo de Silêncio / Espera Ativa',
+                alvo: 'Reavaliação quinzenal',
+                criterioTipo: 'nota',
+                criterioGap: 'Nota 72,0% (< 75%) • Faltam 13,0 p.p. p/ meta',
+                areaResponsavel: 'Qualidade + Treinamento',
+                operacao: op0,
+                origemApres: `[${op0}] Quinzenal`,
+                qtLink: 'Acompanhamento conjunto concluído',
+                responsavel: 'Qualidade + Trein.',
+                etapa: 'C',
+                acaoPlanejada: 'Padrão de retorno a cada 45s com fraseologia pronta',
+                antesValor: 72.0,
+                metaValor: 85.0,
+                depoisValor: 86.4,
+                cicloNumero: 1,
+                atualizadoEm: new Date().toISOString()
+            },
+            {
+                id: `pdca_demo_a_${now}`,
+                origemKey: `demo:a:${now}`,
+                titulo: 'Abertura Saudação Padrão Soft',
+                alvo: 'Meta superada e em Ação Contínua',
+                criterioTipo: 'critica',
+                criterioGap: 'Falha zerada após reciclagem • Meta 90% superada',
+                areaResponsavel: 'Treinamento',
+                operacao: op1,
+                origemApres: `[${op1}] Anterior`,
+                qtLink: 'Rotina contínua no Onboarding',
+                responsavel: 'Treinamento',
+                etapa: 'A',
+                acaoPlanejada: 'Checklist fixo no onboarding e reciclagem contínua',
+                antesValor: 79.4,
+                metaValor: 90.0,
+                depoisValor: 93.8,
+                cicloNumero: 1,
+                atualizadoEm: new Date().toISOString()
+            }
+        ];
+        for (const ex of exemplos) {
+            await this._persistCiclo(ex);
+        }
+        app.ui?.showToast?.('Cenário exemplo PDCA criado nas 4 etapas!', 'success');
+        this.renderView();
+    },
+
+    async limparTudo() {
+        const ids = Object.keys(this.ciclos || {});
+        if (ids.length === 0) return;
+        this.ciclos = {};
+        this._saveLocalBackup();
+        this.renderView();
+        try {
+            await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, null, 'DELETE', 12000);
+            app.ui?.showToast?.('Quadro PDCA de teste limpo.', 'info');
+        } catch (e) {}
+    },
+
+    openModalNovo(id = null) {
+        const existing = id ? this.ciclos[id] : null;
+        const srcAtual = this._getAvailableSources().find(s => s.id === this.selectedAprId);
+        this.modalState = {
+            mode: existing ? 'edit' : 'new',
+            id: existing?.id || null,
+            etapa: existing?.etapa || 'P',
+            titulo: existing?.titulo || '',
+            alvo: existing?.alvo || '',
+            criterioGap: existing?.criterioGap || '',
+            areaResponsavel: existing?.areaResponsavel || 'Qualidade',
+            operacao: existing ? this._resolveOperacaoCiclo(existing) : (this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : (srcAtual?.operacao || '')),
+            acaoPlanejada: existing?.acaoPlanejada || '',
+            qtLink: existing?.qtLink || 'Ação em Qualidade & Treinamento',
+            responsavel: existing?.responsavel || app.currentUser?.nome || 'Dev',
+            antesValor: existing?.antesValor ?? 75,
+            metaValor: existing?.metaValor ?? 88,
+            depoisValor: existing?.depoisValor ?? ''
+        };
+        this.renderView();
+    },
+
+    closeModal() {
+        this.modalState = null;
+        this.renderView();
+    },
+
+    async alternarArea(id) {
+        const c = this.ciclos[id];
+        if (!c) return;
+        const ordem = ['Qualidade', 'Treinamento', 'Qualidade + Treinamento'];
+        const atual = this._resolveArea(c);
+        const prox = ordem[(ordem.indexOf(atual) + 1) % ordem.length];
+        await this._persistCiclo({
+            ...c,
+            areaResponsavel: prox,
+            atualizadoEm: new Date().toISOString()
+        });
+        this.renderView();
+    },
+
+    _resolveArea(c) {
+        const raw = String(c?.areaResponsavel || '').trim();
+        if (raw === 'Qualidade' || raw === 'Treinamento' || raw === 'Qualidade + Treinamento') return raw;
+        const txt = `${c?.qtLink || ''} ${c?.responsavel || ''} ${c?.acaoPlanejada || ''}`.toLowerCase();
+        const temQ = txt.includes('qualidade') || txt.includes('feedback') || txt.includes('auditoria');
+        const temT = txt.includes('trein') || txt.includes('recicl') || txt.includes('onboarding');
+        if (temQ && temT) return 'Qualidade + Treinamento';
+        if (temT) return 'Treinamento';
+        return 'Qualidade';
+    },
+
+    _getAreaMeta(area) {
+        if (area === 'Treinamento') {
+            return {
+                label: 'Treinamento',
+                icon: 'fa-graduation-cap',
+                cls: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200/80 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 dark:text-amber-300 dark:border-amber-700/60'
+            };
+        }
+        if (area === 'Qualidade + Treinamento') {
+            return {
+                label: 'Qualidade + Trein.',
+                icon: 'fa-people-arrows',
+                cls: 'bg-violet-50 hover:bg-violet-100 text-violet-800 border-violet-200/80 dark:bg-violet-950/60 dark:hover:bg-violet-900/60 dark:text-violet-300 dark:border-violet-700/60'
+            };
+        }
+        return {
+            label: 'Qualidade',
+            icon: 'fa-magnifying-glass-chart',
+            cls: 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200/80 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-300 dark:border-sky-700/60'
+        };
+    },
+
+    async salvarModal(evt) {
+        if (evt) evt.preventDefault();
+        const getVal = (id) => document.getElementById(id)?.value?.trim() || '';
+        const titulo = getVal('pdca-m-titulo');
+        if (!titulo) {
+            app.ui?.showToast?.('Informe o título do ponto de melhoria.', 'warning');
+            return;
+        }
+        const existing = this.modalState?.id ? this.ciclos[this.modalState.id] : null;
+        const antesRaw = parseFloat(getVal('pdca-m-antes').replace(',', '.'));
+        const metaRaw = parseFloat(getVal('pdca-m-meta').replace(',', '.'));
+        const depoisStr = getVal('pdca-m-depois').replace(',', '.');
+        const depoisRaw = depoisStr !== '' ? parseFloat(depoisStr) : null;
+        const etapaSel = getVal('pdca-m-etapa') || existing?.etapa || 'P';
+        const areaSel = getVal('pdca-m-area') || existing?.areaResponsavel || 'Qualidade';
+        const operacaoSel = getVal('pdca-m-operacao') || existing?.operacao || 'Geral';
+        const antesNum = Number.isFinite(antesRaw) ? antesRaw : 0;
+        const metaNum = Number.isFinite(metaRaw) ? metaRaw : 85;
+        const criterioAuto = getVal('pdca-m-criterio') || existing?.criterioGap || `Manual: ${this._formatNum(antesNum)} -> Meta ${this._formatNum(metaNum)}`;
+
+        const ciclo = {
+            id: existing?.id || `pdca_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            origemKey: existing?.origemKey || `manual:${titulo.toLowerCase()}`,
+            titulo,
+            alvo: getVal('pdca-m-alvo') || 'Gap operacional',
+            criterioTipo: existing?.criterioTipo || 'manual',
+            criterioGap: criterioAuto,
+            areaResponsavel: areaSel,
+            operacao: operacaoSel,
+            aprId: existing?.aprId || (this.selectedAprId !== '__atual__' ? this.selectedAprId : ''),
+            origemApres: existing?.origemApres || `[${operacaoSel}] Manual`,
+            qtLink: getVal('pdca-m-qt') || `Ação (${areaSel})`,
+            responsavel: getVal('pdca-m-resp') || areaSel,
+            etapa: etapaSel,
+            acaoPlanejada: getVal('pdca-m-acao') || 'Definir ação prática com o time',
+            antesValor: antesNum,
+            metaValor: metaNum,
+            depoisValor: Number.isFinite(depoisRaw) ? depoisRaw : null,
+            cicloNumero: existing?.cicloNumero || 1,
+            atualizadoEm: new Date().toISOString()
+        };
+        this.modalState = null;
+        await this._persistCiclo(ciclo);
+        app.ui?.showToast?.('Ciclo PDCA salvo!', 'success');
+        this.renderView();
+    },
+
+    async avancarEtapa(id, destino) {
+        const c = this.ciclos[id];
+        if (!c) return;
+        const next = { ...c, atualizadoEm: new Date().toISOString() };
+        if (destino === 'D') {
+            next.etapa = 'D';
+            if (!next.qtLink || next.qtLink.includes('Aguardando')) {
+                next.qtLink = 'Executando em Qualidade & Treinamento';
+            }
+        } else if (destino === 'C') {
+            next.etapa = 'C';
+            if (next.depoisValor === null || next.depoisValor === undefined) {
+                next.depoisValor = next.antesValor;
+            }
+        } else if (destino === 'A') {
+            next.etapa = 'A';
+        } else if (destino === 'GIRAR') {
+            next.etapa = 'P';
+            next.cicloNumero = Number(next.cicloNumero || 1) + 1;
+            if (Number.isFinite(Number(next.depoisValor)) && next.depoisValor !== null) {
+                next.antesValor = Number(next.depoisValor);
+            }
+            next.depoisValor = null;
+            next.qtLink = `Ciclo #${next.cicloNumero} • Ajustando abordagem`;
+        }
+        await this._persistCiclo(next);
+        this.renderView();
+    },
+
+    async atualizarDepoisInline(id, valorStr) {
+        const c = this.ciclos[id];
+        if (!c) return;
+        const parsed = parseFloat(String(valorStr || '').replace(',', '.'));
+        if (!Number.isFinite(parsed)) return;
+        await this._persistCiclo({
+            ...c,
+            depoisValor: Number(parsed.toFixed(1)),
+            atualizadoEm: new Date().toISOString()
+        });
+        this.renderView();
+    },
+
+    _renderArrowDivider() {
+        return `
+            <div class="hidden lg:flex items-center justify-center select-none pointer-events-none">
+                <div class="w-8 h-8 rounded-full bg-white/70 dark:bg-slate-800/70 backdrop-blur-md border border-white/80 dark:border-white/10 shadow-sm flex items-center justify-center text-slate-400 dark:text-slate-500">
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </div>
+            </div>
+        `;
+    },
+
+    _renderCard(c, stageKey) {
+        const esc = app.utils.escapeHtml;
+        const antes = Number(c.antesValor || 0);
+        const meta = Number(c.metaValor || 85);
+        const hasDepois = c.depoisValor !== null && c.depoisValor !== undefined && Number.isFinite(Number(c.depoisValor));
+        const depois = hasDepois ? Number(c.depoisValor) : null;
+        const delta = hasDepois ? Number((depois - antes).toFixed(1)) : null;
+        const bateuMeta = hasDepois && depois >= meta;
+        const areaDona = this._resolveArea(c);
+        const areaMeta = this._getAreaMeta(areaDona);
+        const opCiclo = this._resolveOperacaoCiclo(c);
+        const criterioTxt = c.criterioGap || (c.alvo ? `Critério: ${c.alvo}` : `Antes ${this._formatNum(antes)} vs Meta ${this._formatNum(meta)}`);
+
+        const ctaHtml = (() => {
+            if (stageKey === 'P') {
+                return `
+                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'D')" class="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black tracking-wide shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                        <span>Executar em Q&T</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                `;
+            }
+            if (stageKey === 'D') {
+                return `
+                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'C')" class="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-black tracking-wide shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                        <span>Ir para Conferir</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                `;
+            }
+            if (stageKey === 'C') {
+                return `
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" title="Não bateu a meta? Volta para P no próximo ciclo" class="py-2 px-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-700/50 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            <span>Girar (P)</span>
+                        </button>
+                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'A')" class="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all">
+                            <i class="fa-solid fa-infinity"></i>
+                            <span>Ação Contínua</span>
+                        </button>
+                    </div>
+                `;
+            }
+            return `
+                <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" class="w-full py-2 px-3 rounded-xl bg-white/80 dark:bg-slate-800/70 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-700/50 text-[11px] font-black flex items-center justify-center gap-2 transition-all">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>Girar Novo Ciclo (Ciclo #${Number(c.cicloNumero || 1) + 1})</span>
+                </button>
+            `;
+        })();
+
+        return `
+            <div class="group relative rounded-2xl bg-white/75 dark:bg-slate-900/65 backdrop-blur-xl border border-white/80 dark:border-white/10 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] hover:shadow-[0_14px_30px_-8px_rgba(15,23,42,0.18)] p-4 transition-all duration-200 hover:-translate-y-0.5">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar quem cuida (Qualidade / Treinamento)" class="px-2 py-0.5 rounded-full text-[10px] font-black border flex items-center gap-1 cursor-pointer transition-all ${areaMeta.cls}">
+                            <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
+                            <span>${esc(areaMeta.label)}</span>
+                        </button>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100/90 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-700 truncate max-w-[110px]" title="Operação: ${esc(opCiclo)}">
+                            ${esc(opCiclo)}
+                        </span>
+                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100/90 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">
+                            #${Number(c.cicloNumero || 1)}
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button onclick="app.pdcaTeste.openModalNovo('${esc(c.id)}')" title="Editar" class="w-6 h-6 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-500 flex items-center justify-center text-[11px]">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button onclick="app.pdcaTeste._deleteCiclo('${esc(c.id)}')" title="Remover" class="w-6 h-6 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-500 flex items-center justify-center text-[11px]">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <h4 class="text-sm font-black text-slate-800 dark:text-white leading-snug mb-1.5">${esc(c.titulo)}</h4>
+
+                <!-- Por que virou Gap (Critério explícito) -->
+                <div class="mb-2 px-2.5 py-1 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40 text-[10px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1.5 tabular-nums">
+                    <i class="fa-solid fa-circle-exclamation text-[9px] shrink-0"></i>
+                    <span class="truncate" title="${esc(criterioTxt)}">${esc(criterioTxt)}</span>
+                </div>
+
+                <p class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">${esc(c.acaoPlanejada || c.alvo || '')}</p>
+
+                <!-- Antes x Depois visual instantâneo -->
+                <div class="rounded-xl bg-slate-50/80 dark:bg-slate-950/50 border border-slate-200/60 dark:border-white/5 px-3 py-2 mb-3 flex items-center justify-between gap-2 tabular-nums">
+                    <div>
+                        <div class="text-[9px] font-bold uppercase text-slate-400">Antes</div>
+                        <div class="text-xs font-black text-slate-700 dark:text-slate-200">${this._formatNum(antes)}</div>
+                    </div>
+                    <i class="fa-solid fa-arrow-right text-[10px] text-slate-300 dark:text-slate-600"></i>
+                    ${stageKey === 'C' ? `
+                        <div class="text-center">
+                            <div class="text-[9px] font-bold uppercase text-violet-500">Depois (%)</div>
+                            <input type="number" step="0.1" value="${hasDepois ? depois : antes}" onchange="app.pdcaTeste.atualizarDepoisInline('${esc(c.id)}', this.value)" class="w-16 text-center text-xs font-black rounded-lg bg-white dark:bg-slate-900 border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 py-0.5 outline-none focus:ring-2 focus:ring-violet-400">
+                        </div>
+                    ` : `
+                        <div>
+                            <div class="text-[9px] font-bold uppercase text-slate-400">${hasDepois ? 'Depois' : 'Meta'}</div>
+                            <div class="text-xs font-black ${hasDepois ? (bateuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400') : 'text-blue-600 dark:text-blue-400'}">
+                                ${this._formatNum(hasDepois ? depois : meta)}
+                            </div>
+                        </div>
+                    `}
+                    <div class="text-right">
+                        <div class="text-[9px] font-bold uppercase text-slate-400">${hasDepois ? 'Ganho' : 'Alvo'}</div>
+                        <div class="text-xs font-black ${hasDepois ? (delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400') : 'text-slate-500 dark:text-slate-400'}">
+                            ${hasDepois ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} p.p.` : this._formatNum(meta)}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Elo visual com Qualidade & Treinamento -->
+                <div class="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-3 px-1">
+                    <span class="flex items-center gap-1.5 truncate"><i class="fa-solid fa-link text-amber-500"></i> ${esc(c.qtLink || 'Q&T')}</span>
+                    <span class="shrink-0 text-slate-400">${esc(c.responsavel || '')}</span>
+                </div>
+
+                ${ctaHtml}
+            </div>
+        `;
+    },
+
+    _renderModal() {
+        if (!this.modalState) return '';
+        const esc = app.utils.escapeHtml;
+        const m = this.modalState;
+        const opsList = this._getOperacoesExistentes();
+        return `
+            <div class="fixed inset-0 z-[120] bg-slate-950/55 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto" onclick="if(event.target===this) app.pdcaTeste.closeModal()">
+                <form onsubmit="app.pdcaTeste.salvarModal(event)" class="w-full max-w-3xl rounded-[28px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/90 dark:border-white/15 shadow-2xl p-6 sm:p-8 space-y-5 my-auto">
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-11 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center shadow-md shrink-0">
+                                <i class="fa-solid fa-arrows-spin text-base"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-slate-900 dark:text-white leading-tight">${m.mode === 'edit' ? 'Ajustar Ciclo PDCA' : 'Novo Ciclo PDCA'}</h3>
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">Conecte a Operação da Apresentação de Resultados com uma ação em Qualidade &amp; Treinamento</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="app.pdcaTeste.closeModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">O que vamos melhorar? *</label>
+                            <input id="pdca-m-titulo" type="text" required value="${esc(m.titulo)}" placeholder="Ex: Falta de confirmação cadastral" class="w-full px-4 py-3 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-400">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Etapa Atual</label>
+                            <select id="pdca-m-etapa" class="w-full px-3.5 py-3 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-800 dark:text-white outline-none cursor-pointer">
+                                <option value="P" ${m.etapa === 'P' ? 'selected' : ''}>P • Identificar</option>
+                                <option value="D" ${m.etapa === 'D' ? 'selected' : ''}>D • Executar</option>
+                                <option value="C" ${m.etapa === 'C' ? 'selected' : ''}>C • Conferir</option>
+                                <option value="A" ${m.etapa === 'A' ? 'selected' : ''}>A • Ação Contínua</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Operação Vinculada *</label>
+                            <select id="pdca-m-operacao" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                ${opsList.map(op => `<option value="${esc(op)}" ${String(op).toUpperCase() === String(m.operacao || '').toUpperCase() ? 'selected' : ''}>${esc(op)}</option>`).join('')}
+                                ${m.operacao && !opsList.some(op => String(op).toUpperCase() === String(m.operacao).toUpperCase())
+                                    ? `<option value="${esc(m.operacao)}" selected>${esc(m.operacao)}</option>`
+                                    : ''}
+                                <option value="Geral" ${!m.operacao || m.operacao === 'Geral' ? 'selected' : ''}>Geral</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Quem cuida? *</label>
+                            <select id="pdca-m-area" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                <option value="Qualidade" ${m.areaResponsavel === 'Qualidade' ? 'selected' : ''}>Qualidade</option>
+                                <option value="Treinamento" ${m.areaResponsavel === 'Treinamento' ? 'selected' : ''}>Treinamento</option>
+                                <option value="Qualidade + Treinamento" ${m.areaResponsavel === 'Qualidade + Treinamento' ? 'selected' : ''}>Qualidade + Treinamento</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Critério do Gap</label>
+                            <input id="pdca-m-criterio" type="text" value="${esc(m.criterioGap || '')}" placeholder="Ex: Nota 74% (< 92%)" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-800 dark:text-white outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Ação Prática (Qualidade &amp; Treinamento)</label>
+                        <input id="pdca-m-acao" type="text" value="${esc(m.acaoPlanejada)}" placeholder="Ex: Feedback individual + reciclagem de 20 min" class="w-full px-4 py-3 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-400">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vínculo em Q&amp;T</label>
+                            <input id="pdca-m-qt" type="text" value="${esc(m.qtLink)}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Responsável</label>
+                            <input id="pdca-m-resp" type="text" value="${esc(m.responsavel)}" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-4 p-4 rounded-2xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 tabular-nums">
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Nota Antes (%)</label>
+                            <input id="pdca-m-antes" type="number" step="0.1" value="${esc(String(m.antesValor ?? 75))}" class="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-800 dark:text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1.5">Meta (%)</label>
+                            <input id="pdca-m-meta" type="number" step="0.1" value="${esc(String(m.metaValor ?? 88))}" class="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 text-sm font-black text-blue-600 dark:text-blue-400 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5">Nota Depois (%)</label>
+                            <input id="pdca-m-depois" type="number" step="0.1" value="${esc(String(m.depoisValor ?? ''))}" placeholder="Opcional" class="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-sm font-black text-emerald-600 dark:text-emerald-400 outline-none">
+                        </div>
+                    </div>
+
+                    <input id="pdca-m-alvo" type="hidden" value="${esc(m.alvo)}">
+
+                    <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-white/10">
+                        <button type="button" onclick="app.pdcaTeste.closeModal()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
+                        <button type="submit" class="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-sm font-black shadow-lg transition-all">Salvar no Quadro</button>
+                    </div>
+                </form>
+            </div>
+        `;
+    },
+
+    renderView(containerArg = null) {
+        const container = containerArg || document.getElementById('view-container-pdca_teste') || document.getElementById('view-pdca_teste');
+        if (!container) return;
+
+        if (!this._isDevUser()) {
+            container.innerHTML = '';
+            return;
+        }
+        if (!this._loadedCloud && !this._loadingCloud) {
+            this.ensureLoaded();
+        }
+
+        const esc = app.utils.escapeHtml;
+        const allCiclos = Object.values(this.ciclos || {}).sort((a, b) => String(b?.atualizadoEm || '').localeCompare(String(a?.atualizadoEm || '')));
+        const opsExistentes = this._getOperacoesExistentes();
+        const ciclosDaOperacao = this.filtroOperacao === 'TODAS'
+            ? allCiclos
+            : allCiclos.filter(c => this._resolveOperacaoCiclo(c).toUpperCase() === String(this.filtroOperacao).toUpperCase());
+
+        const cntQualidade = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Qualidade').length;
+        const cntTreinamento = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Treinamento').length;
+        const cntConjunto = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Qualidade + Treinamento').length;
+        const filtradosPorArea = this.filtroArea === 'TODOS'
+            ? ciclosDaOperacao
+            : ciclosDaOperacao.filter(c => this._resolveArea(c) === this.filtroArea);
+
+        const byStage = { P: [], D: [], C: [], A: [] };
+        filtradosPorArea.forEach(c => {
+            const k = byStage[c?.etapa] ? c.etapa : 'P';
+            byStage[k].push(c);
+        });
+
+        const sources = this._getAvailableSources();
+        if (this.selectedAprId === '__atual__' && !sources.some(s => s.id === '__atual__') && sources.length > 0) {
+            this.selectedAprId = sources[0].id;
+        }
+        const qt = this._getQTContextStats();
+        const consolidadoAtivo = this._readConsolidadoFromApr(this.selectedAprId);
+        const mediaAtiva = consolidadoAtivo?.mediaTotal ? this._formatNum(consolidadoAtivo.mediaTotal) : '—';
+        const selectedSourceObj = sources.find(s => s.id === this.selectedAprId) || null;
+
+        container.innerHTML = `
+            <div class="relative w-full max-w-[1680px] mx-auto pb-8 animate-fade-in">
+                <!-- Halo suave de fundo para efeito Glassmorphism -->
+                <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+                    <div class="absolute -top-24 left-1/4 w-96 h-96 rounded-full bg-blue-400/15 dark:bg-blue-600/10 blur-3xl"></div>
+                    <div class="absolute top-32 right-1/4 w-96 h-96 rounded-full bg-emerald-400/15 dark:bg-emerald-600/10 blur-3xl"></div>
+                </div>
+
+                <!-- HEADER ULTRA CLEAN & NEUTRO (COR APENAS NOS BLOCOS PDCA) -->
+                <div class="relative z-30 rounded-[24px] bg-white/80 dark:bg-slate-900/75 backdrop-blur-2xl border border-slate-200/80 dark:border-white/10 shadow-[0_10px_30px_-14px_rgba(15,23,42,0.1)] p-4 mb-5">
+                    <!-- Linha 1: Título + Ponte Neutra + Controles Alinhados -->
+                    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center shadow-sm shrink-0">
+                                <i class="fa-solid fa-arrows-spin text-base"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-base font-black tracking-tight text-slate-900 dark:text-white leading-none">Ciclo PDCA</h2>
+                                    <span class="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">DEV</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                                    <button onclick="app.ui.renderTab('analise_csv_dinamico', true)" class="hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1 cursor-pointer">
+                                        <i class="fa-solid fa-chart-pie text-[10px]"></i>
+                                        <span>Apres. Resultados (${mediaAtiva})</span>
+                                    </button>
+                                    <span class="opacity-40">+</span>
+                                    <button onclick="app.ui.renderTab('qualidade_treinamento', true)" class="hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1 cursor-pointer">
+                                        <i class="fa-solid fa-graduation-cap text-[10px]"></i>
+                                        <span>Qualidade &amp; Trein. (${qt.tratCount})</span>
+                                    </button>
+                                    <span class="opacity-40">➔</span>
+                                    <span class="font-bold text-slate-700 dark:text-slate-200">${allCiclos.length} no ciclo</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Ações Diretas (Sem quebra da lixeira) -->
+                        <div class="flex flex-wrap sm:flex-nowrap items-center gap-1.5 relative shrink-0">
+                            ${this.sourceDropdownOpen ? `<div class="fixed inset-0 z-[90]" onclick="app.pdcaTeste.toggleSourceDropdown(false)"></div>` : ''}
+                            <div class="relative z-[95]">
+                                <button type="button" onclick="app.pdcaTeste.toggleSourceDropdown()" class="h-9 min-w-[210px] max-w-[300px] px-3 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/10 text-left flex items-center justify-between gap-2 transition-all">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        ${selectedSourceObj ? `<span class="shrink-0 px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 truncate max-w-[95px]">${esc(selectedSourceObj.pasta)}</span>` : ''}
+                                        <span class="text-xs font-bold text-slate-700 dark:text-slate-100 truncate">${esc(selectedSourceObj ? selectedSourceObj.nome : 'Selecionar apresentação')}</span>
+                                    </div>
+                                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 shrink-0 transition-transform ${this.sourceDropdownOpen ? 'rotate-180' : ''}"></i>
+                                </button>
+
+                                ${this.sourceDropdownOpen ? `
+                                    <div class="absolute right-0 mt-2 w-[340px] sm:w-[420px] rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/80 dark:border-white/15 shadow-2xl p-3 z-[100]">
+                                        <div class="relative mb-2.5">
+                                            <i class="fa-solid fa-magnifying-glass text-xs text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                                            <input id="pdca-source-search" type="text" value="${esc(this.sourceSearch)}" oninput="app.pdcaTeste.filterSourceList(this.value)" placeholder="Buscar por setor, mês/nome, criador ou data..." class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-slate-400">
+                                        </div>
+                                        <div id="pdca-source-list" class="max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+                                            ${sources.length === 0
+                                                ? '<div class="py-6 text-center text-xs font-bold text-slate-400">Nenhuma apresentação carregada ainda.</div>'
+                                                : this._renderSourceOptionsHtml(sources)}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <button onclick="app.pdcaTeste.importarDasDuasPaginas()" class="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-black shadow-xs flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap">
+                                <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>
+                                <span>Importar Gaps</span>
+                            </button>
+
+                            <button onclick="app.pdcaTeste.openModalNovo()" class="h-9 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-white flex items-center gap-1.5 transition-all whitespace-nowrap">
+                                <i class="fa-solid fa-plus text-[11px]"></i>
+                                <span>Novo</span>
+                            </button>
+
+                            <button onclick="app.pdcaTeste.popularExemploTeste()" title="Cria 1 card de exemplo em cada etapa" class="h-9 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 transition-all whitespace-nowrap">
+                                <i class="fa-solid fa-flask text-[11px]"></i>
+                                <span>Exemplo</span>
+                            </button>
+
+                            ${allCiclos.length > 0 ? `
+                                <button onclick="app.pdcaTeste.limparTudo()" title="Limpar quadro teste" class="h-9 w-9 shrink-0 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-slate-200/80 dark:border-white/10 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-all">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Linha 2: Filtro de Operação + Área + Guia Rápido Neutro -->
+                    <div class="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Operação -->
+                            <select onchange="app.pdcaTeste.filtroOperacao=this.value; app.pdcaTeste.renderView()" class="h-8 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                <option value="TODAS" ${this.filtroOperacao === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
+                                ${opsExistentes.map(op => `<option value="${esc(op)}" ${String(this.filtroOperacao).toUpperCase() === String(op).toUpperCase() ? 'selected' : ''}>${esc(op)}</option>`).join('')}
+                            </select>
+
+                            ${selectedSourceObj && !selectedSourceObj.isAtual ? `
+                                <select onchange="if(this.value) app.pdcaTeste.vincularOperacaoFonteAtual(this.value)" title="Vincular ou trocar a operação desta apresentação" class="h-8 px-2.5 rounded-xl bg-white dark:bg-slate-900 border ${selectedSourceObj.hasOperacaoExplicita ? 'border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300' : 'border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'} text-[11px] font-bold outline-none cursor-pointer">
+                                    <option value="">${selectedSourceObj.hasOperacaoExplicita ? `Vinc. Apres.: ${esc(selectedSourceObj.operacao)}` : 'Vincular operação à apresentação...'}</option>
+                                    ${opsExistentes.map(op => `<option value="${esc(op)}">${esc(op)}</option>`).join('')}
+                                </select>
+                            ` : ''}
+
+                            <!-- Quem cuida -->
+                            <div class="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-white/10 text-[11px] font-bold">
+                                ${[
+                                    { id: 'TODOS', label: 'Todos', count: ciclosDaOperacao.length, dot: 'bg-slate-400' },
+                                    { id: 'Qualidade', label: 'Qualidade', count: cntQualidade, dot: 'bg-sky-500' },
+                                    { id: 'Treinamento', label: 'Treinamento', count: cntTreinamento, dot: 'bg-amber-500' },
+                                    { id: 'Qualidade + Treinamento', label: 'Conjunto', count: cntConjunto, dot: 'bg-violet-500' }
+                                ].map(f => {
+                                    const active = this.filtroArea === f.id;
+                                    return `
+                                        <button type="button" onclick="app.pdcaTeste.filtroArea='${f.id}'; app.pdcaTeste.renderView()" class="px-2.5 py-1 rounded-lg transition-all cursor-pointer tabular-nums flex items-center gap-1.5 ${active
+                                            ? 'bg-white dark:bg-slate-900 shadow-xs font-black text-slate-900 dark:text-white'
+                                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}">
+                                            <span class="w-1.5 h-1.5 rounded-full ${f.dot}"></span>
+                                            <span>${f.label}</span>
+                                            <span class="text-[10px] opacity-60">${f.count}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Fluxo discreto em texto + Critérios -->
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <div class="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                                <span class="font-black text-slate-600 dark:text-slate-300">P</span> Identificar
+                                <i class="fa-solid fa-arrow-right text-[9px] opacity-60"></i>
+                                <span class="font-black text-slate-600 dark:text-slate-300">D</span> Executar
+                                <i class="fa-solid fa-arrow-right text-[9px] opacity-60"></i>
+                                <span class="font-black text-slate-600 dark:text-slate-300">C</span> Conferir
+                                <i class="fa-solid fa-arrow-right text-[9px] opacity-60"></i>
+                                <span class="font-black text-slate-600 dark:text-slate-300">A</span> Ação Contínua
+                                <i class="fa-solid fa-rotate text-[10px] opacity-60 ml-0.5" title="Gira de volta para P se não bater a meta"></i>
+                            </div>
+
+                            <button type="button" onclick="app.pdcaTeste.showCriterios = !app.pdcaTeste.showCriterios; app.pdcaTeste.renderView()" class="h-8 px-3 rounded-xl border text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${this.showCriterios
+                                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent'
+                                : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-white'}">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>Critérios dos Gaps</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${this.showCriterios ? `
+                        <div class="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px]">
+                            <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
+                                <i class="fa-solid fa-fire text-rose-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-black text-slate-800 dark:text-white">1. Falha Crítica (Apres. de Resultados)</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Top 2 falhas críticas. Com 5+ ocorr. vai p/ <strong>Treinamento</strong>; senão <strong>Conjunto</strong>.</div>
+                                </div>
+                            </div>
+                            <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
+                                <i class="fa-solid fa-chart-line text-sky-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-black text-slate-800 dark:text-white">2. Nota Abaixo de 92% (Ranking)</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Top 3 piores notas (&lt; 92%). &lt; 75% ➔ <strong>Treinamento</strong>; 75% a 91,9% ➔ <strong>Qualidade</strong>.</div>
+                                </div>
+                            </div>
+                            <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
+                                <i class="fa-solid fa-link text-amber-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-black text-slate-800 dark:text-white">3. Vínculo com Qualidade &amp; Treinamento</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Se já tiver tratativa em Q&amp;T, nasce em <strong>D</strong>. Clique na etiqueta do card para trocar o dono.</div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- QUADRO LIMPO COM AS 4 ETAPAS + FLECHAS ENTRE COLUNAS -->
+                <div class="grid grid-cols-1 lg:grid-cols-[1fr_28px_1fr_28px_1fr_28px_1fr] gap-3 items-start">
+                    ${this._stages.map((st, idx) => {
+                        const cards = byStage[st.key];
+                        const colHtml = `
+                            <div class="rounded-[24px] bg-gradient-to-b ${st.softBg} bg-white/45 dark:bg-slate-900/45 backdrop-blur-xl border ${st.border} p-3.5 min-h-[420px] flex flex-col">
+                                <!-- Topo da Coluna -->
+                                <div class="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-white/60 dark:border-white/10">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-9 h-9 rounded-2xl ${st.badgeBg} text-white font-black text-base flex items-center justify-center shadow-md">
+                                            ${st.key}
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                                                <span>${st.title}</span>
+                                            </div>
+                                            <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${st.hint}</div>
+                                        </div>
+                                    </div>
+                                    <span class="px-2.5 py-1 rounded-full bg-white/80 dark:bg-slate-900/80 border border-white dark:border-white/10 text-xs font-black ${st.text} tabular-nums">
+                                        ${cards.length}
+                                    </span>
+                                </div>
+
+                                <!-- Lista de Cards -->
+                                <div class="space-y-3 flex-1">
+                                    ${cards.length === 0 ? `
+                                        <div class="h-44 rounded-2xl border-2 border-dashed border-slate-300/60 dark:border-slate-700/60 flex flex-col items-center justify-center text-center p-4 opacity-75">
+                                            <i class="fa-solid ${st.icon} text-xl ${st.text} mb-2 opacity-60"></i>
+                                            <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Nenhum item em ${st.key}</span>
+                                        </div>
+                                    ` : cards.map(c => this._renderCard(c, st.key)).join('')}
+                                </div>
+                            </div>
+                        `;
+                        return idx < 3 ? colHtml + this._renderArrowDivider() : colHtml;
+                    }).join('')}
+                </div>
+
+                ${this._renderModal()}
             </div>
         `;
     }

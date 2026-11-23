@@ -1033,77 +1033,69 @@
     <div id="view-app" class="hidden flex-1 flex flex-col pb-16 relative z-10">
         
         <!-- Header -->
-        <header class="bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-sm shadow-sm border-b border-slate-200 dark:border-slate-800 z-20 sticky top-0">
+        <header class="bg-white/90 dark:bg-[#0f172a]/90 backdrop-blur-md shadow-sm border-b border-slate-200/80 dark:border-slate-800 z-20 sticky top-0">
             <div class="max-w-[1920px] w-[98%] mx-auto px-2 sm:px-4 lg:px-6">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center gap-3">
-                        <h1 onclick="app.ui.renderTab('home', true)" class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block cursor-pointer hover:opacity-80 transition" title="Ir para a Página Inicial do Portal">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
-                    </div>
-                    
-                    <!-- Barrinha de Pesquisa no Topo (Ctrl+K) -->
-                    <div class="flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2 sm:mx-4">
-                        <div onclick="app.ui.openCommandPalette()" class="w-full flex items-center justify-between gap-2 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer transition-all shadow-inner group" title="Buscar página ou atalho rápido (Ctrl + K)">
-                            <div class="flex items-center gap-2.5 text-slate-400 group-hover:text-blue-500 transition-colors truncate">
-                                <i class="fa-solid fa-magnifying-glass text-xs"></i>
-                                <span class="text-xs font-medium text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 truncate">Buscar página ou direcionar...</span>
-                            </div>
-                            <kbd class="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-                                <span>Ctrl</span><span>K</span>
-                            </kbd>
-                        </div>
-                    </div>
-                    
-                    <div class="flex items-center gap-3 sm:gap-4">
-                        
-                        <!-- Pill Persistente de Lembrete de Indicadores (Últimos 5 dias do mês - Qualidade) -->
-                        <button id="header-ind-alert-pill" type="button" onclick="app.ui.openIndicatorsAlertModal()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-200 text-xs font-extrabold shadow-xs hover:bg-rose-100 dark:hover:bg-rose-900/70 transition cursor-pointer whitespace-nowrap shrink-0" title="Ver metas pendentes de fechamento do mês">
-                            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
-                            <span id="header-ind-alert-text">Fechamento</span>
-                        </button>
+                <div class="flex items-center justify-between gap-3 h-16">
+                    <!-- 1. Marca + Busca Rápida -->
+                    <div class="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                        <h1 onclick="app.ui.renderTab('home', true)" class="font-extrabold text-lg tracking-tight text-slate-800 dark:text-white hidden sm:block cursor-pointer hover:opacity-80 transition shrink-0" title="Ir para a Página Inicial do Portal">Softmarketing <span class="font-normal text-slate-400 text-sm">| Resultados</span></h1>
 
-                        <!-- Mês Global -->
-                        <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors hover:border-green-300 dark:hover:border-green-500 group shrink-0">
-                            <i class="fa-regular fa-calendar-days text-green-600 text-sm"></i>
-                            <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
-                        </div>
-
-                        <!-- Notificações, Recorrentes e Utilitários agrupados -->
-                        <div class="flex items-center gap-1.5 sm:gap-2">
-                            <!-- Perfil Clicável -->
-                            <div onclick="if(!app.isAdmin) app.ui.renderTab('perfil')" class="hidden sm:flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                                <div class="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs overflow-hidden">
-                                    <img id="header-avatar" src="" class="hidden w-full h-full object-cover">
-                                    <i id="header-avatar-icon" class="fa-solid fa-user"></i>
+                        <!-- Barrinha de Pesquisa no Topo (Ctrl+K) -->
+                        <div class="flex-1 max-w-xs sm:max-w-sm">
+                            <div onclick="app.ui.openCommandPalette()" class="w-full h-9 flex items-center justify-between gap-2 bg-slate-100/90 hover:bg-slate-200/75 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 px-3 rounded-xl border border-slate-200/80 dark:border-slate-700 cursor-pointer transition-all group" title="Buscar página ou atalho rápido (Ctrl + K)">
+                                <div class="flex items-center gap-2 text-slate-400 group-hover:text-blue-500 transition-colors truncate">
+                                    <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                                    <span class="text-xs font-medium text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 truncate">Buscar página ou direcionar...</span>
                                 </div>
-                                <span id="header-username" class="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wide uppercase truncate max-w-[120px]">USUÁRIO</span>
+                                <kbd class="hidden md:inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shrink-0">
+                                    <span>Ctrl</span><span>K</span>
+                                </kbd>
                             </div>
+                        </div>
+                    </div>
 
-                            <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5"></div>
+                    <!-- Controles do Header Organizados em Grupos -->
+                    <div class="flex items-center gap-2 shrink-0">
 
-                            <!-- Botão de Sincronização Manual com a Nuvem -->
-                            <button id="header-cloud-sync-btn" type="button" onclick="app.storage && app.storage.syncCloudFromServer(false)" class="relative items-center justify-center w-9 h-9 flex shrink-0 rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Sincronizar dados da nuvem agora">
-                                <i class="fa-solid fa-cloud-arrow-down text-base"></i>
+                        <!-- 2. Grupo Contexto: Mês de Referência + Sincronizar Nuvem -->
+                        <div class="flex items-center h-9 bg-slate-100/80 dark:bg-slate-800/70 rounded-xl border border-slate-200/80 dark:border-slate-700/80 p-1">
+                            <div class="flex items-center gap-1.5 px-2 transition-colors group">
+                                <i class="fa-regular fa-calendar-days text-emerald-600 dark:text-emerald-400 text-xs"></i>
+                                <input type="month" id="global-month" onchange="app.changeMonth(this.value)" class="bg-transparent text-[11px] font-extrabold text-slate-700 dark:text-slate-200 outline-none uppercase cursor-pointer" title="Selecione o mês de referência">
+                            </div>
+                            <div class="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                            <button id="header-cloud-sync-btn" type="button" onclick="app.storage && app.storage.syncCloudFromServer(false)" class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-slate-700/70 transition-all cursor-pointer ml-0.5" title="Sincronizar dados da nuvem agora">
+                                <i class="fa-solid fa-cloud-arrow-down text-xs"></i>
+                            </button>
+                        </div>
+
+                        <!-- 3. Grupo Alertas & Pendências -->
+                        <div class="flex items-center gap-1 h-9 bg-slate-100/80 dark:bg-slate-800/70 rounded-xl border border-slate-200/80 dark:border-slate-700/80 p-1">
+                            <!-- Pill Persistente de Lembrete de Indicadores -->
+                            <button id="header-ind-alert-pill" type="button" onclick="app.ui.openIndicatorsAlertModal()" class="hidden items-center gap-1.5 h-7 px-2.5 rounded-lg bg-rose-100/90 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-700 text-rose-700 dark:text-rose-200 text-[11px] font-extrabold hover:bg-rose-200/80 dark:hover:bg-rose-900/70 transition cursor-pointer whitespace-nowrap shrink-0" title="Ver metas pendentes de fechamento do mês">
+                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
+                                <span id="header-ind-alert-text">Fechamento</span>
                             </button>
 
-                            <!-- Ícone Destacado: Faltas na Integração (Gestores, Gerentes e Dev) -->
-                            <button id="header-faltas-int-pill" type="button" onclick="app.ui.renderTab('faltas_integracao', true)" class="hidden relative items-center justify-center w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white shadow-sm shadow-rose-500/25 ring-2 ring-rose-200/80 dark:ring-rose-900/60 transition-all hover:scale-105 active:scale-95 cursor-pointer" title="Faltas na integração pendentes de envio ao RH">
-                                <i class="fa-solid fa-user-xmark text-sm"></i>
-                                <span id="header-faltas-int-text" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black tabular-nums leading-[14px] flex items-center justify-center border-2 border-white dark:border-[#0f172a] shadow-xs">0</span>
+                            <!-- Faltas na Integração (Padronizado w-7 h-7) -->
+                            <button id="header-faltas-int-pill" type="button" onclick="app.ui.renderTab('faltas_integracao', true)" class="hidden relative items-center justify-center w-7 h-7 shrink-0 rounded-lg bg-rose-500/15 hover:bg-rose-500 text-rose-600 hover:text-white dark:text-rose-400 dark:hover:text-white transition-all cursor-pointer" title="Faltas na integração pendentes de envio ao RH">
+                                <i class="fa-solid fa-user-xmark text-xs"></i>
+                                <span id="header-faltas-int-text" class="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-black tabular-nums leading-none flex items-center justify-center border border-white dark:border-slate-900 shadow-xs">0</span>
                             </button>
 
-                            <!-- Ícone Destacado: Demandas Recorrentes Pessoais -->
-                            <button id="header-rec-reminders-btn" type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="hidden relative items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white shadow-sm shadow-amber-500/30 ring-2 ring-amber-200/80 dark:ring-amber-900/60 transition-all hover:scale-105 active:scale-95 cursor-pointer" title="Minhas Demandas Recorrentes e Lembretes Pessoais">
-                                <i class="fa-solid fa-repeat text-sm"></i>
-                                <span id="rec-reminders-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black tabular-nums leading-[18px] text-center border-2 border-white dark:border-[#0f172a] shadow-xs">0</span>
+                            <!-- Demandas Recorrentes Pessoais (Padronizado w-7 h-7) -->
+                            <button id="header-rec-reminders-btn" type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="hidden relative items-center justify-center w-7 h-7 shrink-0 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-600 hover:text-white dark:text-amber-400 dark:hover:text-white transition-all cursor-pointer" title="Minhas Demandas Recorrentes e Lembretes Pessoais">
+                                <i class="fa-solid fa-repeat text-xs"></i>
+                                <span id="rec-reminders-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-amber-600 text-white text-[9px] font-black tabular-nums leading-[16px] text-center border border-white dark:border-slate-900 shadow-xs">0</span>
                             </button>
 
                             <!-- Dropdown de Notificações -->
                             <div class="relative">
-                                <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Notificações">
-                                    <i class="fa-solid fa-bell text-lg"></i>
-                                    <span id="notif-badge" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#0f172a]"></span>
+                                <button onclick="app.notifications.toggleDropdown(event)" class="relative text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white dark:hover:bg-slate-700/70" title="Notificações">
+                                    <i class="fa-solid fa-bell text-sm"></i>
+                                    <span id="notif-badge" class="hidden absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-[#0f172a]"></span>
                                 </button>
-                                <div id="notif-dropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden transform origin-top-right transition-all">
+                                <div id="notif-dropdown" class="hidden absolute right-0 mt-2.5 w-80 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden transform origin-top-right transition-all">
                                     <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center gap-2 bg-slate-50 dark:bg-slate-800/50">
                                         <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Notificações</h4>
                                         <div class="flex items-center gap-2">
@@ -1119,51 +1111,67 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Botão Cor do Tema -->
+                        <!-- 4. Grupo Sistema, Tema & Suporte -->
+                        <div class="flex items-center gap-0.5 h-9 bg-slate-100/80 dark:bg-slate-800/70 rounded-xl border border-slate-200/80 dark:border-slate-700/80 p-1">
+                            <!-- Cor do Tema -->
                             <div class="relative">
-                                <button onclick="document.getElementById('theme-color-dropdown').classList.toggle('hidden')" class="text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Cor do Tema">
-                                    <i class="fa-solid fa-palette text-lg"></i>
+                                <button onclick="document.getElementById('theme-color-dropdown').classList.toggle('hidden')" class="text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white dark:hover:bg-slate-700/70" title="Cor do Tema">
+                                    <i class="fa-solid fa-palette text-sm"></i>
                                 </button>
-                                <div id="theme-color-dropdown" class="hidden absolute right-0 mt-2 w-64 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 p-3 grid grid-cols-5 gap-2">
+                                <div id="theme-color-dropdown" class="hidden absolute right-0 mt-2.5 w-64 bg-white dark:bg-dark-surface rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 p-3 grid grid-cols-5 gap-2">
                                     <!-- Injetado via JS -->
                                 </div>
                             </div>
-                            <!-- Botao Firebase Dev Dashboard -->
-                            <button id=btn-firebase-dev onclick="app.ui.abrirModalFirebaseDev()" class="text-slate-500 hover:text-amber-500 dark:text-slate-400 dark:hover:text-amber-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Consumo & Limites Firebase (Dev)">
-                                <i class="fa-solid fa-database text-lg"></i>
+
+                            <!-- Firebase Dev Dashboard -->
+                            <button id="btn-firebase-dev" onclick="app.ui.abrirModalFirebaseDev()" class="text-slate-500 hover:text-amber-500 dark:text-slate-400 dark:hover:text-amber-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white dark:hover:bg-slate-700/70" title="Consumo & Limites Firebase (Dev)">
+                                <i class="fa-solid fa-database text-sm"></i>
                             </button>
 
-                            <!-- Botao Central de Reportes -->
-                            <button onclick="app.ui.abrirModalReporte()" class="text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Reportar Erro ou Sugestão">
-                                <i class="fa-solid fa-bullhorn text-lg"></i>
+                            <!-- Central de Reportes -->
+                            <button onclick="app.ui.abrirModalReporte()" class="text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white dark:hover:bg-slate-700/70" title="Reportar Erro ou Sugestão">
+                                <i class="fa-solid fa-bullhorn text-sm"></i>
                             </button>
 
-                            <!-- Botao Central de Ajuda & Guia (Help) -->
-                            <button onclick="app.ui.abrirModalHelp()" class="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Central de Ajuda e Guias do Sistema">
-                                <i class="fa-solid fa-circle-question text-lg"></i>
+                            <!-- Central de Ajuda -->
+                            <button onclick="app.ui.abrirModalHelp()" class="text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white dark:hover:bg-slate-700/70" title="Central de Ajuda e Guias do Sistema">
+                                <i class="fa-solid fa-circle-question text-sm"></i>
                             </button>
 
-                            <!-- Botão Tema (Dark/Light) -->
-                            <label class="switch ml-1 scale-[0.65] sm:scale-75 origin-right" title="Trocar Tema Escuro/Claro">
-                                <input id="theme-checkbox" type="checkbox" onchange="app.ui.toggleTheme()" />
-                                <span class="slider">
-                                    <div class="star star_1"></div>
-                                    <div class="star star_2"></div>
-                                    <div class="star star_3"></div>
-                                    <svg viewBox="0 0 16 16" class="cloud_1 cloud">
-                                        <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925"></path>
-                                    </svg>
-                                </span>
-                            </label>
+                            <div class="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                            <!-- Botão Tema (Dark/Light) centralizado sem folga -->
+                            <div class="w-11 h-7 flex items-center justify-center overflow-hidden">
+                                <label class="switch scale-[0.58] origin-center shrink-0" title="Trocar Tema Escuro/Claro">
+                                    <input id="theme-checkbox" type="checkbox" onchange="app.ui.toggleTheme()" />
+                                    <span class="slider">
+                                        <div class="star star_1"></div>
+                                        <div class="star star_2"></div>
+                                        <div class="star star_3"></div>
+                                        <svg viewBox="0 0 16 16" class="cloud_1 cloud">
+                                            <path transform="matrix(.77976 0 0 .78395-299.99-418.63)" fill="#fff" d="m391.84 540.91c-.421-.329-.949-.524-1.523-.524-1.351 0-2.451 1.084-2.485 2.435-1.395.526-2.388 1.88-2.388 3.466 0 1.874 1.385 3.423 3.182 3.667v.034h12.73v-.006c1.775-.104 3.182-1.584 3.182-3.395 0-1.747-1.309-3.186-2.994-3.379.007-.106.011-.214.011-.322 0-2.707-2.271-4.901-5.072-4.901-2.073 0-3.856 1.202-4.643 2.925"></path>
+                                        </svg>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
-                        
-                        <div class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-1"></div>
 
-                        <!-- Sair -->
-                        <button onclick="app.auth.logout()" class="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Sair do Sistema">
-                            <i class="fa-solid fa-right-from-bracket text-lg"></i>
-                        </button>
+                        <!-- 5. Conta + Sair (Unidos na ponta direita) -->
+                        <div class="flex items-center h-9 bg-slate-100/80 dark:bg-slate-800/70 rounded-xl border border-slate-200/80 dark:border-slate-700/80 p-1">
+                            <div onclick="if(!app.isAdmin) app.ui.renderTab('perfil')" class="hidden sm:flex items-center gap-2 px-2 h-7 rounded-lg cursor-pointer hover:bg-white dark:hover:bg-slate-700/70 transition-colors" title="Ver meu perfil">
+                                <div class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[10px] overflow-hidden shrink-0">
+                                    <img id="header-avatar" src="" class="hidden w-full h-full object-cover">
+                                    <i id="header-avatar-icon" class="fa-solid fa-user"></i>
+                                </div>
+                                <span id="header-username" class="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 tracking-wide uppercase truncate max-w-[115px]">USUÁRIO</span>
+                            </div>
+                            <div class="w-px h-4 bg-slate-200 dark:bg-slate-700 hidden sm:block mx-0.5"></div>
+                            <button onclick="app.auth.logout()" class="text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-colors w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer" title="Sair do Sistema">
+                                <i class="fa-solid fa-right-from-bracket text-sm"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1187,7 +1195,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261119_v107"></script>
+    <script src="script.js?v=20261123_v117"></script>
 </body>
 </html>
 
