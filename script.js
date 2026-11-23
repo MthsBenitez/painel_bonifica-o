@@ -9525,19 +9525,12 @@ storage: {
                         doc.line(marginX + colLeftW, startY, marginX + colLeftW, startY + h);
                         doc.line(marginX + colLeftW + colCenterW, startY, marginX + colLeftW + colCenterW, startY + h);
 
-                        // Bloco Esquerdo: Treinamento & Desenvolvimento (P&B)
-                        doc.setFillColor(0, 0, 0);
-                        doc.circle(marginX + 10.5, startY + 7, 3.8, 'F');
-                        doc.setTextColor(255, 255, 255);
-                        doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(6.5);
-                        doc.text('T&D', marginX + 10.5, startY + 8.1, { align: 'center' });
-
+                        // Bloco Esquerdo: Treinamento & Desenvolvimento (Somente Nome)
                         doc.setTextColor(0, 0, 0);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(8);
-                        doc.text('Treinamento &', marginX + 16.5, startY + 6);
-                        doc.text('Desenvolvimento', marginX + 16.5, startY + 10.1);
+                        doc.setFontSize(8.5);
+                        doc.text('Treinamento &', marginX + (colLeftW / 2), startY + 5.8, { align: 'center' });
+                        doc.text('Desenvolvimento', marginX + (colLeftW / 2), startY + 10.2, { align: 'center' });
 
                         // Bloco Central: Título principal (P&B)
                         doc.setTextColor(0, 0, 0);
@@ -9548,25 +9541,16 @@ storage: {
                         doc.setLineWidth(0.5);
                         doc.line(marginX + colLeftW + 38, startY + 10.8, marginX + colLeftW + colCenterW - 38, startY + 10.8);
 
-                        // Bloco Direito: Softmarketing Logo Vetorial (P&B)
+                        // Bloco Direito: Softmarketing (Somente Nome)
                         const rx = marginX + colLeftW + colCenterW;
-                        doc.setDrawColor(0, 0, 0);
-                        doc.setLineWidth(0.5);
-                        doc.circle(rx + 12, startY + 6.5, 3.8, 'S');
-                        doc.setDrawColor(90, 90, 90);
-                        doc.setLineWidth(0.4);
-                        doc.circle(rx + 12, startY + 6.5, 2.4, 'S');
-                        doc.setFillColor(0, 0, 0);
-                        doc.circle(rx + 12, startY + 6.5, 1.1, 'F');
-
                         doc.setTextColor(0, 0, 0);
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(10);
-                        doc.text('softmarketing', rx + 18.5, startY + 7);
+                        doc.setFontSize(11);
+                        doc.text('softmarketing', rx + (colRightW / 2), startY + 6.6, { align: 'center' });
                         doc.setTextColor(70, 70, 70);
                         doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(5.3);
-                        doc.text('SOLUÇÕES EM COMUNICAÇÃO', rx + 18.5, startY + 10.3);
+                        doc.setFontSize(5.5);
+                        doc.text('SOLUÇÕES EM COMUNICAÇÃO', rx + (colRightW / 2), startY + 10.3, { align: 'center' });
 
                         return startY + h;
                     };
