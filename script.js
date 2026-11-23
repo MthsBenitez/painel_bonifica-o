@@ -188,6 +188,16 @@ const app = {
                 return (this.users || []).filter(u => this.isUserQualidade(u));
             },
 
+            getPortalVersion() {
+                try {
+                    const el = document.querySelector('script[src*="script.js?v="]');
+                    const src = el ? el.getAttribute('src') || '' : '';
+                    const m = src.match(/[?&]v=([^&]+)/);
+                    if (m && m[1]) return m[1];
+                } catch (e) {}
+                return '20261123_v120';
+            },
+
             // Helpers de Operações Setoriais & Cálculo de Span por Monitor/Líder
             getOperacoesSetoriais() {
                 const ignorados = Array.isArray(this.config?.ignoredSetoresRH) ? this.config.ignoredSetoresRH : [];
@@ -1131,6 +1141,7 @@ storage: {
                         'qualidade_treinamento': ['apresentacoes'],
                         'bi_banco_horas': ['biBancoHoras'],
                         'pdca_teste': ['apresentacoes', 'actions', 'diarioBordo'],
+                        'mint_zen_teste': ['apresentacoes', 'actions', 'diarioBordo', 'monitorias'],
                         'treinamentos': ['softlingo', 'softlingo_temas', 'csatNpsProvas', 'fcrProvas'],
                         'pesquisa_treinamento': ['turmas_treinamento', 'csatNpsProvas']
                     };
@@ -1279,6 +1290,9 @@ storage: {
                             } catch(e) {}
                             document.getElementById('view-login').classList.add('hidden');
                             document.getElementById('view-app').classList.remove('hidden');
+                    if (app.mintZenTeste && typeof app.mintZenTeste.onPortalLogin === 'function') {
+                        app.mintZenTeste.onPortalLogin();
+                    }
                             const btnFbDev = document.getElementById('btn-firebase-dev');
                             if (btnFbDev) btnFbDev.classList.add('hidden');
                             if (app.storage && typeof app.storage.iniciarHeartbeatPresenca === 'function') {
@@ -2342,6 +2356,9 @@ storage: {
                 }
                 if (tabId === 'bi_banco_horas' || tabId === 'pdca_teste') {
                     return this.isAdmin || tipo === 'Dev';
+                }
+                if (tabId === 'mint_zen_teste') {
+                    return this.isAdmin || tipo === 'Dev' || userAbas.includes('mint_zen_teste');
                 }
                 if (tabId === 'faltas_integracao') {
                     return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
@@ -3408,9 +3425,13 @@ storage: {
                 updateBadge() {
                     const unread = this.getRelevant().filter(n => !n.read).length;
                     const badge = document.getElementById('notif-badge');
-                    if(!badge) return;
-                    if(unread > 0) badge.classList.remove('hidden');
-                    else badge.classList.add('hidden');
+                    if (badge) {
+                        if(unread > 0) badge.classList.remove('hidden');
+                        else badge.classList.add('hidden');
+                    }
+                    if (app.mintZenTeste && typeof app.mintZenTeste.refreshRailUtilities === 'function') {
+                        app.mintZenTeste.refreshRailUtilities();
+                    }
                 },
                 markAllAsRead() {
                     let changed = false;
@@ -3791,6 +3812,92 @@ storage: {
                 return Promise.all(writes);
             },
 
+                notifyApresentacaoPronta(apr, targetMats = []) {
+                    if (!apr || !apr.id) return Promise.resolve();
+                    if (window.__TEST_MODE__ || window.__DISABLE_FIREBASE_WRITE__) return Promise.resolve();
+                    const fromMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || '').trim();
+                    const fromName = app.isAdmin ? 'Administração' : String(app.currentUser?.nome || 'Gestão').trim();
+                    const fromNorm = app.storage ? app.storage._normalizeMat(fromMat) : fromMat.toUpperCase();
+
+                    const opNome = String(apr.operacao || apr.pasta || apr.setor || 'Geral').trim();
+                    const aprNome = String(apr.nome || 'Apresentação').trim();
+                    const aprData = String(apr.dataStr || (new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))).trim();
+                    const nowTs = Date.now();
+
+                    const uniqueMats = Array.from(new Set(
+                        (Array.isArray(targetMats) ? targetMats : [])
+                            .map(m => String(m || '').trim())
+                            .filter(m => {
+                                if (!m) return false;
+                                const n = app.storage ? app.storage._normalizeMat(m) : m.toUpperCase();
+                                return !fromNorm || n !== fromNorm;
+                            })
+                    ));
+                    if (uniqueMats.length === 0) return Promise.resolve();
+
+                    const tituloNotif = `Apresentação pronta: ${opNome}`;
+                    const textoMsg = `Apresentação de ${opNome} (${aprNome}) de ${aprData} pronta para visualização e ação!`;
+
+                    const ops = uniqueMats.map((toMat, idx) => {
+                        const safeMat = app.storage
+                            ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(toMat))
+                            : toMat.toUpperCase();
+                        const remId = `aprrem_${nowTs}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+                        const remObj = {
+                            id: remId,
+                            kind: 'apresentacao_pronta',
+                            aprId: apr.id,
+                            aprOperacao: opNome,
+                            aprNome,
+                            aprData,
+                            fromMat,
+                            fromName,
+                            toMat,
+                            text: textoMsg,
+                            details: `Compartilhada por ${fromName}. Abra para visualizar os resultados ou iniciar ações em Qualidade & Treinamento.`,
+                            createdAt: nowTs,
+                            acknowledged: false,
+                            acknowledgedAt: null
+                        };
+                        this.notify(toMat, tituloNotif, textoMsg, 'info');
+                        if (typeof firebase !== 'undefined' && firebase.database) {
+                            return firebase.database().ref(`sistema_bonificacao/task_reminders/${safeMat}/${remId}`).set(remObj).catch(() => {});
+                        }
+                        return Promise.resolve();
+                    });
+
+                    return Promise.all(ops);
+                },
+
+                startRealtimeRemindersListener() {
+                    if (window.__TEST_MODE__ || (!app.isAdmin && !app.currentUser) || app.isGuest) return;
+                    if (typeof firebase === 'undefined' || !firebase.database) return;
+                    const rawMat = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || '').trim();
+                    if (!rawMat) return;
+                    const mySafeMat = app.storage ? app.storage.sanitizeFirebaseKey(app.storage._normalizeMat(rawMat)) : rawMat.toUpperCase();
+                    if (this._realtimeRemMat === mySafeMat && this._realtimeRemRef) return;
+
+                    if (this._realtimeRemRef) {
+                        try { this._realtimeRemRef.off(); } catch (e) {}
+                    }
+                    const listenStartTs = Date.now();
+                    const ref = firebase.database().ref(`sistema_bonificacao/task_reminders/${mySafeMat}`);
+                    this._realtimeRemRef = ref;
+                    this._realtimeRemMat = mySafeMat;
+
+                    ref.orderByChild('createdAt').startAt(listenStartTs).on('child_added', snap => {
+                        const rem = snap.val();
+                        if (!rem || rem.acknowledged) return;
+                        const current = Array.isArray(this._pendingTaskReminders) ? this._pendingTaskReminders : [];
+                        if (current.some(x => x && x.id === rem.id)) return;
+                        const merged = [rem, ...current];
+                        this._pendingTaskReminders = merged;
+                        if (app.ui && typeof app.ui.openTaskRemindersPopupModal === 'function') {
+                            app.ui.openTaskRemindersPopupModal(merged);
+                        }
+                    });
+                },
+
                 checkTaskReminders(force = false) {
                     if (window.__TEST_MODE__ || (!app.isAdmin && !app.currentUser) || app.isGuest) return;
                     if (typeof firebase === 'undefined' || !firebase.database) return;
@@ -3820,7 +3927,7 @@ storage: {
                         .catch(err => console.warn('Aviso ao verificar lembretes de tarefa:', err));
                 },
 
-                acknowledgeTaskReminders(ids = [], goToGtd = false) {
+                acknowledgeTaskReminders(ids = [], goToGtd = false, openAprId = '', openTabId = '') {
                     const modal = document.getElementById('task-reminder-popup-modal');
                     if (modal) modal.remove();
 
@@ -3840,6 +3947,23 @@ storage: {
                         }
                     }
                     this._pendingTaskReminders = [];
+                    if (openAprId) {
+                        const goOpen = () => {
+                            if (openTabId === 'qualidade_treinamento' && app.ui && typeof app.ui.abrirQualidadeTreinamentoDaSessao === 'function') {
+                                app.ui.abrirQualidadeTreinamentoDaSessao(openAprId);
+                            } else if (app.admin && typeof app.admin.loadApresentacaoFromDB === 'function') {
+                                app.admin.loadApresentacaoFromDB(openAprId, true);
+                            }
+                        };
+                        if (app.apresentacoesList && app.apresentacoesList[openAprId]) {
+                            goOpen();
+                        } else if (app.storage && typeof app.storage.refreshApresentacoesFromCloud === 'function') {
+                            app.storage.refreshApresentacoesFromCloud(true).then(() => goOpen()).catch(() => goOpen());
+                        } else {
+                            goOpen();
+                        }
+                        return;
+                    }
                     if (goToGtd && app.ui) {
                         app.ui.renderTab('produtividade_gtd', true);
                     }
@@ -4449,6 +4573,347 @@ storage: {
                     const l = document.createElement("a");
                     l.href = p; l.download = `Evidencia_${act.nome.replace(/\s+/g, '_')}_${pIndex+1}.${ext}`;
                     document.body.appendChild(l); l.click(); document.body.removeChild(l);
+                },
+
+                _htmlToCleanText(rawHtml) {
+                    const s = String(rawHtml || '')
+                        .replace(/<\s*br\s*\/?>/gi, '\n')
+                        .replace(/<\/(p|div|h[1-6]|tr)>/gi, '\n')
+                        .replace(/<\s*li[^>]*>/gi, '\n• ')
+                        .replace(/<\/li>/gi, '')
+                        .replace(/<[^>]+>/g, '');
+                    try {
+                        const tmp = document.createElement('textarea');
+                        tmp.innerHTML = s;
+                        return tmp.value.replace(/\n{3,}/g, '\n\n').trim();
+                    } catch (e) {
+                        return s.replace(/&nbsp;/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+                    }
+                },
+
+                _getActionsForExport(singleActId = null) {
+                    if (singleActId) {
+                        const single = app.actionsList ? app.actionsList[singleActId] : null;
+                        return { list: single ? [single] : [], isSingle: true, scopeLabel: single?.codigoOpe || 'Ação Individual' };
+                    }
+                    const allActs = Object.values(app.actionsList || {}).filter(Boolean);
+                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
+                    const monthActs = allActs.filter(a => getActMonth(a) === app.currentMonth);
+                    const statusFilt = app.ui?.currentActionFilter || '';
+                    let list = statusFilt ? monthActs.filter(a => a.status === statusFilt) : monthActs.slice();
+                    if (app.ui?.actionFilterUser) list = list.filter(a => a.nome === app.ui.actionFilterUser);
+                    if (app.ui?.actionFilterOp) list = list.filter(a => a.codigoOpe === app.ui.actionFilterOp);
+                    if (list.length === 0 && monthActs.length > 0) {
+                        list = monthActs.slice();
+                    }
+                    list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const parts = [];
+                    if (app.ui?.actionFilterOp) parts.push(app.ui.actionFilterOp);
+                    if (app.ui?.actionFilterUser) parts.push(app.ui.actionFilterUser);
+                    return { list, isSingle: false, scopeLabel: parts.length > 0 ? parts.join(' • ') : 'Todas as Operações' };
+                },
+
+                exportActionsEmail(singleActId = null) {
+                    const { list, isSingle, scopeLabel } = this._getActionsForExport(singleActId);
+                    if (!list || list.length === 0) {
+                        return app.ui.showAlert("Sem Ações", "Não há ações lançadas neste filtro para gerar o e-mail.", "info");
+                    }
+                    const mesLabel = app.ui?.formatMonthLabel ? app.ui.formatMonthLabel(app.currentMonth) : app.currentMonth;
+                    const statusMap = { aprovado: 'Aprovada', pendente: 'Em Análise', reprovado: 'Devolvida' };
+                    const totalOps = list.reduce((acc, a) => acc + (parseInt(a.operadores, 10) || 0), 0);
+                    const aprovCount = list.filter(a => a.status === 'aprovado').length;
+                    const opsUnicas = [...new Set(list.map(a => String(a.codigoOpe || '').trim()).filter(Boolean))];
+
+                    let texto = `Assunto: Relatório de Ações Presenciais — ${isSingle ? (list[0].codigoOpe || 'Operação') : mesLabel}\n\n`;
+                    texto += `Prezados,\n`;
+                    texto += isSingle
+                        ? `Segue o detalhamento da ação presencial realizada na operação ${list[0].codigoOpe || '-'}:\n\n`
+                        : `Segue o resumo das ações presenciais lançadas referentes a ${mesLabel} (${scopeLabel}):\n\n`;
+
+                    if (!isSingle) {
+                        texto += `RESUMO EXECUTIVO\n`;
+                        texto += `• Total de ações: ${list.length} (${aprovCount} aprovada${aprovCount === 1 ? '' : 's'})\n`;
+                        texto += `• Colaboradores impactados: ${totalOps}\n`;
+                        if (opsUnicas.length > 0) texto += `• Operações envolvidas: ${opsUnicas.join(', ')}\n`;
+                        texto += `\nDETALHAMENTO DAS AÇÕES\n\n`;
+                    }
+
+                    list.forEach((act, idx) => {
+                        const dtBr = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
+                        const stTxt = statusMap[act.status] || act.status || 'Registrada';
+                        const descLimpa = this._htmlToCleanText(act.acaoRealizada) || '-';
+                        const prefixo = isSingle ? '' : `${idx + 1}. `;
+                        texto += `${prefixo}${act.objetivo || 'Ação Presencial'} [${stTxt}]\n`;
+                        texto += `• Data: ${dtBr} | Operação: ${act.codigoOpe || '-'}\n`;
+                        texto += `• Responsável: ${act.nome || '-'} | Gestor Alinhado: ${act.gestor || '-'}\n`;
+                        texto += `• Ofensor Alvo: ${act.ofensor || '-'} | Impacto: ${act.operadores || 0} operador(es)`;
+                        if (act.brindes && String(act.brindes) !== '0' && String(act.brindes).toLowerCase() !== 'nenhum') {
+                            texto += ` | Brindes: ${act.brindes}`;
+                        }
+                        texto += `\n• Ação Realizada:\n${descLimpa}\n\n`;
+                    });
+
+                    texto += `Atenciosamente,\n${app.currentUser?.nome || 'Equipe de Qualidade & Treinamento'}`;
+
+                    const modal = document.getElementById('email-pronto-modal');
+                    const textarea = document.getElementById('email-pronto-textarea');
+                    if (textarea) textarea.value = texto;
+                    if (modal) modal.classList.remove('hidden');
+
+                    const copyFn = (app.diarioBordo && typeof app.diarioBordo._copyTextSilently === 'function')
+                        ? app.diarioBordo._copyTextSilently(texto, textarea)
+                        : (navigator.clipboard ? navigator.clipboard.writeText(texto).catch(() => {}) : Promise.resolve());
+                    Promise.resolve(copyFn).then(() => {
+                        app.ui.showAlert("Texto de E-mail Copiado!", "O resumo das ações foi copiado para a área de transferência (Ctrl+V).", "success");
+                    });
+                },
+
+                exportActionsPDF(singleActId = null) {
+                    if (!window.jspdf || !window.jspdf.jsPDF) {
+                        return app.ui.showAlert("Aviso", "Aguarde o carregamento do gerador de PDF...", "error");
+                    }
+                    const { list, isSingle, scopeLabel } = this._getActionsForExport(singleActId);
+                    if (!list || list.length === 0) {
+                        return app.ui.showAlert("Sem Ações", "Não há ações lançadas neste filtro para gerar o PDF.", "info");
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                    const pageWidth = doc.internal.pageSize.getWidth(); // 297
+                    const pageHeight = doc.internal.pageSize.getHeight(); // 210
+                    const marginX = 14;
+                    const contentWidth = pageWidth - (marginX * 2); // 269mm
+                    const fitTxt = (txt, maxW) => {
+                        const s = String(txt || '');
+                        if (doc.getTextWidth(s) <= maxW) return s;
+                        let out = s;
+                        while (out.length > 3 && doc.getTextWidth(out + '...') > maxW) out = out.slice(0, -1);
+                        return out + '...';
+                    };
+
+                    const mesLabel = app.ui?.formatMonthLabel ? app.ui.formatMonthLabel(app.currentMonth) : app.currentMonth;
+                    const statusInfo = {
+                        aprovado: { label: 'APROVADA', bg: [220, 252, 231], txt: [22, 101, 52] },
+                        pendente: { label: 'EM ANÁLISE', bg: [254, 243, 199], txt: [180, 83, 9] },
+                        reprovado: { label: 'DEVOLVIDA', bg: [255, 228, 230], txt: [190, 24, 93] }
+                    };
+
+                    // Cabeçalho Executivo Slate 900 + Accent Indigo/Emerald
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(marginX, 10, contentWidth, 21, 'F');
+                    doc.setFillColor(16, 185, 129);
+                    doc.rect(marginX, 31, contentWidth, 1.3, 'F');
+
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(12);
+                    doc.text(fitTxt("SOFTMARKETING  |  RELATÓRIO EXECUTIVO DE AÇÕES", 145), marginX + 6, 18.5);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(203, 213, 225);
+                    doc.text(fitTxt(isSingle ? "PARECER INDIVIDUAL DE AÇÃO PRESENCIAL" : "PRESTAÇÃO DE CONTAS & EVIDÊNCIAS OPERACIONAIS", 145), marginX + 6, 25.8);
+
+                    const rightX = marginX + contentWidth - 6;
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(9.5);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(fitTxt(`COMPETÊNCIA: ${String(mesLabel || '').toUpperCase()}`, 110), rightX, 18.5, { align: 'right' });
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text(fitTxt(`Escopo: ${scopeLabel}  •  Emissão: ${new Date().toLocaleDateString('pt-BR')}`, 110), rightX, 25.8, { align: 'right' });
+
+                    const totalOps = list.reduce((acc, a) => acc + (parseInt(a.operadores, 10) || 0), 0);
+                    const aprovCount = list.filter(a => a.status === 'aprovado').length;
+                    const pctAprov = list.length > 0 ? Math.round((aprovCount / list.length) * 100) : 0;
+                    const opsUnicas = [...new Set(list.map(a => String(a.codigoOpe || '').trim()).filter(Boolean))];
+
+                    let curY = 36;
+                    const kW = (contentWidth - 9) / 4;
+                    const drawKpi = (x, title, val, sub, bg, bdr, tc) => {
+                        doc.setFillColor(...bg);
+                        doc.setDrawColor(...bdr);
+                        doc.setLineWidth(0.25);
+                        doc.roundedRect(x, curY, kW, 16, 1.5, 1.5, 'FD');
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(7);
+                        doc.setTextColor(...tc);
+                        doc.text(title, x + 4, curY + 5);
+                        doc.setFontSize(11);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text(fitTxt(String(val), kW - 8), x + 4, curY + 10.8);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(6.8);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(fitTxt(String(sub), kW - 8), x + 4, curY + 14.5);
+                    };
+
+                    drawKpi(marginX, "AÇÕES REGISTRADAS", `${list.length} ação(ões)`, isSingle ? (list[0].dataAcao || '-') : `Filtro: ${scopeLabel}`, [248, 250, 252], [226, 232, 240], [71, 85, 105]);
+                    drawKpi(marginX + kW + 3, "APROVADAS / VALIDADAS", `${aprovCount} (${pctAprov}%)`, "Auditoria concluída", [240, 253, 244], [187, 247, 208], [22, 101, 52]);
+                    drawKpi(marginX + (kW + 3) * 2, "OPERADORES ATINGIDOS", `${totalOps} colaborador${totalOps === 1 ? '' : 'es'}`, "Alcance operacional", [239, 246, 255], [191, 219, 254], [29, 78, 216]);
+                    drawKpi(marginX + (kW + 3) * 3, "OPERAÇÕES ATENDIDAS", `${opsUnicas.length} operação(ões)`, opsUnicas.slice(0, 3).join(', ') || '-', [245, 243, 255], [221, 214, 254], [109, 40, 217]);
+                    curY += 21;
+
+                    // Tabela Sintética no topo quando houver múltiplas ações
+                    if (!isSingle && list.length > 1) {
+                        const rowsSint = list.map((a, idx) => [
+                            String(idx + 1),
+                            a.dataAcao ? String(a.dataAcao).split('-').reverse().join('/') : '-',
+                            a.codigoOpe || '-',
+                            fitTxt(a.objetivo || '-', 65),
+                            a.nome || '-',
+                            `${a.operadores || 0} op.`,
+                            (statusInfo[a.status]?.label || String(a.status || '').toUpperCase())
+                        ]);
+                        doc.autoTable({
+                            startY: curY,
+                            margin: { top: 14, bottom: 16, left: marginX, right: marginX },
+                            tableWidth: contentWidth,
+                            rowPageBreak: 'avoid',
+                            showHead: 'everyPage',
+                            head: [['#', 'Data', 'Operação', 'Objetivo da Ação', 'Responsável', 'Alcance', 'Status']],
+                            body: rowsSint,
+                            theme: 'striped',
+                            headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5, cellPadding: 2.2 },
+                            bodyStyles: { fontSize: 7, cellPadding: 2, textColor: [30, 41, 59] },
+                            columnStyles: {
+                                0: { cellWidth: 10, halign: 'center' },
+                                1: { cellWidth: 22, halign: 'center' },
+                                2: { cellWidth: 36 },
+                                3: { cellWidth: contentWidth - 158 },
+                                4: { cellWidth: 42 },
+                                5: { cellWidth: 22, halign: 'center' },
+                                6: { cellWidth: 26, halign: 'center' }
+                            }
+                        });
+                        curY = doc.lastAutoTable.finalY + 7;
+                    }
+
+                    // Fichas Detalhadas + Evidências Fotográficas
+                    list.forEach((act, idx) => {
+                        const st = statusInfo[act.status] || { label: 'REGISTRADA', bg: [241, 245, 249], txt: [51, 65, 85] };
+                        const dtBr = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : '-';
+                        const descClean = this._htmlToCleanText(act.acaoRealizada) || 'Sem descrição detalhada.';
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(8);
+                        const descLines = doc.splitTextToSize(descClean, contentWidth - 10);
+                        const rawPhotos = (act.photos || (act.photo ? [act.photo] : [])).filter(p => typeof p === 'string' && p.startsWith('data:image/'));
+                        const showPhotos = rawPhotos.slice(0, 2);
+
+                        const cardHeaderH = 18;
+                        const textBlockH = Math.max(12, descLines.length * 4 + 6);
+                        const photoBlockH = showPhotos.length > 0 ? 44 : 0;
+                        const totalBoxH = cardHeaderH + textBlockH + photoBlockH + 4;
+
+                        if (curY + Math.min(totalBoxH, 72) > pageHeight - 15) {
+                            doc.addPage();
+                            curY = 14;
+                        }
+
+                        // Moldura Principal da Ação
+                        doc.setFillColor(255, 255, 255);
+                        doc.setDrawColor(203, 213, 225);
+                        doc.setLineWidth(0.28);
+                        doc.roundedRect(marginX, curY, contentWidth, cardHeaderH + textBlockH, 2, 2, 'FD');
+
+                        // Faixa superior discreta do card
+                        doc.setFillColor(248, 250, 252);
+                        doc.roundedRect(marginX, curY, contentWidth, 9.5, 2, 2, 'F');
+                        doc.setFillColor(30, 41, 59);
+                        doc.rect(marginX, curY, 2.2, 9.5, 'F');
+
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(9.2);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text(fitTxt(`${idx + 1}. ${act.objetivo || 'Ação Presencial'}`, contentWidth - 46), marginX + 5, curY + 6.2);
+
+                        // Pill Status
+                        doc.setFillColor(...st.bg);
+                        doc.roundedRect(marginX + contentWidth - 34, curY + 2, 31, 5.5, 1.5, 1.5, 'F');
+                        doc.setFontSize(6.8);
+                        doc.setTextColor(...st.txt);
+                        doc.text(st.label, marginX + contentWidth - 18.5, curY + 5.7, { align: 'center' });
+
+                        // Metadados na linha 2
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(7.2);
+                        doc.setTextColor(71, 85, 105);
+                        const metaStr = `Operação: ${act.codigoOpe || '-'}   •   Data: ${dtBr}   •   Monitor(a): ${act.nome || '-'}   •   Gestor: ${act.gestor || '-'}   •   Ofensor: ${act.ofensor || '-'}   •   Alcance: ${act.operadores || 0} op.${act.brindes && String(act.brindes) !== '0' ? `   •   Brindes: ${act.brindes}` : ''}`;
+                        doc.text(fitTxt(metaStr, contentWidth - 10), marginX + 5, curY + 14.5);
+
+                        // Divisória interna
+                        doc.setDrawColor(226, 232, 240);
+                        doc.line(marginX + 4, curY + 17, marginX + contentWidth - 4, curY + 17);
+
+                        // Descrição limpa
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(8);
+                        doc.setTextColor(30, 41, 59);
+                        let ty = curY + 22;
+                        descLines.forEach(ln => {
+                            if (ty > pageHeight - 16) {
+                                doc.addPage();
+                                ty = 16;
+                            }
+                            doc.text(ln, marginX + 5, ty);
+                            ty += 4;
+                        });
+                        curY = ty + 4;
+
+                        // Evidências Fotográficas (se houver imagens)
+                        if (showPhotos.length > 0) {
+                            if (curY + 46 > pageHeight - 15) {
+                                doc.addPage();
+                                curY = 14;
+                            }
+                            const pw = (contentWidth - 6) / 2;
+                            const ph = 42;
+                            showPhotos.forEach((imgStr, pIdx) => {
+                                const px = marginX + pIdx * (pw + 6);
+                                doc.setFillColor(248, 250, 252);
+                                doc.setDrawColor(226, 232, 240);
+                                doc.roundedRect(px, curY, pw, ph, 1.5, 1.5, 'FD');
+                                try {
+                                    const boxW = pw - 4;
+                                    const boxH = ph - 4;
+                                    let dW = boxW, dH = boxH;
+                                    let fmt = imgStr.indexOf('image/png') !== -1 || imgStr.indexOf('image/PNG') !== -1 ? 'PNG' : (imgStr.indexOf('image/webp') !== -1 ? 'WEBP' : 'JPEG');
+                                    try {
+                                        const props = doc.getImageProperties(imgStr);
+                                        if (props?.width && props?.height) {
+                                            const sc = Math.min(boxW / props.width, boxH / props.height);
+                                            dW = props.width * sc;
+                                            dH = props.height * sc;
+                                        }
+                                        if (props?.fileType) fmt = props.fileType;
+                                    } catch (eProp) {}
+                                    doc.addImage(imgStr, fmt, px + 2 + ((boxW - dW) / 2), curY + 2 + ((boxH - dH) / 2), dW, dH);
+                                } catch (eImg) {}
+                            });
+                            curY += ph + 6;
+                        } else {
+                            curY += 3;
+                        }
+                    });
+
+                    // Rodapé Executivo
+                    const totalPages = doc.internal.getNumberOfPages();
+                    for (let p = 1; p <= totalPages; p++) {
+                        doc.setPage(p);
+                        doc.setDrawColor(226, 232, 240);
+                        doc.setLineWidth(0.2);
+                        doc.line(marginX, pageHeight - 8, marginX + contentWidth, pageHeight - 8);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(7);
+                        doc.setTextColor(148, 163, 184);
+                        doc.text(`Softmarketing Soluções em Comunicação  •  Relatório Executivo de Ações  •  Emitido em ${new Date().toLocaleString('pt-BR')}`, marginX, pageHeight - 4.5);
+                        doc.text(`Página ${p} de ${totalPages}`, marginX + contentWidth, pageHeight - 4.5, { align: 'right' });
+                    }
+
+                    const safeSlug = isSingle ? String(list[0].codigoOpe || 'Acao').replace(/[^a-zA-Z0-9]/g, '_') : String(app.currentMonth || 'mes');
+                    const filename = isSingle ? `Acao_Presencial_${safeSlug}.pdf` : `Relatorio_Acoes_${safeSlug}.pdf`;
+                    doc.save(filename);
+                    app.ui.showAlert("PDF de Ações Gerado!", `O relatório "${filename}" foi baixado com sucesso.`, "success");
                 }
             },
 
@@ -5955,6 +6420,15 @@ storage: {
                 ) || null;
             },
 
+            _isReciclagemRecord(d, tBase = null) {
+                const tRef = tBase || (d ? this.findTurmaForDiario(d) : null);
+                if (d?.tipoTurma === 'reciclagem' || tRef?.tipoTurma === 'reciclagem') return true;
+                if (d && (String(d.temaReciclagem || '').trim() || String(d.dinamicaAtividade || '').trim())) return true;
+                if (tRef && String(tRef.temaReciclagem || '').trim()) return true;
+                const turmaNome = String(d?.turma || tRef?.numeroTurma || '').trim();
+                return /\breciclagem\b/i.test(turmaNome);
+            },
+
             getDiariosDaTurma(turmaOrId, asc = false) {
                 const t = typeof turmaOrId === 'string' ? this.getTurmaById(turmaOrId) : turmaOrId;
                 if (!t) return [];
@@ -6348,7 +6822,7 @@ storage: {
                 } else {
                     const quadroTxt = totalInicial > 0
                         ? (isReciclagem
-                            ? `com ${totalInicial} participantes previstos (reciclagem por quantidade${toCount > 0 ? `, ${toCount} T.O` : ''})`
+                            ? `com ${totalInicial} participantes na reciclagem`
                             : `com ${ativos} de ${totalInicial} colaboradores ativos (${pctRetencaoAjustado}% de retenção${toCount > 0 ? `, ${toCount} T.O` : ', sem evasão'})`)
                         : 'sem colaboradores cadastrados na lista nominal';
                     partesTexto.push(`Turma ${t.numeroTurma} (${t.operacao}) encontra-se ${t.status === 'Entregue' ? 'concluída/entregue' : `em ${faseAtualLabel}`}, ${quadroTxt}.`);
@@ -10056,6 +10530,13 @@ storage: {
 
                 // Sincroniza campos objetivos específicos da Reciclagem
                 if (isReciclagemSave) {
+                    d.tipoTurma = 'reciclagem';
+                    d.chamada = [];
+                    d.abs = [];
+                    d.desligamentos = [];
+                    d.absQtd = 0;
+                    d.deslQtd = 0;
+                    d.quantidadeParticipantes = Math.max(1, parseInt(d.previstosSala, 10) || 1);
                     const recTemaEl = document.getElementById('db-input-rec-tema');
                     const recDinEl = document.getElementById('db-input-rec-dinamica');
                     const recObsEl = document.getElementById('db-input-rec-obs');
@@ -11040,7 +11521,11 @@ storage: {
                         this.diarioEmEdicao.relatoGeral = this.diarioEmEdicao.dinamicaAtividade;
                     }
                     if (recObsEl) this.diarioEmEdicao.observacoesReciclagem = recObsEl.value.trim();
-                    if (prevVisEl) this.diarioEmEdicao.previstosSala = Math.max(0, parseInt(prevVisEl.value, 10) || 0);
+                    if (prevVisEl) {
+                        const qtdRec = Math.max(0, parseInt(prevVisEl.value, 10) || 0);
+                        this.diarioEmEdicao.previstosSala = qtdRec;
+                        this.diarioEmEdicao.quantidadeParticipantes = qtdRec;
+                    }
                     return this.diarioEmEdicao;
                 }
                 return diarioId ? (app.diarioBordoList && app.diarioBordoList[diarioId]) : this.diarioEmEdicao;
@@ -11065,7 +11550,7 @@ storage: {
                 const contentWidth = pageWidth - (marginX * 2); // 269mm
 
                 const tBasePdf = this.findTurmaForDiario(diario);
-                const isReciclagemPdf = (diario.tipoTurma === 'reciclagem') || (tBasePdf && tBasePdf.tipoTurma === 'reciclagem');
+                const isReciclagemPdf = this._isReciclagemRecord(diario, tBasePdf);
                 const { P, A, D, PR, pctPR, pctA, pctD } = this.getDiarioContagens(diario);
                 const dataFormatada = diario.data ? diario.data.split('-').reverse().join('/') : '--/--/----';
 
@@ -11141,7 +11626,7 @@ storage: {
                     const temaRec = String(diario.temaReciclagem || (tBasePdf && tBasePdf.temaReciclagem) || '').trim() || 'Não informado';
                     const dinamicaRec = String(diario.dinamicaAtividade || diario.relatoGeral || '').trim() || 'Não informado';
                     const obsRec = String(diario.observacoesReciclagem || (tBasePdf && tBasePdf.observacoesReciclagem) || '').trim();
-                    const qtdPart = parseInt(diario.previstosSala, 10) || parseInt(diario.quantidadeParticipantes, 10) || P || (tBasePdf && parseInt(tBasePdf.quantidadeAlunos, 10)) || 0;
+                    const qtdPart = parseInt(diario.quantidadeParticipantes, 10) || (PR > 0 ? PR : 0) || parseInt(diario.previstosSala, 10) || (tBasePdf && parseInt(tBasePdf.quantidadeAlunos, 10)) || 0;
 
                     const fotosRawDiario = this._toArray(diario.fotosReciclagem).filter(f => f && f.data);
                     const fotosRawTurma = tBasePdf ? this._toArray(tBasePdf.fotosReciclagem).filter(f => f && f.data) : [];
@@ -11618,7 +12103,7 @@ storage: {
                 const op = (diario.operacao || 'OPERAÇÃO').toUpperCase();
                 const turma = (diario.turma || '').toUpperCase();
                 const tBase = this.findTurmaForDiario(diario);
-                const isReciclagem = (diario.tipoTurma === 'reciclagem') || (tBase && tBase.tipoTurma === 'reciclagem');
+                const isReciclagem = this._isReciclagemRecord(diario, tBase);
 
                 // Buscar diários da mesma turma ordenados por data até o diário atual (incluindo o rascunho atual em edição)
                 const mergedMap = { ...(app.diarioBordoList || {}) };
@@ -11645,7 +12130,8 @@ storage: {
 
                 if (isReciclagem) {
                     const cRec = this.getDiarioContagens(diario);
-                    texto += `Presentes: ${cRec.PR}/${cRec.P} (${cRec.pctPR}%) • ABS: ${cRec.A}\n`;
+                    const presRec = parseInt(diario.quantidadeParticipantes, 10) || cRec.PR || cRec.P || 0;
+                    texto += `Participantes presentes: ${presRec} colaborador${presRec === 1 ? '' : 'es'}\n`;
                     const temaRec = String(diario.temaReciclagem || (tBase && tBase.temaReciclagem) || '').trim();
                     const obsRec = String(diario.observacoesReciclagem || (tBase && tBase.observacoesReciclagem) || '').trim();
                     if (temaRec) texto += `Tema: ${temaRec}\n`;
@@ -11829,20 +12315,23 @@ storage: {
                 if (!this.canEditTurma(t)) {
                     return app.ui.showAlert("Acesso Restrito", "Você não tem permissão para visualizar o relatório final desta turma.", "warning");
                 }
-                if (t.tipoTurma === 'reciclagem') {
+                if (this._isReciclagemRecord(null, t)) {
                     const diariosRec = this.getDiariosDaTurma(t, false);
                     const ultimoRec = diariosRec[0] || {};
+                    const partFinalRec = parseInt(ultimoRec.quantidadeParticipantes, 10) || parseInt(ultimoRec.previstosSala, 10) || parseInt(t.quantidadeAlunos, 10) || 0;
                     const diarioRecConsolidado = {
                         ...ultimoRec,
                         id: ultimoRec.id || ('rec_' + t.id),
                         tipoTurma: 'reciclagem',
+                        chamada: [],
                         operacao: ultimoRec.operacao || t.operacao || '',
                         turma: ultimoRec.turma || t.numeroTurma || '',
                         turmaBaseId: t.id,
                         data: ultimoRec.data || t.dataInicio || new Date().toISOString().split('T')[0],
                         treinadorNome: ultimoRec.treinadorNome || t.treinadorNome || 'Treinador',
                         treinadorMatricula: ultimoRec.treinadorMatricula || t.treinadorMatricula || '-',
-                        previstosSala: parseInt(ultimoRec.previstosSala, 10) || parseInt(t.quantidadeAlunos, 10) || 0,
+                        previstosSala: partFinalRec,
+                        quantidadeParticipantes: partFinalRec,
                         temaReciclagem: ultimoRec.temaReciclagem || t.temaReciclagem || '',
                         dinamicaAtividade: ultimoRec.dinamicaAtividade || ultimoRec.relatoGeral || '',
                         relatoGeral: ultimoRec.dinamicaAtividade || ultimoRec.relatoGeral || '',
@@ -16067,7 +16556,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'faltas_integracao', label:'Faltas na Integração'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'mint_zen_teste', label:'Novo Layout (Teste Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -16124,6 +16613,7 @@ storage: {
                         } else {
                             if (!base.includes('bi_banco_horas')) base.push('bi_banco_horas');
                             if (!base.includes('pdca_teste')) base.push('pdca_teste');
+                            if (!base.includes('mint_zen_teste')) base.push('mint_zen_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
                             base = base.filter(id => id !== 'faltas_integracao');
@@ -16206,12 +16696,16 @@ storage: {
                     }
 
                     if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'mint_zen_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         if (tipo !== 'Dev') {
                             savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
+                            if (presetTabs.includes('mint_zen_teste') && !savedTabs.includes('mint_zen_teste')) {
+                                savedTabs.push('mint_zen_teste');
+                            }
                         } else {
                             if (!savedTabs.includes('bi_banco_horas')) savedTabs.push('bi_banco_horas');
                             if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
+                            if (!savedTabs.includes('mint_zen_teste')) savedTabs.push('mint_zen_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(tipo)) {
                             savedTabs = savedTabs.filter(id => id !== 'faltas_integracao');
@@ -16227,6 +16721,9 @@ storage: {
                         return [...new Set(savedTabs)];
                     }
                     savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao');
+                    if (presetTabs.includes('mint_zen_teste') && !savedTabs.includes('mint_zen_teste')) {
+                        savedTabs.push('mint_zen_teste');
+                    }
                     return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao'))];
                 },
 
@@ -17100,9 +17597,21 @@ storage: {
                     
                     const container = document.getElementById('theme-color-dropdown');
                     if(container) {
+                        const isMintActive = localStorage.getItem('soft_experimental_mint_zen') === '1';
+                        const canTestMint = app.hasAdminAccess && app.hasAdminAccess('mint_zen_teste');
                         container.innerHTML = themes.map(t => 
                             `<button onclick="app.ui.changeThemeColor('${t.hex}')" class="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-600 shadow-sm hover:scale-110 transition-transform" style="background-color: ${t.hex};" title="${t.name}"></button>`
-                        ).join('');
+                        ).join('') + (canTestMint ? `
+                            <div class="col-span-5 pt-2 mt-1 border-t border-slate-100 dark:border-slate-700/80 flex flex-col gap-1.5">
+                                <button type="button" onclick="app.mintZenTeste && app.mintZenTeste.toggleGlobalPortalTheme()" class="w-full py-2 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-all cursor-pointer ${isMintActive ? 'text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}" style="${isMintActive ? 'background-color: var(--theme-color);' : ''}">
+                                    <span>${isMintActive ? 'Voltar ao Layout Padrão' : 'Testar Novo Layout (Portal)'}</span>
+                                    <span class="text-[9px] font-black uppercase opacity-80">DEV</span>
+                                </button>
+                                <button type="button" onclick="document.getElementById('theme-color-dropdown')?.classList.add('hidden'); app.ui.renderTab('mint_zen_teste', true);" class="w-full py-1.5 px-2.5 rounded-lg text-[10px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer">
+                                    Abrir Aba Novo Layout (Teste Dev)
+                                </button>
+                            </div>
+                        ` : '');
                     }
                 },
                 changeThemeColor(hex) {
@@ -17936,6 +18445,9 @@ storage: {
                     }
                     
                     document.getElementById('view-app').classList.remove('hidden');
+                    if (app.mintZenTeste && typeof app.mintZenTeste.onPortalLogin === 'function') {
+                        app.mintZenTeste.onPortalLogin();
+                    }
                     
                     // Controle de Visibilidade do Botao Firebase Dev (Exclusivo Dev/Admin)
                     const btnFbDev = document.getElementById('btn-firebase-dev');
@@ -17987,6 +18499,9 @@ storage: {
                     }
                     if (app.notifications && typeof app.notifications.checkTaskReminders === 'function') {
                         app.notifications.checkTaskReminders(true);
+                        if (typeof app.notifications.startRealtimeRemindersListener === 'function') {
+                            app.notifications.startRealtimeRemindersListener();
+                        }
                     }
                     if (app.recurringReminders && typeof app.recurringReminders.initForUser === 'function') {
                         app.recurringReminders.initForUser();
@@ -18800,48 +19315,55 @@ storage: {
                     const idsJson = JSON.stringify(reminders.map(r => r.id).filter(Boolean)).replace(/"/g, '&quot;');
                     const first = reminders[0];
                     const firstSender = first.fromName || 'um colega';
+                    const onlyAprs = reminders.every(r => r.kind === 'apresentacao_pronta');
+                    const hasAprs = reminders.some(r => r.kind === 'apresentacao_pronta');
                     const onlyReplies = reminders.every(r => r.kind === 'task_reply');
                     const hasReplies = reminders.some(r => r.kind === 'task_reply');
                     const headline = reminders.length === 1
-                        ? (first.kind === 'task_reply'
-                            ? `${firstSender} respondeu à sua demanda!`
-                            : `Você recebeu uma tarefa de ${firstSender}!`)
-                        : (onlyReplies
-                            ? `Você recebeu ${reminders.length} respostas de demandas!`
-                            : (hasReplies
-                                ? `Você recebeu ${reminders.length} avisos (tarefas e respostas)!`
-                                : `Você recebeu ${reminders.length} tarefas!`));
+                        ? (onlyAprs
+                            ? `Apresentação pronta para visualização e ação!`
+                            : (first.kind === 'task_reply'
+                                ? `${firstSender} respondeu à sua demanda!`
+                                : `Você recebeu uma tarefa de ${firstSender}!`))
+                        : (onlyAprs
+                            ? `${reminders.length} apresentações prontas para você!`
+                            : (onlyReplies
+                                ? `Você recebeu ${reminders.length} respostas de demandas!`
+                                : (hasReplies || hasAprs
+                                    ? `Você recebeu ${reminders.length} novos avisos!`
+                                    : `Você recebeu ${reminders.length} tarefas!`)));
 
                     const wrapper = document.createElement('div');
                     wrapper.id = 'task-reminder-popup-modal';
                     wrapper.className = 'fixed inset-0 z-[96] flex items-center justify-center bg-slate-900/65 dark:bg-black/80 backdrop-blur-sm p-4 animate-fade-in';
                     wrapper.innerHTML = `
-                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 ${onlyReplies ? 'border-emerald-400 dark:border-emerald-700' : 'border-indigo-400 dark:border-indigo-700'} overflow-hidden">
-                            <div class="px-6 py-4 bg-gradient-to-r ${onlyReplies ? 'from-emerald-600 via-teal-600 to-cyan-600' : 'from-indigo-600 via-blue-600 to-sky-600'} text-white flex items-center justify-between gap-3">
+                        <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-xl w-full border-2 ${onlyAprs ? 'border-blue-400 dark:border-blue-700' : (onlyReplies ? 'border-emerald-400 dark:border-emerald-700' : 'border-indigo-400 dark:border-indigo-700')} overflow-hidden">
+                            <div class="px-6 py-4 bg-gradient-to-r ${onlyAprs ? 'from-blue-600 via-indigo-600 to-emerald-500' : (onlyReplies ? 'from-emerald-600 via-teal-600 to-cyan-600' : 'from-indigo-600 via-blue-600 to-sky-600')} text-white flex items-center justify-between gap-3">
                                 <div class="flex items-center gap-3">
                                     <div class="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center text-xl shrink-0">
-                                        <i class="fa-solid ${onlyReplies ? 'fa-reply' : 'fa-paper-plane'} animate-bounce"></i>
+                                        <i class="fa-solid ${onlyAprs ? 'fa-chart-pie' : (onlyReplies ? 'fa-reply' : 'fa-paper-plane')} animate-bounce"></i>
                                     </div>
                                     <div>
-                                        <div class="text-[10px] font-black uppercase tracking-wider opacity-90">${onlyReplies ? 'Retorno de Demanda Enviada' : 'Lembrete de Tarefa &amp; Retorno'}</div>
+                                        <div class="text-[10px] font-black uppercase tracking-wider opacity-90">${onlyAprs ? 'Nova Apresentação Compartilhada' : (onlyReplies ? 'Retorno de Demanda Enviada' : 'Lembrete de Tarefa &amp; Retorno')}</div>
                                         <h3 class="text-base sm:text-lg font-black leading-tight">${esc(headline)}</h3>
                                     </div>
                                 </div>
                             </div>
                             <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
                                 ${reminders.map((r, rIdx) => {
+                                    const isApr = r.kind === 'apresentacao_pronta';
                                     const isReply = r.kind === 'task_reply';
                                     const sp = r.triad && app.gtd && app.gtd.TRIAD_SPHERES[r.triad] ? app.gtd.TRIAD_SPHERES[r.triad] : null;
                                     const dueFmt = r.dueDate ? r.dueDate.split('-').reverse().join('/') : '';
                                     const dtFmt = r.createdAt ? new Date(r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-                                    const canReply = !!String(r.fromMat || '').trim();
+                                    const canReply = !isApr && !!String(r.fromMat || '').trim();
                                     return `
-                                        <div id="trem-card-${rIdx}" class="p-4 rounded-2xl ${isReply ? 'bg-emerald-50/75 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70' : 'bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70'} space-y-2">
+                                        <div id="trem-card-${rIdx}" class="p-4 rounded-2xl ${isApr ? 'bg-blue-50/75 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/70' : (isReply ? 'bg-emerald-50/75 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/70' : 'bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70')} space-y-2">
                                             <div class="flex flex-wrap items-center justify-between gap-2">
-                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full ${isReply ? 'bg-emerald-600' : 'bg-indigo-600'} text-white text-[11px] font-black">
-                                                    <i class="fa-solid ${isReply ? 'fa-reply' : 'fa-user-tie'} text-[10px]"></i> ${isReply ? `Resposta de ${esc(r.fromName || 'Colega')}` : `Tarefa de ${esc(r.fromName || 'Colega')}`}
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full ${isApr ? 'bg-blue-600' : (isReply ? 'bg-emerald-600' : 'bg-indigo-600')} text-white text-[11px] font-black">
+                                                    <i class="fa-solid ${isApr ? 'fa-chart-pie' : (isReply ? 'fa-reply' : 'fa-user-tie')} text-[10px]"></i> ${isApr ? `${esc(r.aprOperacao || 'Apresentação')} • Por ${esc(r.fromName || 'Gestão')}` : (isReply ? `Resposta de ${esc(r.fromName || 'Colega')}` : `Tarefa de ${esc(r.fromName || 'Colega')}`)}
                                                 </span>
-                                                <span class="text-[10px] text-slate-400 font-bold">${esc(dtFmt)}</span>
+                                                <span class="text-[10px] text-slate-400 font-bold tabular-nums">${esc(r.aprData || dtFmt)}</span>
                                             </div>
                                             ${isReply && r.originalTaskText ? `
                                                 <div class="px-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-emerald-200/80 dark:border-emerald-800/60 text-[11px] text-slate-500 dark:text-slate-400">
@@ -18852,6 +19374,16 @@ storage: {
                                                 ${esc(r.text || '')}
                                             </div>
                                             ${!isReply && r.details ? `<div class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${esc(r.details)}</div>` : ''}
+                                            ${isApr && r.aprId ? `
+                                                <div class="flex flex-wrap items-center gap-2 pt-1.5">
+                                                    <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, false, '${esc(r.aprId)}', 'analise_csv_dinamico')" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                        <i class="fa-solid fa-eye text-[11px]"></i> Visualizar Apresentação
+                                                    </button>
+                                                    <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, false, '${esc(r.aprId)}', 'qualidade_treinamento')" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                                                        <i class="fa-solid fa-compass-drafting text-[11px]"></i> Abrir Q&amp;T (Ação)
+                                                    </button>
+                                                </div>
+                                            ` : ''}
                                             <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
                                                 <div class="flex flex-wrap items-center gap-1.5">
                                                     ${sp ? `<span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${sp.pillIdle}">${esc(sp.label)}</span>` : ''}
@@ -18890,9 +19422,11 @@ storage: {
                                 <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, false)" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white text-xs font-extrabold cursor-pointer transition">
                                     Ciente
                                 </button>
-                                <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, true)" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
-                                    <i class="fa-solid fa-bullseye"></i> Ciente e Abrir Minhas Tarefas (GTD)
-                                </button>
+                                ${onlyAprs ? '' : `
+                                    <button type="button" onclick="app.notifications.acknowledgeTaskReminders(${idsJson}, true)" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-md cursor-pointer transition flex items-center gap-1.5">
+                                        <i class="fa-solid fa-bullseye"></i> Ciente e Abrir Minhas Tarefas (GTD)
+                                    </button>
+                                `}
                             </div>
                         </div>
                     `;
@@ -19250,7 +19784,7 @@ storage: {
                         const userAbas = this.getEffectiveUserTabs(app.currentUser);
                         const tipo = app.currentUser.tipoAcesso || 'Qualidade';
                         const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
-                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
+                        const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'operacoes', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'mint_zen_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         const hasAdminTabs = isPerfilGestao || userAbas.some(id => adminOnlyIds.includes(id));
 
                         if (hasAdminTabs) {
@@ -19385,6 +19919,9 @@ storage: {
                     if (header) {
                         header.classList.remove('bg-white/95', 'dark:bg-[#0f172a]/95');
                         header.classList.add('bg-white/60', 'dark:bg-[#0f172a]/60', 'backdrop-blur-xl', 'border-slate-200/50', 'dark:border-slate-800/50');
+                    }
+                    if (app.mintZenTeste && typeof app.mintZenTeste.syncGlobalPortalTheme === 'function') {
+                        app.mintZenTeste.syncGlobalPortalTheme(menus);
                     }
                 },
 
@@ -19526,6 +20063,13 @@ storage: {
                                     app.pdcaTeste.renderView(viewDiv);
                                 }
                             }
+                            else if(tabId === 'mint_zen_teste') {
+                                if (!app.hasAdminAccess('mint_zen_teste')) {
+                                    viewDiv.innerHTML = '<div class="max-w-xl mx-auto mt-16 p-8 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-rose-200/60 text-center"><i class="fa-solid fa-shield-halved text-3xl text-rose-500 mb-3"></i><h3 class="text-lg font-black text-slate-800 dark:text-white">Acesso restrito ao perfil Dev</h3><p class="text-xs text-slate-500 mt-1">Este laboratório visual está liberado exclusivamente para desenvolvedores.</p></div>';
+                                } else if (app.mintZenTeste) {
+                                    app.mintZenTeste.renderView(viewDiv);
+                                }
+                            }
                             else if(tabId === 'gestao_reportes') { this.abrirModalGestaoReportesDev(); return; }
                             else if(tabId === 'calc_monitorias') this.renderView_CalcMonitorias(viewDiv);
                             else if(tabId === 'legal') this.renderView_Legal(viewDiv);
@@ -19620,7 +20164,12 @@ storage: {
                     } catch (e) {}
 
                     // Aplica melhorias leves de UX apenas na aba ativa
-                    requestAnimationFrame(() => this.applyPremiumUX(viewDiv));
+                    requestAnimationFrame(() => {
+                        this.applyPremiumUX(viewDiv);
+                        if (app.mintZenTeste && typeof app.mintZenTeste.applyPortalTabAnimations === 'function') {
+                            app.mintZenTeste.applyPortalTabAnimations(viewDiv);
+                        }
+                    });
                 },
 
                 renderView_ValidarAcoes(container) {
@@ -19641,9 +20190,17 @@ storage: {
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Apresentação Gerencial de Ações</h2>
                                 <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Modo auditoria referente a <strong class="text-green-600 dark:text-green-400">${this.formatMonthLabel(app.currentMonth)}</strong>.</p>
                             </div>
-                            <button onclick="app.actions.exportActionsXLSX()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                <i class="fa-solid fa-file-excel"></i> Baixar Relatório XLSX
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button onclick="app.actions.exportActionsEmail()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap" title="Gerar texto pronto e estruturado para e-mail">
+                                    <i class="fa-solid fa-envelope-open-text"></i> Texto p/ E-mail
+                                </button>
+                                <button onclick="app.actions.exportActionsPDF()" class="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap" title="Gerar relatório executivo em PDF">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF Executivo
+                                </button>
+                                <button onclick="app.actions.exportActionsXLSX()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap" title="Baixar planilha completa em Excel">
+                                    <i class="fa-solid fa-file-excel"></i> Relatório XLSX
+                                </button>
+                            </div>
                         </div>
 
                         ${pendentesOutrosMeses.length > 0 ? `
@@ -19756,13 +20313,19 @@ storage: {
                                             <div class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed"><span class="font-bold">Ação Detalhada:</span><br/>${act.acaoRealizada || '-'}</div>
                                             ${act.comentario ? `<div class="mt-3 pt-3 border-t border-red-200 text-xs text-red-600 font-bold"><i class="fa-solid fa-reply"></i> Motivo da Devolução: ${act.comentario}</div>` : ''}
                                         </div>
-                                        <div class="flex gap-3 mt-4">
+                                        <div class="flex flex-wrap gap-2 mt-4">
                                             ${act.status !== 'reprovado' ? `
-                                                <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs transition-colors shadow-sm border border-red-100"><i class="fa-solid fa-rotate-left mr-1"></i> ${act.status === 'aprovado' ? 'Desfazer e Pedir Correção' : 'Devolver p/ Correção'}</button>
+                                                <button onclick="app.actions.promptRejectAction('${act.id}')" class="flex-1 min-w-[140px] py-3 px-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-xs transition-colors shadow-sm border border-red-100"><i class="fa-solid fa-rotate-left mr-1"></i> ${act.status === 'aprovado' ? 'Desfazer e Pedir Correção' : 'Devolver p/ Correção'}</button>
                                             ` : ''}
                                             ${act.status === 'pendente' ? `
-                                                <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Aprovar (+1)</button>
+                                                <button onclick="app.actions.approveAction('${act.id}')" class="flex-1 min-w-[120px] py-3 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs shadow-md transition-colors"><i class="fa-solid fa-check-double mr-1"></i> Aprovar (+1)</button>
                                             ` : ''}
+                                            <button onclick="app.actions.exportActionsEmail('${act.id}')" class="flex-none py-3 px-3.5 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white dark:bg-blue-950/40 dark:hover:bg-blue-600 dark:text-blue-300 rounded-xl font-bold text-xs transition-colors shadow-sm border border-blue-200 dark:border-blue-800 flex items-center gap-1.5" title="Gerar Texto de E-mail desta Ação">
+                                                <i class="fa-solid fa-envelope-open-text"></i> E-mail
+                                            </button>
+                                            <button onclick="app.actions.exportActionsPDF('${act.id}')" class="flex-none py-3 px-3.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white dark:bg-rose-950/40 dark:hover:bg-rose-600 dark:text-rose-300 rounded-xl font-bold text-xs transition-colors shadow-sm border border-rose-200 dark:border-rose-800 flex items-center gap-1.5" title="Baixar PDF Executivo desta Ação">
+                                                <i class="fa-solid fa-file-pdf"></i> PDF
+                                            </button>
                                             <button onclick="app.actions.deleteAction('${act.id}')" class="flex-none py-3 px-4 bg-slate-100 hover:bg-red-500 text-slate-500 hover:text-white dark:bg-slate-800 dark:hover:bg-red-600 dark:text-slate-400 rounded-xl font-bold text-xs transition-colors shadow-sm" title="Excluir Ação Permanentemente">
                                                 <i class="fa-solid fa-trash"></i>
                                             </button>
@@ -20139,7 +20702,13 @@ storage: {
                                                             </div>
                                                         ` : ''}
 
-                                                        <div class="flex items-center gap-2 justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                        <div class="flex flex-wrap items-center gap-2 justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                            <button onclick="app.actions.exportActionsEmail('${act.id}')" class="text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-800 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1" title="Gerar texto pronto p/ e-mail desta ação">
+                                                                <i class="fa-solid fa-envelope-open-text text-[10px]"></i> E-mail
+                                                            </button>
+                                                            <button onclick="app.actions.exportActionsPDF('${act.id}')" class="text-rose-600 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-800 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1" title="Baixar PDF executivo desta ação">
+                                                                <i class="fa-solid fa-file-pdf text-[10px]"></i> PDF
+                                                            </button>
                                                             <button onclick="app.actions.editAction('${act.id}')" class="text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-300 hover:bg-blue-100 border border-blue-200 dark:border-blue-800 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1">
                                                                 <i class="fa-solid fa-pen text-[10px]"></i> Corrigir / Editar
                                                             </button>
@@ -26431,10 +27000,14 @@ storage: {
                                 ` : `
                                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                         ${listaFiltrada.map(item => {
+                                            const turmaVinc = app.diarioBordo.findTurmaForDiario(item);
+                                            const isRecCard = app.diarioBordo._isReciclagemRecord(item, turmaVinc);
                                             const { P, A, D, PR, pctPR, pctA, pctD } = app.diarioBordo.getDiarioContagens(item);
                                             const AQ = Array.isArray(item.alteracoesQuadro) ? item.alteracoesQuadro.length : 0;
                                             const dataFmt = item.data ? item.data.split('-').reverse().join('/') : '--/--/----';
                                             const qtdAnexosItem = app.diarioBordo.getAnexosTurma(item).length;
+                                            const fotosRecCount = app.diarioBordo._toArray(item.fotosReciclagem).filter(f => f && f.data).length;
+                                            const partRecCount = parseInt(item.quantidadeParticipantes, 10) || PR || P || 0;
 
                                             return `
                                                 <div class="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm hover:shadow-md border border-slate-200 dark:border-slate-700 transition flex flex-col justify-between group">
@@ -26469,31 +27042,48 @@ storage: {
                                                         </div>
 
                                                         <!-- Métricas Resumo do Bloco -->
-                                                        <div class="grid grid-cols-4 gap-2 text-center mb-4">
-                                                            <div class="p-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/30">
-                                                                <div class="text-[10px] font-bold text-slate-400 uppercase">Prev.</div>
-                                                                <div class="text-xs font-black text-slate-700 dark:text-slate-200">${P}</div>
+                                                        ${isRecCard ? `
+                                                            <div class="grid grid-cols-3 gap-2 text-center mb-4">
+                                                                <div class="p-2 rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-800/40">
+                                                                    <div class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase">Presentes</div>
+                                                                    <div class="text-xs font-black text-violet-800 dark:text-violet-200 tabular-nums">${partRecCount}</div>
+                                                                </div>
+                                                                <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100/50 dark:border-emerald-800/30">
+                                                                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Fotos</div>
+                                                                    <div class="text-xs font-black text-emerald-700 dark:text-emerald-300 tabular-nums">${fotosRecCount}</div>
+                                                                </div>
+                                                                <div class="p-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/30">
+                                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Anexos</div>
+                                                                    <div class="text-xs font-black text-slate-700 dark:text-slate-200 tabular-nums">${qtdAnexosItem}</div>
+                                                                </div>
                                                             </div>
-                                                            <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100/50 dark:border-emerald-800/30">
-                                                                <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Pres.</div>
-                                                                <div class="text-xs font-black text-emerald-700 dark:text-emerald-300">${PR} <span class="text-[9px] font-medium">(${pctPR}%)</span></div>
+                                                        ` : `
+                                                            <div class="grid grid-cols-4 gap-2 text-center mb-4">
+                                                                <div class="p-2 rounded-xl bg-slate-100/80 dark:bg-slate-700/30">
+                                                                    <div class="text-[10px] font-bold text-slate-400 uppercase">Prev.</div>
+                                                                    <div class="text-xs font-black text-slate-700 dark:text-slate-200">${P}</div>
+                                                                </div>
+                                                                <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100/50 dark:border-emerald-800/30">
+                                                                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Pres.</div>
+                                                                    <div class="text-xs font-black text-emerald-700 dark:text-emerald-300">${PR} <span class="text-[9px] font-medium">(${pctPR}%)</span></div>
+                                                                </div>
+                                                                <div class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100/50 dark:border-amber-800/30">
+                                                                    <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">ABS</div>
+                                                                    <div class="text-xs font-black text-amber-700 dark:text-amber-300">${A} <span class="text-[9px] font-medium">(${pctA}%)</span></div>
+                                                                </div>
+                                                                <div class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100/50 dark:border-rose-800/30">
+                                                                    <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">T.O</div>
+                                                                    <div class="text-xs font-black text-rose-700 dark:text-rose-300">${D} <span class="text-[9px] font-medium">(${pctD}%)</span></div>
+                                                                </div>
                                                             </div>
-                                                            <div class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100/50 dark:border-amber-800/30">
-                                                                <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">ABS</div>
-                                                                <div class="text-xs font-black text-amber-700 dark:text-amber-300">${A} <span class="text-[9px] font-medium">(${pctA}%)</span></div>
-                                                            </div>
-                                                            <div class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-100/50 dark:border-rose-800/30">
-                                                                <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase">T.O</div>
-                                                                <div class="text-xs font-black text-rose-700 dark:text-rose-300">${D} <span class="text-[9px] font-medium">(${pctD}%)</span></div>
-                                                            </div>
-                                                        </div>
 
-                                                        <!-- Barra Visual de Proporção -->
-                                                        <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 flex overflow-hidden mb-4">
-                                                            <div style="width: ${pctPR}%" class="h-full bg-emerald-500" title="Presentes: ${pctPR}%"></div>
-                                                            <div style="width: ${pctA}%" class="h-full bg-amber-500" title="ABS: ${pctA}%"></div>
-                                                            <div style="width: ${pctD}%" class="h-full bg-rose-500" title="T.O: ${pctD}%"></div>
-                                                        </div>
+                                                            <!-- Barra Visual de Proporção -->
+                                                            <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 flex overflow-hidden mb-4">
+                                                                <div style="width: ${pctPR}%" class="h-full bg-emerald-500" title="Presentes: ${pctPR}%"></div>
+                                                                <div style="width: ${pctA}%" class="h-full bg-amber-500" title="ABS: ${pctA}%"></div>
+                                                                <div style="width: ${pctD}%" class="h-full bg-rose-500" title="T.O: ${pctD}%"></div>
+                                                            </div>
+                                                        `}
 
                                                         ${AQ > 0 ? `
                                                             <div class="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold mb-3 flex items-center gap-1.5">
@@ -29384,10 +29974,14 @@ storage: {
                                 </div>
                             </div>
                             <div class="bg-white dark:bg-slate-900 rounded-b-3xl p-8 pt-20 shadow-lg border border-t-0 border-slate-200 dark:border-slate-800 mb-8">
-                                <div class="flex justify-between items-start">
+                                <div class="flex flex-wrap justify-between items-start gap-3">
                                     <div>
                                         <h2 class="text-3xl font-black text-slate-800 dark:text-white">${u.nome}</h2>
                                         <p class="text-slate-500 font-bold mb-6">Matrícula: ${u.matricula}</p>
+                                    </div>
+                                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-extrabold text-slate-600 dark:text-slate-300 tabular-nums" title="Versão ativa do Portal">
+                                        <i class="fa-solid fa-code-branch text-[11px] text-slate-400"></i>
+                                        <span>Versão: ${app.utils.escapeHtml(typeof app.getPortalVersion === 'function' ? app.getPortalVersion() : '20261123_v120')}</span>
                                     </div>
                                 </div>
                                 
@@ -43671,6 +44265,9 @@ storage: {
                         app.storage.saveAnatel();
                     }
 
+                    const tipoKantar = String(app.currentUser?.tipoAcesso || '').trim();
+                    const canManageKantar = app.isAdmin || ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz', 'Qualidade'].includes(tipoKantar) || app.hasAdminAccess('pesquisas_anatel');
+
                     // Verifica se existe um projeto ativo aberto na memória
                     if (!app.anatelData.projetoAtivo || !app.anatelData.projetos[app.anatelData.projetoAtivo]) {
                         // ==========================================
@@ -43682,9 +44279,9 @@ storage: {
                                     <h2 class="text-3xl font-extrabold text-slate-800 dark:text-white tracking-tight">Projetos Kantar</h2>
                                     <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Gerencie múltiplos arquivos de pesquisa divididos por projetos isolados.</p>
                                 </div>
-                                ${app.isAdmin ? `
+                                ${canManageKantar ? `
                                 <div class="flex gap-2">
-                                    <button onclick="app.admin.kantarCriarProjeto()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm">
+                                    <button onclick="app.admin.kantarCriarProjeto()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 flex items-center gap-2 text-sm cursor-pointer">
                                         <i class="fa-solid fa-folder-plus"></i> Novo Projeto
                                     </button>
                                 </div>
@@ -43712,7 +44309,7 @@ storage: {
 
                                 htmlLobby += `
                                     <div class="glass-card p-6 rounded-3xl shadow-sm hover:shadow-md border-t-4 border-t-blue-500 hover:border-blue-400 transition-all cursor-pointer group flex flex-col relative" onclick="app.admin.kantarAbrirProjeto('${p.id}')">
-                                        ${app.isAdmin ? `<button onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="absolute top-5 right-5 text-slate-300 hover:text-red-500 transition-colors z-10" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
+                                        ${canManageKantar ? `<button onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="absolute top-5 right-5 text-slate-300 hover:text-red-500 transition-colors z-10" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
                                         <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors"><i class="fa-solid fa-chart-pie"></i></div>
                                         <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-6" title="${p.nome}">${p.nome}</h3>
                                         <p class="text-xs text-slate-500 font-bold tracking-widest uppercase mb-3">Pesquisas Base: <span class="text-blue-500">${qReals}</span></p>
@@ -43791,7 +44388,7 @@ storage: {
                     `;
 
                     // Painel Exclusivo ADM
-                    if(app.isAdmin || app.currentUser?.tipoAcesso === 'Dev' || app.currentUser?.tipoAcesso === 'Gerente') {
+                    if(canManageKantar) {
                         html += `
                             <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">
                                 <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shadow-sm">
@@ -43871,7 +44468,7 @@ storage: {
                                         <th class="p-4 text-center">Validadas</th>
                                         <th class="p-4 text-center">% Monitorado</th>
                                         <th class="p-4 text-center">Falta (Meta ${metaProj}%)</th>
-                                        ${app.isAdmin ? '<th class="p-4 text-center rounded-tr-xl">Gerenciar Arquivo</th>' : ''}
+                                        ${canManageKantar ? '<th class="p-4 text-center rounded-tr-xl">Gerenciar Arquivo</th>' : ''}
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
@@ -43893,7 +44490,7 @@ storage: {
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.escuta}</td>
                                 <td class="p-4 text-center font-black ${pct < metaProj ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}">${pct}%</td>
                                 <td class="p-4 text-center font-bold ${faltaValidadasC > 0 ? 'text-orange-500' : 'text-green-500'}">${faltaValidadasC}</td>
-                                ${app.isAdmin ? `
+                                ${canManageKantar ? `
                                 <td class="p-4 text-center space-x-2">
                                     <label class="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1" title="Substituir Base da Campanha">
                                         <i class="fa-solid fa-file-arrow-up"></i> Atualizar
@@ -43920,7 +44517,7 @@ storage: {
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-6">
                             <div class="flex justify-between items-center mb-6">
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador</h3>
-                                ${app.isAdmin ? `<button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
+                                ${canManageKantar ? `<button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
                             </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
@@ -48428,6 +49025,67 @@ storage: {
                     }
                 },
 
+                getOperacoesOficiaisLimpa() {
+                    const mapNorm = new Map();
+                    const normKey = (v) => String(v || '')
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                        .toUpperCase();
+
+                    const addOp = (raw) => {
+                        const clean = String(raw || '').replace(/\s+/g, ' ').trim();
+                        if (!clean) return;
+                        const k = normKey(clean);
+                        if (!k || k === '[OBJECT OBJECT]') return;
+                        // Prefere versão em MAIÚSCULAS ou com acento se já existir sem
+                        const prev = mapNorm.get(k);
+                        if (!prev || (clean === clean.toUpperCase() && prev !== prev.toUpperCase())) {
+                            mapNorm.set(k, clean.toUpperCase());
+                        }
+                    };
+
+                    try {
+                        if (app.operacoesList && typeof app.operacoesList === 'object') {
+                            Object.values(app.operacoesList).forEach(op => {
+                                if (op && op.nome) addOp(op.nome);
+                            });
+                        }
+                        if (typeof app.getOperacoesSetoriais === 'function') {
+                            (app.getOperacoesSetoriais() || []).forEach(s => {
+                                addOp(typeof s === 'string' ? s : s?.nome);
+                            });
+                        }
+                        if (mapNorm.size === 0 && app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
+                            (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(addOp);
+                        }
+                    } catch (e) {}
+
+                    return Array.from(mapNorm.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+                },
+
+                _updateSaveAprPreview() {
+                    const sel = document.getElementById('save-apres-operacao')?.value || '';
+                    const novaWrap = document.getElementById('save-apres-nova-op-wrap');
+                    const novaVal = document.getElementById('save-apres-op')?.value?.trim() || '';
+                    if (novaWrap) novaWrap.classList.toggle('hidden', sel !== '__NOVA__');
+                    const opFinal = sel === '__NOVA__' ? novaVal.toUpperCase() : sel;
+                    const tipo = document.getElementById('save-apres-tipo')?.value || 'Fechamento Mensal';
+                    const extraWrap = document.getElementById('save-apres-extra-wrap');
+                    const extraVal = document.getElementById('save-apres-rotulo-extra')?.value?.trim() || '';
+                    if (extraWrap) extraWrap.classList.toggle('hidden', tipo !== '__OUTRO__');
+                    const mes = document.getElementById('save-apres-mes')?.value || '';
+                    const ano = document.getElementById('save-apres-ano')?.value || '';
+                    const sufixo = tipo === '__OUTRO__' ? extraVal : (tipo === 'Fechamento Mensal' ? '' : tipo);
+                    const nomePrev = sufixo ? `${mes}/${ano} — ${sufixo}` : `${mes}/${ano}`;
+                    const prevEl = document.getElementById('save-apres-preview');
+                    if (prevEl) {
+                        const esc = app.utils.escapeHtml;
+                        prevEl.innerHTML = `<span>Pasta: <strong>${esc(opFinal || 'Selecione uma operação')}</strong></span><span class="opacity-40">•</span><span>Título: <strong>${esc(nomePrev)}</strong></span>`;
+                    }
+                },
+
                 openSaveApresentacaoModal() {
                     const data = app.analiseCSVDinamicoData;
                     if(!data) return;
@@ -48440,26 +49098,9 @@ storage: {
                     const sugestaoRaw = (data.consolidado?.infoOperacao || '').replace('Filtro Ativo: ', '').trim();
                     const sugestaoNome = (sugestaoRaw && sugestaoRaw !== 'Visão Consolidada (Geral)') ? sugestaoRaw : (data.consolidado?.customTitle || '');
 
-                    // Coleta operações existentes no sistema (RH/Span + Diário + Apresentações salvas)
-                    const setoresSet = new Set();
-                    if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
-                        (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => {
-                            if (op) setoresSet.add(String(op).trim());
-                        });
-                    }
-                    if (app.getOperacoesSetoriais) {
-                        (app.getOperacoesSetoriais() || []).forEach(s => {
-                            const nm = typeof s === 'string' ? s : s?.nome;
-                            if (nm) setoresSet.add(String(nm).trim());
-                        });
-                    }
-                    Object.values(app.apresentacoesList || {}).forEach(a => {
-                        if (a?.operacao) setoresSet.add(String(a.operacao).trim());
-                        if (a?.setor) setoresSet.add(String(a.setor).trim());
-                        else if (a?.pasta) setoresSet.add(String(a.pasta).trim());
-                    });
-                    const setoresConhecidos = Array.from(setoresSet).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-                    const normOpTxt = (v) => String(v || '').trim().toUpperCase();
+                    // Somente operações oficiais cadastradas (sem puxar nomes sujos de apresentações antigas)
+                    const setoresConhecidos = this.getOperacoesOficiaisLimpa();
+                    const normOpTxt = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
                     const operacaoMatchInicial = setoresConhecidos.find(s => normOpTxt(s) === normOpTxt(sugestaoNome))
                         || setoresConhecidos.find(s => sugestaoNome && (normOpTxt(sugestaoNome).includes(normOpTxt(s)) || normOpTxt(s).includes(normOpTxt(sugestaoNome))))
                         || '';
@@ -48498,36 +49139,51 @@ storage: {
 
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-cloud-arrow-up text-emerald-500"></i> Salvar Apresentação & Retroalimentar Qualidade e Treinamento`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-                            Organize a apresentação por <strong>Setor / Operação</strong> e vincule os responsáveis de <strong>Qualidade</strong> e <strong>Treinamento</strong> daquele setor. Assim, a apresentação fica limpa para o cliente enquanto sua equipe trabalha nos capítulos 8, 9 e 10 dentro da aba <strong>Qualidade & Treinamento</strong>.
+                        <p class="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
+                            Escolha a <strong>Operação Oficial</strong> para manter tudo organizado em uma única pasta e defina o <strong>Tipo</strong> + período do relatório.
                         </p>
                         <div class="space-y-4 max-h-[68vh] overflow-y-auto pr-1 custom-scrollbar">
                             <div class="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                                 <div class="md:col-span-6">
-                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">1. Operação Existente Vinculada *</label>
-                                    <select id="save-apres-operacao" onchange="const v = this.value; const opInp = document.getElementById('save-apres-op'); if(v && opInp && !opInp.dataset.edited) { opInp.value = v; } if(v) app.admin.autoMarkEquipePorSetor(v);" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">1. Operação Oficial (Pasta) *</label>
+                                    <select id="save-apres-operacao" onchange="app.admin._updateSaveAprPreview(); if(this.value && this.value !== '__NOVA__') app.admin.autoMarkEquipePorSetor(this.value);" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         <option value="">-- Selecione uma operação cadastrada --</option>
                                         ${setoresConhecidos.map(s => `<option value="${String(s).replace(/"/g, '&quot;')}" ${normOpTxt(s) === normOpTxt(operacaoMatchInicial) ? 'selected' : ''}>${s}</option>`).join('')}
+                                        <option value="__NOVA__">+ Digitar outra operação...</option>
                                     </select>
+                                    <div id="save-apres-nova-op-wrap" class="hidden mt-2">
+                                        <input type="text" id="save-apres-op" oninput="app.admin._updateSaveAprPreview(); app.admin.autoMarkEquipePorSetor(this.value);" value="${sugestaoNome && !operacaoMatchInicial ? sugestaoNome : ''}" class="w-full p-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold uppercase dark:text-white" placeholder="Digite o nome oficial da operação...">
+                                    </div>
                                 </div>
                                 <div class="md:col-span-6">
-                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Pasta / Rótulo da Apresentação *</label>
-                                    <input type="text" id="save-apres-op" list="save-apres-setores-datalist" oninput="this.dataset.edited='1'; app.admin.autoMarkEquipePorSetor(this.value)" value="${sugestaoNome || operacaoMatchInicial}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white" placeholder="Ex: SAC, Retenção, WEPINK...">
-                                    <datalist id="save-apres-setores-datalist">
-                                        ${setoresConhecidos.map(s => `<option value="${s}">`).join('')}
-                                    </datalist>
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">2. Tipo / Recorte da Apresentação *</label>
+                                    <select id="save-apres-tipo" onchange="app.admin._updateSaveAprPreview()" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
+                                        <option value="Fechamento Mensal">Fechamento Mensal</option>
+                                        <option value="Parcial / Acompanhamento">Parcial / Acompanhamento</option>
+                                        <option value="Reclame Aqui (R.A)">Reclame Aqui (R.A)</option>
+                                        <option value="Voz e Chat">Voz e Chat</option>
+                                        <option value="Semanal">Semanal</option>
+                                        <option value="Quinzenal">Quinzenal</option>
+                                        <option value="__OUTRO__">Outro (especificar)...</option>
+                                    </select>
+                                    <div id="save-apres-extra-wrap" class="hidden mt-2">
+                                        <input type="text" id="save-apres-rotulo-extra" oninput="app.admin._updateSaveAprPreview()" class="w-full p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold dark:text-white" placeholder="Ex: Quinzena 1, WhatsApp, WEX...">
+                                    </div>
                                 </div>
                                 <div class="md:col-span-6">
-                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Mês de Referência *</label>
-                                    <select id="save-apres-mes" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">3. Mês de Referência *</label>
+                                    <select id="save-apres-mes" onchange="app.admin._updateSaveAprPreview()" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${mesesLista.map((m, i) => `<option value="${m}" ${i === mesAtualNum ? 'selected' : ''}>${m}</option>`).join('')}
                                     </select>
                                 </div>
                                 <div class="md:col-span-6">
-                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Ano *</label>
-                                    <select id="save-apres-ano" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">4. Ano *</label>
+                                    <select id="save-apres-ano" onchange="app.admin._updateSaveAprPreview()" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold dark:text-white cursor-pointer">
                                         ${anosDisponiveis.map(a => `<option value="${a}">${a}</option>`).join('')}
                                     </select>
+                                </div>
+                                <div id="save-apres-preview" class="md:col-span-12 px-3 py-2 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 flex flex-wrap items-center gap-2">
+                                    <span>Pasta: <strong>${operacaoMatchInicial || 'Selecione uma operação'}</strong></span><span class="opacity-40">•</span><span>Título: <strong>${mesesLista[mesAtualNum]}/${anosDisponiveis[0]}</strong></span>
                                 </div>
                             </div>
 
@@ -48622,19 +49278,37 @@ storage: {
                             // Verifica se veio do modal de arquivamento ou do clique direto
                             const opSelect = document.getElementById('save-apres-operacao');
                             const opInput = document.getElementById('save-apres-op');
+                            const tipoInput = document.getElementById('save-apres-tipo');
+                            const extraInput = document.getElementById('save-apres-rotulo-extra');
                             const mesInput = document.getElementById('save-apres-mes');
                             const anoInput = document.getElementById('save-apres-ano');
                             const retroInput = document.getElementById('save-apres-retro-qt');
                             
-                            const operacaoVinculada = opSelect && opSelect.value ? opSelect.value.trim() : '';
+                            const selOpVal = opSelect && opSelect.value ? opSelect.value.trim() : '';
                             const customOp = opInput && opInput.value ? opInput.value.trim() : '';
+                            const operacaoFinal = (selOpVal === '__NOVA__' ? customOp : (selOpVal || customOp)) || app.analiseCSVDinamicoData?.consolidado?.customTitle || 'GERAL';
+
+                            if (opSelect && !selOpVal) {
+                                if (btnSave) {
+                                    btnSave.disabled = false;
+                                    btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Salvar Apresentação';
+                                    btnSave.classList.remove('opacity-70', 'cursor-not-allowed');
+                                }
+                                app.ui.showToast('Selecione a Operação Oficial antes de salvar.', 'warning');
+                                opSelect.focus();
+                                return;
+                            }
+
                             const customMes = mesInput ? mesInput.value : '';
                             const customAno = anoInput ? anoInput.value : '';
+                            const tipoSel = tipoInput ? tipoInput.value : 'Fechamento Mensal';
+                            const extraTxt = extraInput && extraInput.value ? extraInput.value.trim() : '';
+                            const sufixoTipo = tipoSel === '__OUTRO__' ? extraTxt : (tipoSel === 'Fechamento Mensal' ? '' : tipoSel);
                             const retroalimentarQT = retroInput ? !!retroInput.checked : true;
 
-                            const nome = (customMes && customAno) ? `${customMes}/${customAno}` : `${app.ui.formatMonthLabel(app.currentMonth)}`;
-                            const pasta = customOp || operacaoVinculada || app.analiseCSVDinamicoData.consolidado.customTitle || 'Geral';
-                            const operacaoFinal = operacaoVinculada || pasta;
+                            const basePeriodo = (customMes && customAno) ? `${customMes}/${customAno}` : `${app.ui.formatMonthLabel(app.currentMonth)}`;
+                            const nome = sufixoTipo ? `${basePeriodo} — ${sufixoTipo}` : basePeriodo;
+                            const pasta = String(operacaoFinal).trim().toUpperCase();
 
                             // Congela snapshot de Tempo de Casa (RH) dentro do consolidado para que a aba Qualidade & Treinamento saiba quem está ativo
                             if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) {
@@ -48740,6 +49414,9 @@ storage: {
                                 app.ui.qtFonteAtivaId = id;
                                 app.ui._cachedQTFonteId = id;
                                 app.ui._cachedQTPayload = { id: id, data: app.analiseCSVDinamicoData ? app.analiseCSVDinamicoData.consolidado : null };
+                                if (app.notifications && typeof app.notifications.notifyApresentacaoPronta === 'function') {
+                                    app.notifications.notifyApresentacaoPronta(payload, payload.allowedUsers);
+                                }
 
                                 const pendingSwitch = app.ui._afterSaveTrocarApresentacao;
                                 app.ui._afterSaveTrocarApresentacao = null;
@@ -48983,14 +49660,21 @@ storage: {
                     }
 
                     const pastas = {};
+                    const pastaLabels = {};
                     filtrada.forEach(a => {
-                        const keyPasta = String(a.setor || a.pasta || 'Geral').trim() || 'Geral';
-                        if (!pastas[keyPasta]) pastas[keyPasta] = [];
-                        pastas[keyPasta].push(a);
+                        const rawNome = String(a.operacao || a.setor || a.pasta || 'Geral').replace(/\s+/g, ' ').trim() || 'Geral';
+                        const normKey = rawNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                        if (!pastas[normKey]) {
+                            pastas[normKey] = [];
+                            pastaLabels[normKey] = rawNome.toUpperCase();
+                        }
+                        pastas[normKey].push(a);
                     });
 
-                    const pastaKeys = Object.keys(pastas).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-                    const cardsHtml = pastaKeys.map(nomePasta => `
+                    const pastaKeys = Object.keys(pastas).sort((a, b) => pastaLabels[a].localeCompare(pastaLabels[b], 'pt-BR'));
+                    const cardsHtml = pastaKeys.map(kPasta => {
+                        const nomePasta = pastaLabels[kPasta];
+                        return `
                         <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[420px]">
                             <div class="bg-blue-50/90 dark:bg-blue-900/20 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
                                 <div class="w-9 h-9 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
@@ -49000,10 +49684,10 @@ storage: {
                                     <div class="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Setor / Operação</div>
                                     <h3 class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(nomePasta)}">${esc(nomePasta)}</h3>
                                 </div>
-                                <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-black tabular-nums">${pastas[nomePasta].length}</span>
+                                <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-black tabular-nums">${pastas[kPasta].length}</span>
                             </div>
                             <div class="p-3.5 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                ${pastas[nomePasta].map(apr => {
+                                ${pastas[kPasta].map(apr => {
                                     const canManage = isGestaoOuDev || (apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat);
                                     const isAutor = apr.criadorMatricula && String(apr.criadorMatricula).trim().toUpperCase() === userMat;
                                     const isAtiva = activeAprId && activeAprId === apr.id;
@@ -49029,7 +49713,7 @@ storage: {
                                 `}).join('')}
                             </div>
                         </div>
-                    `).join('');
+                    `; }).join('');
 
                     return {
                         totalVisivel: lista.length,
@@ -49119,9 +49803,11 @@ storage: {
                     const criadorMat = String(apr.criadorMatricula || '').trim().toUpperCase();
                     const setorAtual = apr.setor || apr.pasta || '';
                     const operacaoAtual = apr.operacao || setorAtual || '';
-                    const operacoesExistentes = (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function')
-                        ? app.diarioBordo.getOperacoesDisponiveis()
-                        : [];
+                    const operacoesExistentes = (app.admin && typeof app.admin.getOperacoesOficiaisLimpa === 'function')
+                        ? app.admin.getOperacoesOficiaisLimpa()
+                        : ((app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function')
+                            ? app.diarioBordo.getOperacoesDisponiveis()
+                            : []);
                     
                     let userCheckboxes = (app.users || []).map(u => {
                         const uMat = String(u.matricula || '').trim().toUpperCase();
@@ -49216,6 +49902,11 @@ storage: {
                     
                     if (app.apresentacoesList && app.apresentacoesList[id]) {
                         const apr = app.apresentacoesList[id];
+                        const prevAllowedSet = new Set(
+                            [...(apr.allowedUsers || []), ...(apr.responsaveisQualidade || []), ...(apr.responsaveisTreinamento || [])]
+                                .map(m => String(m || '').trim().toUpperCase())
+                                .filter(Boolean)
+                        );
                         const allowedSet = new Set(allowedUsers);
 
                         if (apr.criadorMatricula) allowedSet.add(String(apr.criadorMatricula).trim().toUpperCase());
@@ -49265,6 +49956,10 @@ storage: {
                             : app.storage.saveApresentacoes(id);
 
                         saveReq.then(() => {
+                            const newlyAddedMats = Array.from(allowedSet).filter(m => m && !prevAllowedSet.has(String(m).trim().toUpperCase()));
+                            if (newlyAddedMats.length > 0 && app.notifications && typeof app.notifications.notifyApresentacaoPronta === 'function') {
+                                app.notifications.notifyApresentacaoPronta(apr, newlyAddedMats);
+                            }
                             document.getElementById('global-modal').classList.add('hidden');
                             const activeTab = app.currentTab === 'qualidade_treinamento' ? 'qualidade_treinamento' : 'analise_csv_dinamico';
                             app.ui.renderTab(activeTab, true);
@@ -57173,163 +57868,66 @@ Object.assign(app.ui, {
                                     <div class="absolute right-32 -top-12 w-64 h-64 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
                                 </div>
 
-                                <!-- Layout Dividido: Coluna Principal e Post-its na Lateral até o Final da Página -->
-                                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                                    <!-- Coluna Principal (8 colunas em lg/xl) -->
-                                    <div class="lg:col-span-8 xl:col-span-8 space-y-6">
-                                        <!-- Filtros por Categoria -->
-                                        <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                                            ${categories.map(cat => `
-                                                <button type="button" data-home-cat="${cat.id}"
-                                                    class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
-                                                    ${cat.label}
-                                                </button>
-                                            `).join('')}
-                                        </div>
+                                <!-- Layout Principal (Post-its ficam exclusivamente na aba GTD & Tríade) -->
+                                <div class="space-y-6">
+                                    <!-- Filtros por Categoria -->
+                                    <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                        ${categories.map(cat => `
+                                            <button type="button" data-home-cat="${cat.id}"
+                                                class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
+                                                ${cat.label}
+                                            </button>
+                                        `).join('')}
+                                    </div>
 
-                                        <!-- Seção: MAIS USADOS PELO USUÁRIO -->
-                                        <div id="home-most-used-wrapper">
-                                            <div class="flex items-center justify-between mb-3.5">
-                                                <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                    <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
-                                                </h2>
-                                                <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
-                                            </div>
-                                            <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                                                <!-- Renderizado via JS -->
-                                            </div>
+                                    <!-- Seção: MAIS USADOS PELO USUÁRIO -->
+                                    <div id="home-most-used-wrapper">
+                                        <div class="flex items-center justify-between mb-3.5">
+                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
+                                            </h2>
+                                            <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
                                         </div>
-
-                                        <!-- Seção de Favoritos Fixados -->
-                                        <div id="home-favorites-wrapper">
-                                            <div class="flex items-center justify-between mb-3.5">
-                                                <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                    <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
-                                                </h2>
-                                                <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
-                                            </div>
-                                            <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                                                <!-- Renderizado via JS -->
-                                            </div>
-                                        </div>
-
-                                        <!-- Grade Principal de Blocos / Speed Dial -->
-                                        <div>
-                                            <div class="flex items-center justify-between mb-3.5">
-                                                <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                    <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
-                                                </h2>
-                                                <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                                                    Exibindo ${accessibleCards.length} páginas
-                                                </span>
-                                            </div>
-                                            <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                                                <!-- Renderizado via JS -->
-                                            </div>
-                                            <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
-                                                <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
-                                                    <i class="fa-solid fa-magnifying-glass"></i>
-                                                </div>
-                                                <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
-                                                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
-                                                <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
-                                                    Limpar Busca e Filtros
-                                                </button>
-                                            </div>
+                                        <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            <!-- Renderizado via JS -->
                                         </div>
                                     </div>
 
-                                    <!-- Coluna Lateral: POST-ITS INTELIGENTES COM GTD + TRÍADE DO TEMPO -->
-                                    <div class="lg:col-span-4 xl:col-span-4 flex flex-col">
-                                        <div id="home-postits-wrapper" class="flex-1 flex flex-col lg:sticky lg:top-4">
-                                            <div class="bg-white/95 dark:bg-slate-900/95 rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-xl flex-1 flex flex-col min-h-[640px] lg:min-h-[calc(100vh-220px)]">
-                                                <div class="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100 dark:border-slate-800 mb-3 shrink-0">
-                                                    <div class="flex items-center gap-2.5 min-w-0">
-                                                        <div class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 flex items-center justify-center text-lg shadow-sm shrink-0">
-                                                            <i class="fa-solid fa-note-sticky"></i>
-                                                        </div>
-                                                        <div class="min-w-0">
-                                                            <h2 class="text-sm sm:text-base font-black text-slate-800 dark:text-white flex items-center gap-2 truncate">
-                                                                Post-its GTD
-                                                                <span id="home-postits-count" class="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 font-black border border-amber-200 dark:border-amber-800">
-                                                                    ${userPostits.filter(p => p.gtdStatus !== 'concluida').length}
-                                                                </span>
-                                                            </h2>
-                                                            <span class="text-[11px] text-slate-400 font-medium block truncate">GTD & Tríade do Tempo • Arraste ou edite</span>
-                                                        </div>
-                                                    </div>
+                                    <!-- Seção de Favoritos Fixados -->
+                                    <div id="home-favorites-wrapper">
+                                        <div class="flex items-center justify-between mb-3.5">
+                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
+                                            </h2>
+                                            <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
+                                        </div>
+                                        <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            <!-- Renderizado via JS -->
+                                        </div>
+                                    </div>
 
-                                                    <div class="flex items-center gap-1.5 shrink-0">
-                                                        <button type="button" onclick="app.ui.openGtdTutorialModal(0, false)"
-                                                            class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-slate-600 dark:text-slate-300 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 font-bold text-xs transition flex items-center justify-center cursor-pointer" title="Ver Tutorial Completo: GTD & Tríade">
-                                                            <i class="fa-solid fa-graduation-cap text-xs"></i>
-                                                        </button>
-                                                        <button type="button" onclick="app.ui.openEnviarTarefaModal()"
-                                                            class="px-2.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold text-xs transition flex items-center gap-1 cursor-pointer" title="Enviar tarefa e lembrete para colaborador">
-                                                            <i class="fa-solid fa-paper-plane text-[11px]"></i> <span class="hidden sm:inline">Enviar</span>
-                                                        </button>
-                                                        <button type="button" onclick="app.ui.renderTab('produtividade_gtd', true)"
-                                                            class="px-2.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs transition flex items-center gap-1" title="Abrir Painel Completo GTD & Tríade (Kanban e Wizard)">
-                                                            <i class="fa-solid fa-table-columns text-[11px]"></i> <span class="hidden sm:inline">Painel</span>
-                                                        </button>
-                                                        <button id="home-add-postit-btn" type="button"
-                                                            class="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 active:scale-95" title="Criar novo bloco em branco">
-                                                            <i class="fa-solid fa-plus text-xs"></i> Novo
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Captura Rápida GTD + Pré-Classificação Tríade (Enter) -->
-                                                <div class="mb-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/70 shrink-0 space-y-2">
-                                                    <div class="flex items-center gap-1.5">
-                                                        <input id="home-quick-gtd-input" type="text" placeholder="Capturar demanda ou ideia (Enter)..."
-                                                            class="flex-1 min-w-0 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500" />
-                                                        <button id="home-quick-gtd-btn" type="button"
-                                                            class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition shrink-0" title="Capturar nota agora">
-                                                            <i class="fa-solid fa-paper-plane"></i>
-                                                        </button>
-                                                    </div>
-                                                    <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-bold">
-                                                        <div class="flex items-center gap-1">
-                                                            <span class="text-slate-400 mr-0.5">Esfera:</span>
-                                                            <button type="button" class="home-quick-triad-btn px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-900 transition" data-triad="importante" title="Importante: gera resultado, meta planejada">Imp</button>
-                                                            <button type="button" class="home-quick-triad-btn px-2 py-0.5 rounded-full border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-900 transition" data-triad="urgente" title="Urgente: prazo estourando ou incêndio">Urg</button>
-                                                            <button type="button" class="home-quick-triad-btn px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 bg-white dark:bg-slate-900 transition" data-triad="circunstancial" title="Circunstancial: baixo impacto, delegável">Circ</button>
-                                                        </div>
-                                                        <button type="button" id="home-quick-2min-btn" class="px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 transition flex items-center gap-1" title="Regra GTD: leva menos de 2 minutos">
-                                                            <i class="fa-solid fa-bolt text-[9px]"></i> &lt;2min
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Termômetro Tríade do Tempo (70% Imp · 20% Urg · 10% Circ) -->
-                                                <div id="home-triade-bar" class="mb-3 shrink-0">
-                                                    <!-- Preenchido dinamicamente -->
-                                                </div>
-
-                                                <!-- Filtros GTD Compactos -->
-                                                <div id="home-gtd-filter-bar" class="flex flex-wrap items-center gap-1 mb-3 shrink-0">
-                                                    <!-- Preenchido dinamicamente -->
-                                                </div>
-
-                                                <!-- Seletor de Modo: Tortinho | Reto | Balançando -->
-                                                <div class="flex items-center justify-between gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 rounded-2xl mb-3 border border-slate-200/60 dark:border-slate-700/60 text-xs shrink-0">
-                                                    <button type="button" class="postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all ${userPostitStyle === 'tortinho' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="tortinho" title="Inclinado natural">
-                                                        <i class="fa-solid fa-italic mr-1 text-[10px]"></i> Tortinho
-                                                    </button>
-                                                    <button type="button" class="postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all ${userPostitStyle === 'reto' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="reto" title="Alinhado e reto">
-                                                        <i class="fa-solid fa-square mr-1 text-[10px]"></i> Reto
-                                                    </button>
-                                                    <button type="button" class="postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all ${userPostitStyle === 'balancando' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-style="balancando" title="Efeito de balanço suave">
-                                                        <i class="fa-solid fa-wind mr-1 text-[10px]"></i> Balançando
-                                                    </button>
-                                                </div>
-
-                                                <!-- Grade/Lista de Post-its na Lateral -->
-                                                <div id="home-postits-grid" class="flex-1 space-y-4 overflow-y-auto custom-scrollbar px-2.5 py-2">
-                                                    <!-- Renderizado via renderPostits() -->
-                                                </div>
+                                    <!-- Grade Principal de Blocos / Speed Dial -->
+                                    <div>
+                                        <div class="flex items-center justify-between mb-3.5">
+                                            <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
+                                                <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
+                                            </h2>
+                                            <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                                                Exibindo ${accessibleCards.length} páginas
+                                            </span>
+                                        </div>
+                                        <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            <!-- Renderizado via JS -->
+                                        </div>
+                                        <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
+                                            <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
+                                                <i class="fa-solid fa-magnifying-glass"></i>
                                             </div>
+                                            <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
+                                            <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
+                                                Limpar Busca e Filtros
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -69216,15 +69814,11 @@ app.pdcaTeste = {
     _getOperacoesExistentes() {
         const set = new Set();
         try {
-            if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
-                (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => { if (op) set.add(String(op).trim()); });
+            if (app.admin && typeof app.admin.getOperacoesOficiaisLimpa === 'function') {
+                (app.admin.getOperacoesOficiaisLimpa() || []).forEach(op => { if (op) set.add(String(op).trim().toUpperCase()); });
+            } else if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
+                (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => { if (op) set.add(String(op).trim().toUpperCase()); });
             }
-            Object.values(app.apresentacoesList || {}).forEach(a => {
-                if (a?.operacao) set.add(String(a.operacao).trim());
-            });
-            Object.values(this.ciclos || {}).forEach(c => {
-                if (c?.operacao) set.add(String(c.operacao).trim());
-            });
         } catch (e) {}
         return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     },
@@ -70287,5 +70881,1343 @@ app.pdcaTeste = {
                 ${this._renderModal()}
             </div>
         `;
+    }
+};
+
+// ============================================================================
+// LABORATÓRIO EXPERIMENTAL (DEV ONLY): NOVO LAYOUT PORTAL + SLIM ICON RAIL
+// Totalmente isolado e 100% reversível — zero impacto para usuários padrão.
+// ============================================================================
+app.mintZenTeste = {
+    STORAGE_KEY: 'soft_experimental_mint_zen',
+    activeSubView: 'overview',
+    dataSourceMode: 'live',
+    _splashPlayedThisSession: false,
+    _loginSplashPlayed: false,
+    _lastMenus: null,
+
+    _isDevUser() {
+        return !!(app && typeof app.hasAdminAccess === 'function' && app.hasAdminAccess('mint_zen_teste'));
+    },
+
+    isGlobalThemeEnabled() {
+        if (!this._isDevUser()) return false;
+        try { return localStorage.getItem(this.STORAGE_KEY) === '1'; } catch (e) { return false; }
+    },
+
+    injectStylesOnce() {
+        if (document.getElementById('mint-zen-lab-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'mint-zen-lab-styles';
+        style.textContent = `
+            @keyframes slClipReveal {
+                0% { clip-path: circle(0% at 50% 50%); }
+                100% { clip-path: circle(150% at 50% 50%); }
+            }
+            @keyframes mzCascadeUp {
+                0% { opacity: 0; transform: translateY(15px); }
+                100% { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes mzBarGrow {
+                0% { transform: scaleY(0); opacity: 0.35; }
+                100% { transform: scaleY(1); opacity: 1; }
+            }
+            @keyframes mzSplashPulse {
+                0%, 100% { transform: scale(1); opacity: 0.92; }
+                50% { transform: scale(1.06); opacity: 1; }
+            }
+
+            .sl-reveal, .mz-reveal {
+                opacity: 0;
+                transform: translateY(15px);
+                animation: mzCascadeUp 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                animation-delay: var(--mz-delay, 0ms);
+            }
+
+            .sl-card, .mz-card {
+                background-color: #FFFFFF;
+                border: 1px solid rgba(15, 23, 42, 0.07);
+                box-shadow: 0 2px 12px -3px rgba(15, 23, 42, 0.05);
+                transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease;
+            }
+            .dark .sl-card, .dark .mz-card {
+                background-color: #162033;
+                border-color: rgba(255, 255, 255, 0.07);
+                box-shadow: 0 4px 18px -4px rgba(0, 0, 0, 0.35);
+            }
+            .sl-card:hover, .mz-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 20px 40px -14px rgba(15, 23, 42, 0.14), 0 4px 12px -2px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.12);
+                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.32);
+            }
+
+            .mz-pill-bar {
+                transform-origin: bottom;
+                transform: scaleY(0);
+                animation: mzBarGrow 0.78s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+                animation-delay: var(--mz-bar-delay, 120ms);
+            }
+
+            /* Flyout ao passar o mouse: mostra o que é + subabas do grupo */
+            .sl-rail-flyout {
+                opacity: 0;
+                visibility: hidden;
+                transform: translateX(-8px) scale(0.98);
+                pointer-events: none;
+                transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.18s;
+            }
+            .sl-rail-group:hover .sl-rail-flyout,
+            .sl-rail-group:focus-within .sl-rail-flyout {
+                opacity: 1;
+                visibility: visible;
+                transform: translateX(0) scale(1);
+                pointer-events: auto;
+            }
+            .mz-rail-tooltip {
+                opacity: 0;
+                transform: translateX(-6px);
+                pointer-events: none;
+                transition: opacity 0.18s ease, transform 0.18s ease;
+            }
+            .mz-rail-btn:hover .mz-rail-tooltip {
+                opacity: 1;
+                transform: translateX(0);
+            }
+
+            /* --- Modo Teste Global no Portal (100% Reversível, mantém cores do Portal) --- */
+            @media (min-width: 768px) {
+                body.portal-rail-test-mode #view-app > header > div:first-child {
+                    display: none !important;
+                }
+                body.portal-rail-test-mode #view-app header nav#main-nav {
+                    display: none !important;
+                }
+                body.portal-rail-test-mode #view-app > header > div:nth-child(2) {
+                    display: none !important;
+                }
+                body.portal-rail-test-mode #view-app > header:not(:has(#sl-active-subnav-bar)) {
+                    display: none !important;
+                }
+                body.portal-rail-test-mode #view-app > header {
+                    margin-left: 82px !important;
+                    transition: margin-left 0.25s ease;
+                }
+                body.portal-rail-test-mode #main-content-shell {
+                    padding-left: 96px !important;
+                    transition: padding-left 0.25s ease;
+                }
+            }
+
+            @keyframes slBarGrowX {
+                0% { transform: scaleX(0); opacity: 0.4; }
+                100% { transform: scaleX(1); opacity: 1; }
+            }
+            .sl-bar-grow-y {
+                transform-origin: bottom;
+                animation: mzBarGrow 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: var(--sl-bar-delay, 100ms);
+            }
+            .sl-bar-grow-x {
+                transform-origin: left;
+                animation: slBarGrowX 0.78s cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: var(--sl-bar-delay, 100ms);
+            }
+
+            body.portal-rail-test-mode .sl-portal-cascade {
+                animation: mzCascadeUp 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: var(--sl-delay, 0ms);
+            }
+
+            /* Cards elegantes em TODOS os dashboards (quando Teste está ativo) */
+            body.portal-rail-test-mode .tab-view-container .glass-card,
+            body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white,
+            body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white,
+            body.portal-rail-test-mode .tab-view-container .rounded-2xl[class*="bg-white/"],
+            body.portal-rail-test-mode .tab-view-container .rounded-3xl[class*="bg-white/"],
+            body.portal-rail-test-mode .tab-view-container .rounded-2xl.border.shadow-sm,
+            body.portal-rail-test-mode .tab-view-container .rounded-3xl.border.shadow-sm,
+            body.portal-rail-test-mode .tab-view-container .sl-dash-card {
+                border-radius: 22px !important;
+                border-color: rgba(15, 23, 42, 0.06) !important;
+                box-shadow: 0 2px 12px -3px rgba(15, 23, 42, 0.05) !important;
+                transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease !important;
+            }
+            html.dark body.portal-rail-test-mode .tab-view-container .glass-card,
+            html.dark body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white,
+            html.dark body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white,
+            html.dark body.portal-rail-test-mode .tab-view-container .rounded-2xl.border.shadow-sm,
+            html.dark body.portal-rail-test-mode .tab-view-container .rounded-3xl.border.shadow-sm,
+            html.dark body.portal-rail-test-mode .tab-view-container .sl-dash-card {
+                border-color: rgba(255, 255, 255, 0.07) !important;
+                box-shadow: 0 4px 18px -4px rgba(0, 0, 0, 0.35) !important;
+            }
+            body.portal-rail-test-mode .tab-view-container .glass-card:hover,
+            body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white:hover,
+            body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white:hover,
+            body.portal-rail-test-mode .tab-view-container .rounded-2xl[class*="bg-white/"]:hover,
+            body.portal-rail-test-mode .tab-view-container .rounded-3xl[class*="bg-white/"]:hover,
+            body.portal-rail-test-mode .tab-view-container .sl-dash-card:hover {
+                transform: translateY(-4px) !important;
+                box-shadow: 0 20px 40px -14px rgba(15, 23, 42, 0.14), 0 4px 12px -2px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14) !important;
+                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.30) !important;
+            }
+        `;
+        document.head.appendChild(style);
+        this.installChartGrowPlugin();
+    },
+
+    installChartGrowPlugin() {
+        if (this._chartPluginInstalled || typeof window.Chart === 'undefined' || typeof window.Chart.register !== 'function') return;
+        this._chartPluginInstalled = true;
+        try {
+            window.Chart.register({
+                id: 'softLayoutGrowTest',
+                beforeInit(chart) {
+                    if (!app.mintZenTeste || !app.mintZenTeste.isGlobalThemeEnabled()) return;
+                    const cfg = chart && chart.config;
+                    if (!cfg) return;
+                    if (!cfg.options) cfg.options = {};
+                    const isHorizontal = cfg.options.indexAxis === 'y';
+                    const isBar = cfg.type === 'bar' || (cfg.data && Array.isArray(cfg.data.datasets) && cfg.data.datasets.some(d => d && d.type === 'bar'));
+
+                    if (isBar) {
+                        cfg.options.animation = {
+                            ...(typeof cfg.options.animation === 'object' && cfg.options.animation ? cfg.options.animation : {}),
+                            duration: 900,
+                            easing: 'easeOutQuart',
+                            delay(ctx) {
+                                if (ctx && ctx.type === 'data' && ctx.mode === 'default') {
+                                    return Math.min((ctx.dataIndex || 0) * 52 + (ctx.datasetIndex || 0) * 70, 560);
+                                }
+                                return 0;
+                            }
+                        };
+
+                        if (cfg.data && Array.isArray(cfg.data.datasets)) {
+                            cfg.data.datasets.forEach(ds => {
+                                if (!ds || (ds.type && ds.type !== 'bar')) return;
+                                if (ds.borderRadius === undefined || ds.borderRadius === null || ds.borderRadius < 8) {
+                                    ds.borderRadius = isHorizontal
+                                        ? { topRight: 999, bottomRight: 999 }
+                                        : { topLeft: 999, topRight: 999 };
+                                }
+                            });
+                        }
+                    } else {
+                        cfg.options.animation = {
+                            ...(typeof cfg.options.animation === 'object' && cfg.options.animation ? cfg.options.animation : {}),
+                            duration: 850,
+                            easing: 'easeOutQuart',
+                            animateScale: true,
+                            animateRotate: true
+                        };
+                    }
+                }
+            });
+        } catch (e) {}
+    },
+
+    refreshIcons() {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            try { window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } }); } catch (e) {}
+        }
+    },
+
+    onPortalLogin() {
+        if (app.isGuest) return;
+        if (!this.isGlobalThemeEnabled()) return;
+        if (this._loginSplashPlayed) return;
+        this._loginSplashPlayed = true;
+        this.playSplashReveal('Bem-vindo ao Portal Softmarketing');
+    },
+
+    playSplashReveal(subtitle = 'Softmarketing • Novo Layout (Teste)') {
+        this.injectStylesOnce();
+        const existing = document.getElementById('mz-splash-overlay');
+        if (existing) existing.remove();
+        if (this._splashRafId) { cancelAnimationFrame(this._splashRafId); this._splashRafId = null; }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'mz-splash-overlay';
+        overlay.className = 'fixed inset-0 z-[320] pointer-events-none bg-[#0B1120] flex flex-col items-center justify-center text-white';
+        overlay.innerHTML = `
+            <div id="mz-splash-core" class="flex flex-col items-center justify-center transition-all duration-300 ease-out">
+                <div class="w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl mb-4" style="background-color: var(--theme-color); box-shadow: 0 0 48px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.45); animation: mzSplashPulse 1s ease-in-out infinite;">
+                    <i data-lucide="layers" class="w-8 h-8 text-white"></i>
+                </div>
+                <div class="text-xl font-extrabold tracking-tight text-white">Softmarketing <span class="font-normal text-slate-400 text-base">| Resultados</span></div>
+                <div class="text-xs font-medium text-slate-400 mt-1.5 tracking-wide">${subtitle}</div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        this.refreshIcons();
+
+        // Revelação circular pura via mask-image animada a 60fps no próprio overlay (zero reflow/piscada no portal)
+        const duration = 760;
+        const holdMs = 200;
+        const startHold = performance.now();
+
+        const animateMask = (now) => {
+            const elapsed = now - startHold;
+            if (elapsed < holdMs) {
+                this._splashRafId = requestAnimationFrame(animateMask);
+                return;
+            }
+            const t = Math.min(1, (elapsed - holdMs) / duration);
+            // Ease-in-out cúbica para saída e entrada suaves sem trancos
+            const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+            const hole = (eased * 155).toFixed(2) + '%';
+            const feather = (eased * 155 + 2.5).toFixed(2) + '%';
+            const grad = `radial-gradient(circle at 50% 50%, transparent ${hole}, black ${feather})`;
+            overlay.style.webkitMaskImage = grad;
+            overlay.style.maskImage = grad;
+
+            const core = document.getElementById('mz-splash-core');
+            if (core && t > 0.02 && !core.dataset.faded) {
+                core.dataset.faded = '1';
+                core.style.opacity = '0';
+                core.style.transform = 'scale(1.08)';
+            }
+
+            if (t < 1) {
+                this._splashRafId = requestAnimationFrame(animateMask);
+            } else {
+                this._splashRafId = null;
+                overlay.remove();
+            }
+        };
+        this._splashRafId = requestAnimationFrame(animateMask);
+    },
+
+    applyPortalTabAnimations(viewDiv) {
+        if (!viewDiv || !this.isGlobalThemeEnabled()) return;
+        this.injectStylesOnce();
+        this.installChartGrowPlugin();
+        try {
+            const blocks = viewDiv.querySelectorAll(':scope > div > div, :scope .grid > div, .glass-card');
+            let idx = 0;
+            blocks.forEach(el => {
+                if (idx >= 36) return;
+                if (el.closest('#mz-global-icon-rail')) return;
+                if (!el.classList.contains('sl-portal-cascade')) {
+                    el.style.setProperty('--sl-delay', Math.min(idx * 36, 480) + 'ms');
+                    el.classList.add('sl-portal-cascade');
+                }
+                if (el.matches('div') && !el.closest('button, table, nav') && el.className && /rounded-(2xl|3xl)|glass-card/.test(el.className)) {
+                    el.classList.add('sl-dash-card');
+                }
+                idx++;
+            });
+
+            // Anima também barras HTML customizadas de progresso / gráficos CSS
+            const hBars = viewDiv.querySelectorAll('[class*="rounded-full"] > [style*="width:"]');
+            hBars.forEach((bar, bIdx) => {
+                if (!bar.classList.contains('sl-bar-grow-x')) {
+                    bar.style.setProperty('--sl-bar-delay', Math.min(bIdx * 40, 420) + 'ms');
+                    bar.classList.add('sl-bar-grow-x');
+                }
+            });
+
+            // Re-dispara crescimento suave nos gráficos Chart.js já existentes ou recém-criados
+            if (window.Chart && typeof window.Chart.instances === 'object') {
+                Object.values(window.Chart.instances).forEach(ch => {
+                    if (ch && ch.canvas && viewDiv.contains(ch.canvas) && !ch._slGrowApplied) {
+                        ch._slGrowApplied = true;
+                        try { ch.reset(); ch.update(); } catch (err) {}
+                    }
+                });
+            }
+
+            this.animateCounters(viewDiv);
+            this.refreshIcons();
+        } catch (e) {}
+    },
+
+    toggleGlobalPortalTheme(forceState = null) {
+        if (!this._isDevUser()) return;
+        const current = this.isGlobalThemeEnabled();
+        const next = forceState !== null ? !!forceState : !current;
+        try {
+            if (next) localStorage.setItem(this.STORAGE_KEY, '1');
+            else localStorage.removeItem(this.STORAGE_KEY);
+        } catch (e) {}
+
+        document.getElementById('theme-color-dropdown')?.classList.add('hidden');
+        this.playSplashReveal(next ? 'Aplicando Novo Layout em Todo o Portal' : 'Restaurando Layout Clássico do Portal');
+        setTimeout(() => {
+            this.syncGlobalPortalTheme();
+            if (app.ui && typeof app.ui.renderNav === 'function') app.ui.renderNav();
+            if (app.currentTab === 'mint_zen_teste') this.renderView(null, { skipSplash: true });
+            else if (app.currentTab) {
+                const container = document.getElementById('view-container-' + app.currentTab);
+                if (container && next) this.applyPortalTabAnimations(container);
+            }
+        }, 160);
+    },
+
+    _getGroupMeta(groupName) {
+        const map = {
+            'Início': { icon: 'home', desc: 'Página inicial, resumo diário e foco GTD' },
+            'Dashboards': { icon: 'pie-chart', desc: 'Painéis executivos, equipe, span e laudos' },
+            'Controle & Importação': { icon: 'clipboard-check', desc: 'Notas, monitorias, diário, Kantar e resultados' },
+            'Rotina & Formulários': { icon: 'headset', desc: 'Calendário, atas, diário, laudos e ações' },
+            'Formulários': { icon: 'pen-line', desc: 'Registro de ações presenciais e perfil' },
+            'Apoio': { icon: 'briefcase', desc: 'Estoque, impressões, simulações e regras' },
+            'Sistema': { icon: 'sliders-horizontal', desc: 'Auditoria de ações, metas, Harmony, PDCA e testes' },
+            'Guias': { icon: 'book-open', desc: 'Simuladores, treinamentos, regras e LGPD' }
+        };
+        return map[groupName] || { icon: 'folder-kanban', desc: 'Abas e módulos deste grupo' };
+    },
+
+    _getTabIcon(tabId) {
+        const icons = {
+            'home': 'home',
+            'produtividade_gtd': 'timer',
+            'dashboard_adm': 'layout-dashboard',
+            'analitico_visao_geral': 'pie-chart',
+            'hierarquia': 'network',
+            'span_operacoes': 'radar',
+            'implantacao_ia': 'bot',
+            'meu_painel': 'user-check',
+            'dashboard_estudos': 'file-bar-chart',
+            'cadastros': 'clipboard-edit',
+            'import_monitorias': 'file-spreadsheet',
+            'diario_bordo': 'book-open-check',
+            'faltas_integracao': 'user-x',
+            'pesquisas_anatel': 'clipboard-list',
+            'analise_csv_dinamico': 'bar-chart-3',
+            'apresentacao_dental_uni': 'presentation',
+            'qualidade_treinamento': 'graduation-cap',
+            'calendario': 'calendar-days',
+            'controle_estoque': 'package',
+            'gestao_impressoes': 'printer',
+            'impressoes': 'printer',
+            'validar_acoes': 'check-square',
+            'configuracoes': 'settings-2',
+            'gestao_atas': 'file-text',
+            'ata_reuniao': 'file-text',
+            'harmony': 'cpu',
+            'teste_duolingo': 'languages',
+            'bi_banco_horas': 'clock-4',
+            'pdca_teste': 'refresh-cw',
+            'mint_zen_teste': 'sparkles',
+            'caca_palavras': 'grid-3x3',
+            'palavras_cruzadas': 'puzzle',
+            'calculadora': 'calculator',
+            'calc_monitorias': 'gauge',
+            'treinamentos': 'award',
+            'regras': 'shield-check',
+            'legal': 'scale',
+            'registrar_acao': 'plus-circle',
+            'laudos_estudos': 'stethoscope',
+            'perfil': 'user'
+        };
+        return icons[tabId] || 'circle-dot';
+    },
+
+    _renderNotificationsFlyoutContent() {
+        const list = (app.notifications && typeof app.notifications.getRelevant === 'function')
+            ? app.notifications.getRelevant()
+            : [];
+        const unread = list.filter(n => !n.read).length;
+
+        const faltasPill = document.getElementById('header-faltas-int-pill');
+        const faltasVisible = faltasPill && !faltasPill.classList.contains('hidden');
+        const faltasCount = parseInt(document.getElementById('header-faltas-int-text')?.textContent || '0', 10) || 0;
+
+        const indPill = document.getElementById('header-ind-alert-pill');
+        const indVisible = indPill && !indPill.classList.contains('hidden');
+        const indText = document.getElementById('header-ind-alert-text')?.textContent || 'Fechamento';
+
+        const recBtn = document.getElementById('header-rec-reminders-btn');
+        const recVisible = recBtn && !recBtn.classList.contains('hidden');
+        const recCount = parseInt(document.getElementById('rec-reminders-badge')?.textContent || '0', 10) || 0;
+
+        return `
+            <div class="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                <div>
+                    <div class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <span>Central de Alertas</span>
+                        ${unread > 0 ? `<span class="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black">${unread}</span>` : ''}
+                    </div>
+                    <div class="text-[10px] text-slate-400">Notificações, pendências e lembretes</div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="app.ui.openEnviarTarefaModal()" class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">Enviar Tarefa</button>
+                    ${unread > 0 ? `<button type="button" onclick="app.notifications.markAllAsRead(); app.mintZenTeste.refreshRailUtilities();" class="text-[10px] font-bold text-blue-500 hover:underline cursor-pointer">Marcar lidas</button>` : ''}
+                </div>
+            </div>
+
+            ${(indVisible || faltasVisible || recVisible) ? `
+                <div class="p-2 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-1">
+                    ${indVisible ? `
+                        <button type="button" onclick="app.ui.openIndicatorsAlertModal()" class="w-full px-2.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-[11px] font-bold flex items-center justify-between hover:bg-rose-100 transition-colors cursor-pointer">
+                            <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span> ${indText}</span>
+                            <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                        </button>
+                    ` : ''}
+                    ${faltasVisible ? `
+                        <button type="button" onclick="app.ui.renderTab('faltas_integracao', true)" class="w-full px-2.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-[11px] font-bold flex items-center justify-between hover:bg-rose-100 transition-colors cursor-pointer">
+                            <span>Faltas na Integração pendentes</span>
+                            <span class="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">${faltasCount}</span>
+                        </button>
+                    ` : ''}
+                    ${recVisible ? `
+                        <button type="button" onclick="app.recurringReminders && app.recurringReminders.openManagerModal()" class="w-full px-2.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold flex items-center justify-between hover:bg-amber-100 transition-colors cursor-pointer">
+                            <span>Demandas Recorrentes</span>
+                            <span class="px-1.5 py-0.5 rounded-full bg-amber-600 text-white text-[10px] font-black">${recCount}</span>
+                        </button>
+                    ` : ''}
+                </div>
+            ` : ''}
+
+            <div class="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80">
+                ${list.length === 0 ? `<div class="p-4 text-center text-[11px] text-slate-400">Nenhuma notificação no momento.</div>` : list.slice(0, 6).map(n => `
+                    <div class="px-3 py-2.5 ${n.read ? 'opacity-75' : 'bg-blue-50/50 dark:bg-slate-800/60'}">
+                        <div class="text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-snug">${n.title || 'Notificação'}</div>
+                        <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">${n.message || ''}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    },
+
+    _renderSettingsFlyoutContent() {
+        const userName = app.isAdmin ? 'Administração' : (app.currentUser?.nome || 'USUÁRIO');
+        const userRole = app.isAdmin ? 'ADM' : (app.currentUser?.tipoAcesso || 'Portal');
+        const currentMonthVal = app.currentMonth || document.getElementById('global-month')?.value || new Date().toISOString().slice(0, 7);
+        const isDark = document.documentElement.classList.contains('dark');
+        const isDev = app.isAdmin || app.currentUser?.tipoAcesso === 'Dev';
+        const paletteColors = ['#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#f43f5e', '#10b981'];
+        const activeColor = (localStorage.getItem('theme_color') || '#22c55e').toLowerCase();
+
+        return `
+            <div class="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="text-xs font-black text-slate-800 dark:text-white truncate">${userName}</div>
+                    <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">${userRole} • Configurações</div>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    ${!app.isAdmin ? `<button type="button" onclick="app.ui.renderTab('perfil', true)" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200 transition-colors cursor-pointer">Perfil</button>` : ''}
+                    <button type="button" onclick="app.auth.logout()" class="px-2 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 hover:bg-rose-600 hover:text-white text-[10px] font-bold transition-colors cursor-pointer">Sair</button>
+                </div>
+            </div>
+
+            <!-- Mês de Competência + Sincronização Nuvem -->
+            <div class="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2">
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Competência &amp; Dados</div>
+                <div class="flex items-center gap-1.5">
+                    <input type="month" value="${currentMonthVal}" onchange="const gm = document.getElementById('global-month'); if(gm) gm.value = this.value; app.changeMonth(this.value);" class="flex-1 h-8 px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                    <button type="button" onclick="app.storage && app.storage.syncCloudFromServer(false)" class="h-8 px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer" title="Sincronizar dados da nuvem agora">
+                        <i data-lucide="cloud-download" class="w-3.5 h-3.5"></i>
+                        <span>Nuvem</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Aparência & Tema -->
+            <div class="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Aparência &amp; Cor</span>
+                    <button type="button" onclick="const cb = document.getElementById('theme-checkbox'); if(cb) cb.checked = !cb.checked; app.ui.toggleTheme(); setTimeout(() => app.mintZenTeste.refreshRailUtilities(), 60);" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer">
+                        <i data-lucide="${isDark ? 'sun' : 'moon'}" class="w-3.5 h-3.5"></i>
+                        <span>${isDark ? 'Modo Claro' : 'Modo Escuro'}</span>
+                    </button>
+                </div>
+                <div class="flex items-center justify-between gap-1">
+                    ${paletteColors.map(hex => `
+                        <button type="button" onclick="app.ui.changeThemeColor('${hex}'); app.mintZenTeste.refreshRailUtilities();" class="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer ${activeColor === hex ? 'border-slate-900 dark:border-white scale-110' : 'border-white dark:border-slate-700 shadow-xs'}" style="background-color: ${hex};"></button>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Suporte & Reversão do Teste -->
+            <div class="p-2.5 space-y-1">
+                ${isDev ? `
+                    <button type="button" onclick="app.ui.abrirModalFirebaseDev()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-amber-500"></i> Consumo &amp; Limites Firebase
+                    </button>
+                ` : ''}
+                <button type="button" onclick="app.ui.abrirModalReporte()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
+                    <i data-lucide="megaphone" class="w-3.5 h-3.5 text-rose-500"></i> Reportar Erro ou Sugestão
+                </button>
+                <button type="button" onclick="app.ui.abrirModalHelp()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
+                    <i data-lucide="help-circle" class="w-3.5 h-3.5 text-blue-500"></i> Central de Ajuda
+                </button>
+                <button type="button" onclick="app.mintZenTeste.playSplashReveal('Replay • Softmarketing Splash')" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
+                    <i data-lucide="play" class="w-3.5 h-3.5" style="color: var(--theme-color);"></i> Testar Splash Reveal
+                </button>
+                <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme(false)" class="w-full mt-1 px-2.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-600 text-rose-600 hover:text-white text-xs font-extrabold flex items-center justify-center gap-2 transition-colors cursor-pointer">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Voltar ao Layout Padrão
+                </button>
+            </div>
+        `;
+    },
+
+    refreshRailUtilities() {
+        if (!this.isGlobalThemeEnabled()) return;
+        const notifBox = document.getElementById('sl-rail-notif-flyout-body');
+        if (notifBox) notifBox.innerHTML = this._renderNotificationsFlyoutContent();
+        const setBox = document.getElementById('sl-rail-settings-flyout-body');
+        if (setBox) setBox.innerHTML = this._renderSettingsFlyoutContent();
+
+        const badge = document.getElementById('sl-rail-bell-badge');
+        if (badge) {
+            const list = (app.notifications && typeof app.notifications.getRelevant === 'function') ? app.notifications.getRelevant() : [];
+            const unread = list.filter(n => !n.read).length;
+            const faltasPill = document.getElementById('header-faltas-int-pill');
+            const faltasVis = faltasPill && !faltasPill.classList.contains('hidden');
+            const faltasCnt = faltasVis ? (parseInt(document.getElementById('header-faltas-int-text')?.textContent || '0', 10) || 0) : 0;
+            const totalAlert = unread + faltasCnt;
+            if (totalAlert > 0) {
+                badge.title = `${totalAlert} alerta(s) ou notificação(ões)`;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+        this.refreshIcons();
+    },
+
+    _getPendingTabsMap() {
+        const pending = {};
+        try {
+            const faltasPill = document.getElementById('header-faltas-int-pill');
+            const faltasVis = faltasPill && !faltasPill.classList.contains('hidden');
+            const faltasCnt = faltasVis ? (parseInt(document.getElementById('header-faltas-int-text')?.textContent || '0', 10) || 0) : 0;
+            if (faltasCnt > 0) pending['faltas_integracao'] = { count: faltasCnt, label: `${faltasCnt} pend.` };
+
+            const indPill = document.getElementById('header-ind-alert-pill');
+            if (indPill && !indPill.classList.contains('hidden')) {
+                pending['meu_painel'] = { count: 1, label: 'Fechamento' };
+            }
+
+            if (app.hasAdminAccess && app.hasAdminAccess('validar_acoes')) {
+                const m = app.currentMonth || new Date().toISOString().slice(0, 7);
+                const pendActs = Object.values(app.actionsList || {}).filter(a => a && a.status === 'pendente' && (a.month || String(a.dataAcao || '').slice(0, 7)) === m).length;
+                if (pendActs > 0) pending['validar_acoes'] = { count: pendActs, label: `${pendActs} pend.` };
+            }
+
+            if (!app.isAdmin && app.currentUser) {
+                const uMat = String(app.currentUser.matricula || '').trim();
+                const devActs = Object.values(app.actionsList || {}).filter(a => a && a.status === 'reprovado' && String(a.matricula || '').trim() === uMat).length;
+                if (devActs > 0) pending['registrar_acao'] = { count: devActs, label: `${devActs} corrigir` };
+            }
+
+            let gtdCount = 0;
+            const recBtn = document.getElementById('header-rec-reminders-btn');
+            if (recBtn && !recBtn.classList.contains('hidden')) {
+                gtdCount += parseInt(document.getElementById('rec-reminders-badge')?.textContent || '0', 10) || 0;
+            }
+            if (app.gtd && typeof app.gtd.loadNotes === 'function') {
+                const todayIso = new Date().toISOString().slice(0, 10);
+                const overdue = app.gtd.loadNotes().filter(n => n && n.gtdStatus !== 'concluida' && n.dueDate && String(n.dueDate) < todayIso).length;
+                gtdCount += overdue;
+            }
+            if (gtdCount > 0) pending['produtividade_gtd'] = { count: gtdCount, label: `${gtdCount} alerta${gtdCount > 1 ? 's' : ''}` };
+
+            if (app.notifications && typeof app.notifications.getRelevant === 'function') {
+                const unreadApres = app.notifications.getRelevant().filter(n => !n.read && /apresenta/i.test(String(n.title || ''))).length;
+                if (unreadApres > 0) pending['analise_csv_dinamico'] = { count: unreadApres, label: `${unreadApres} nova${unreadApres > 1 ? 's' : ''}` };
+            }
+        } catch (e) {}
+        return pending;
+    },
+
+    syncGlobalPortalTheme(menusArg = null) {
+        this.injectStylesOnce();
+        if (menusArg && Array.isArray(menusArg)) {
+            this._lastMenus = menusArg;
+        }
+        if (app.ui && typeof app.ui.initThemeColors === 'function' && !this._refreshedThemeDropOnce) {
+            this._refreshedThemeDropOnce = true;
+            try { app.ui.initThemeColors(); } catch (e) {}
+        }
+
+        const isDev = this._isDevUser();
+        const enabled = isDev && this.isGlobalThemeEnabled();
+        document.body.classList.remove('mint-zen-mode');
+        document.body.classList.toggle('portal-rail-test-mode', enabled);
+
+        const existingRail = document.getElementById('mz-global-icon-rail');
+        const existingSubBar = document.getElementById('sl-active-subnav-bar');
+
+        if (!enabled) {
+            if (existingRail) existingRail.remove();
+            if (existingSubBar) existingSubBar.remove();
+            return;
+        }
+
+        const menus = Array.isArray(this._lastMenus) && this._lastMenus.length > 0
+            ? this._lastMenus
+            : (app.ui?.menusAdmin || []);
+
+        const pendingMap = this._getPendingTabsMap();
+        const normTab = (id) => (id === 'gestao_equipe' || id === 'operacoes') ? 'hierarquia' : ((id === 'treinamento_capacitacao' || id === 'csat_nps') ? 'treinamentos' : id);
+        const currentNorm = normTab(app.currentTab);
+        let activeGroup = null;
+
+        const rail = existingRail || document.createElement('aside');
+        rail.id = 'mz-global-icon-rail';
+        rail.className = 'fixed left-3 top-3 bottom-3 w-[64px] z-[80] rounded-[24px] bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-700/80 shadow-[0_14px_38px_-10px_rgba(15,23,42,0.18)] hidden md:flex flex-col items-center justify-between py-4 px-2 overflow-visible';
+
+        const groupsHtml = menus.map((m, gIdx) => {
+            if (!m || !Array.isArray(m.items) || m.items.length === 0) return '';
+            const isGroupActive = m.items.some(i => normTab(i.id) === currentNorm);
+            if (isGroupActive) activeGroup = m;
+            const meta = this._getGroupMeta(m.group);
+            const anchorBottom = gIdx >= Math.ceil(menus.length / 2);
+            const hasGroupPending = m.items.some(i => !!pendingMap[i.id] || !!pendingMap[normTab(i.id)]);
+
+            return `
+                <div class="sl-rail-group relative w-full flex justify-center">
+                    <button type="button" onclick="app.ui.renderTab('${m.items[0].id}', true)"
+                        class="w-10 h-10 rounded-2xl flex items-center justify-center transition-all cursor-pointer relative ${isGroupActive
+                            ? 'text-white shadow-md'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}"
+                        style="${isGroupActive ? 'background-color: var(--theme-color); box-shadow: 0 8px 20px -4px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.45);' : ''}">
+                        <i data-lucide="${meta.icon}" class="w-[18px] h-[18px]"></i>
+                        ${hasGroupPending ? `<span class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#0f172a] animate-pulse" title="Há itens pendentes neste grupo"></span>` : ''}
+                    </button>
+
+                    <!-- Flyout ao passar o mouse: mostra o que é o ícone + subabas com bolinha de pendência -->
+                    <div class="sl-rail-flyout absolute left-full ${anchorBottom ? 'bottom-0' : 'top-0'} pl-3.5 z-[95]">
+                        <div class="w-72 rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-700 shadow-2xl p-2.5 max-h-[76vh] overflow-y-auto">
+                            <div class="px-2.5 py-2 mb-1.5 border-b border-slate-100 dark:border-slate-800">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-black text-slate-800 dark:text-white tracking-tight">${m.group}</span>
+                                    ${hasGroupPending ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Pendente</span>` : ''}
+                                </div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">${meta.desc}</div>
+                            </div>
+
+                            <div class="flex flex-col gap-0.5">
+                                ${m.items.map(sub => {
+                                    const subActive = normTab(sub.id) === currentNorm;
+                                    const subIcon = this._getTabIcon(sub.id);
+                                    const subPend = pendingMap[sub.id] || pendingMap[normTab(sub.id)];
+                                    return `
+                                        <button type="button" onclick="app.ui.renderTab('${sub.id}', true)"
+                                            class="w-full px-2.5 py-2 rounded-xl text-left text-xs flex items-center gap-2.5 transition-all cursor-pointer ${subActive
+                                                ? 'font-extrabold text-white shadow-sm'
+                                                : 'font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'}"
+                                            style="${subActive ? 'background-color: var(--theme-color);' : ''}">
+                                            <span class="relative shrink-0 flex items-center justify-center">
+                                                <i data-lucide="${subIcon}" class="w-4 h-4 ${subActive ? 'text-white' : 'opacity-70'}"></i>
+                                                ${subPend ? `<span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 ring-1 ring-white dark:ring-[#0f172a]"></span>` : ''}
+                                            </span>
+                                            <span class="truncate flex-1">${sub.label}</span>
+                                            ${subPend ? `<span class="px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0 ${subActive ? 'bg-white/25 text-white' : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-300'}">${subPend.label}</span>` : (subActive ? '<i data-lucide="chevron-right" class="w-3.5 h-3.5 shrink-0 opacity-90"></i>' : '')}
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        rail.innerHTML = `
+            <button type="button" onclick="app.ui.renderTab('home', true)" class="mz-rail-btn relative w-10 h-10 rounded-2xl text-white flex items-center justify-center shadow-md hover:scale-105 transition-transform cursor-pointer shrink-0" style="background-color: var(--theme-color);">
+                <i data-lucide="layers" class="w-5 h-5"></i>
+                <span class="mz-rail-tooltip absolute left-[56px] whitespace-nowrap px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg z-50">Softmarketing | Resultados</span>
+            </button>
+
+            <div class="flex flex-col items-center gap-3.5 py-2.5 w-full">
+                ${groupsHtml}
+            </div>
+
+            <div class="flex flex-col items-center gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800 w-full shrink-0">
+                <!-- Busca Rápida (única lupa na lateral, sem duplicar no topo) -->
+                <button type="button" onclick="app.ui.openCommandPalette()" class="mz-rail-btn relative w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                    <i data-lucide="search" class="w-[18px] h-[18px]"></i>
+                    <span class="mz-rail-tooltip absolute left-[56px] whitespace-nowrap px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg z-50">Busca Rápida (Ctrl+K)</span>
+                </button>
+
+                <!-- Alertas, Pendências e Notificações Consolidados -->
+                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities()">
+                    <button type="button" class="relative w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                        <i data-lucide="bell" class="w-[18px] h-[18px]"></i>
+                        <span id="sl-rail-bell-badge" class="hidden absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#0f172a] animate-pulse"></span>
+                    </button>
+                    <div class="sl-rail-flyout absolute left-full bottom-0 pl-3.5 z-[95]">
+                        <div id="sl-rail-notif-flyout-body" class="w-80 rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-700 shadow-2xl overflow-hidden">
+                            ${this._renderNotificationsFlyoutContent()}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Engrenagem de Configurações (Mês, Nuvem, Tema, Cores, Suporte, Conta/Sair e Voltar) -->
+                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities()">
+                    <button type="button" class="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                        <i data-lucide="settings" class="w-[18px] h-[18px]"></i>
+                    </button>
+                    <div class="sl-rail-flyout absolute left-full bottom-0 pl-3.5 z-[95]">
+                        <div id="sl-rail-settings-flyout-body" class="w-80 rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-700 shadow-2xl overflow-hidden">
+                            ${this._renderSettingsFlyoutContent()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        if (!existingRail) document.body.appendChild(rail);
+        this.refreshRailUtilities();
+
+        const headerEl = document.querySelector('#view-app > header');
+        if (headerEl) {
+            let subBar = existingSubBar || document.createElement('div');
+            subBar.id = 'sl-active-subnav-bar';
+            if (activeGroup && activeGroup.items.length > 1) {
+                subBar.className = 'hidden md:flex items-center gap-1.5 max-w-[1920px] w-[98%] mx-auto px-2 sm:px-4 lg:px-6 py-2 overflow-x-auto no-scrollbar';
+                subBar.innerHTML = `
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 shrink-0">${activeGroup.group}:</span>
+                    ${activeGroup.items.map(sub => {
+                        const subActive = normTab(sub.id) === currentNorm;
+                        const subPend = pendingMap[sub.id] || pendingMap[normTab(sub.id)];
+                        return `
+                            <button type="button" onclick="app.ui.renderTab('${sub.id}', true)"
+                                class="relative px-3 py-1.5 rounded-xl text-xs whitespace-nowrap flex items-center gap-1.5 transition-all cursor-pointer ${subActive
+                                    ? 'font-bold text-white shadow-xs'
+                                    : 'font-medium text-slate-500 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/70 hover:bg-slate-200/70 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-white'}"
+                                style="${subActive ? 'background-color: var(--theme-color);' : ''}">
+                                <i data-lucide="${this._getTabIcon(sub.id)}" class="w-3.5 h-3.5"></i>
+                                <span>${sub.label}</span>
+                                ${subPend ? `<span class="w-2 h-2 rounded-full ${subActive ? 'bg-white' : 'bg-rose-500'} shrink-0" title="${subPend.label}"></span>` : ''}
+                            </button>
+                        `;
+                    }).join('')}
+                `;
+                if (!existingSubBar) headerEl.appendChild(subBar);
+            } else if (existingSubBar) {
+                existingSubBar.remove();
+            }
+        }
+
+        this.refreshIcons();
+    },
+
+    _renderClay3DAsset(variant) {
+        const assets = {
+            emeraldOrb: `
+                <svg viewBox="0 0 120 90" class="w-full h-full drop-shadow-[0_12px_18px_rgba(16,185,129,0.22)]">
+                    <defs>
+                        <radialGradient id="mzClayEm" cx="35%" cy="30%" r="70%">
+                            <stop offset="0%" stop-color="#A7F3D0"/>
+                            <stop offset="48%" stop-color="#10B981"/>
+                            <stop offset="100%" stop-color="#047857"/>
+                        </radialGradient>
+                        <linearGradient id="mzGlassEm" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="rgba(255,255,255,0.85)"/>
+                            <stop offset="100%" stop-color="rgba(255,255,255,0.18)"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="60" cy="78" rx="34" ry="6" fill="rgba(6,78,59,0.14)"/>
+                    <circle cx="54" cy="45" r="27" fill="url(#mzClayEm)"/>
+                    <ellipse cx="44" cy="33" rx="10" ry="6" transform="rotate(-24 44 33)" fill="rgba(255,255,255,0.45)"/>
+                    <rect x="44" y="25" width="44" height="32" rx="14" transform="rotate(14 66 41)" fill="url(#mzGlassEm)" stroke="rgba(255,255,255,0.75)" stroke-width="1.4"/>
+                    <circle cx="72" cy="42" r="7" fill="rgba(255,255,255,0.65)"/>
+                </svg>`,
+            amberTorus: `
+                <svg viewBox="0 0 120 90" class="w-full h-full drop-shadow-[0_12px_18px_rgba(245,158,11,0.22)]">
+                    <defs>
+                        <radialGradient id="mzClayAm" cx="32%" cy="28%" r="72%">
+                            <stop offset="0%" stop-color="#FDE68A"/>
+                            <stop offset="52%" stop-color="#F59E0B"/>
+                            <stop offset="100%" stop-color="#B45309"/>
+                        </radialGradient>
+                        <linearGradient id="mzGlassAm" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="rgba(255,255,255,0.88)"/>
+                            <stop offset="100%" stop-color="rgba(255,255,255,0.2)"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="62" cy="78" rx="34" ry="6" fill="rgba(120,53,15,0.12)"/>
+                    <circle cx="58" cy="44" r="24" fill="none" stroke="url(#mzClayAm)" stroke-width="14"/>
+                    <path d="M40 31 A 22 22 0 0 1 68 23" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="3.5" stroke-linecap="round"/>
+                    <circle cx="76" cy="50" r="16" fill="url(#mzGlassAm)" stroke="rgba(255,255,255,0.82)" stroke-width="1.5"/>
+                </svg>`,
+            skyCapsule: `
+                <svg viewBox="0 0 120 90" class="w-full h-full drop-shadow-[0_12px_18px_rgba(14,165,233,0.22)]">
+                    <defs>
+                        <linearGradient id="mzClaySk" x1="15%" y1="10%" x2="85%" y2="90%">
+                            <stop offset="0%" stop-color="#BAE6FD"/>
+                            <stop offset="48%" stop-color="#0EA5E9"/>
+                            <stop offset="100%" stop-color="#0369A1"/>
+                        </linearGradient>
+                        <linearGradient id="mzGlassSk" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="rgba(255,255,255,0.86)"/>
+                            <stop offset="100%" stop-color="rgba(255,255,255,0.18)"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="60" cy="78" rx="35" ry="6" fill="rgba(3,105,161,0.12)"/>
+                    <rect x="28" y="29" width="56" height="28" rx="14" transform="rotate(-16 56 43)" fill="url(#mzClaySk)"/>
+                    <rect x="35" y="34" width="24" height="6" rx="3" transform="rotate(-16 47 37)" fill="rgba(255,255,255,0.48)"/>
+                    <circle cx="75" cy="49" r="18" fill="url(#mzGlassSk)" stroke="rgba(255,255,255,0.8)" stroke-width="1.5"/>
+                    <circle cx="70" cy="43" r="4" fill="rgba(255,255,255,0.7)"/>
+                </svg>`,
+            violetPrism: `
+                <svg viewBox="0 0 120 90" class="w-full h-full drop-shadow-[0_12px_18px_rgba(139,92,246,0.22)]">
+                    <defs>
+                        <radialGradient id="mzClayVi" cx="30%" cy="28%" r="75%">
+                            <stop offset="0%" stop-color="#DDD6FE"/>
+                            <stop offset="50%" stop-color="#8B5CF6"/>
+                            <stop offset="100%" stop-color="#5B21B6"/>
+                        </radialGradient>
+                        <linearGradient id="mzGlassVi" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="rgba(255,255,255,0.85)"/>
+                            <stop offset="100%" stop-color="rgba(255,255,255,0.16)"/>
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="60" cy="78" rx="34" ry="6" fill="rgba(91,33,182,0.12)"/>
+                    <rect x="36" y="18" width="40" height="40" rx="13" transform="rotate(24 56 38)" fill="url(#mzClayVi)"/>
+                    <circle cx="52" cy="30" r="6" fill="rgba(255,255,255,0.45)"/>
+                    <rect x="46" y="34" width="44" height="26" rx="13" transform="rotate(-10 68 47)" fill="url(#mzGlassVi)" stroke="rgba(255,255,255,0.82)" stroke-width="1.4"/>
+                </svg>`
+        };
+        return assets[variant] || assets.emeraldOrb;
+    },
+
+    _gatherMetrics() {
+        if (this.dataSourceMode === 'showcase') {
+            return {
+                focusHours: 10.4,
+                actionsDone: 49,
+                qualityScore: 83,
+                diariesCount: 18,
+                weeklyBars: [
+                    { day: 'Seg', hours: 1.4, pct: 48 },
+                    { day: 'Ter', hours: 2.1, pct: 72 },
+                    { day: 'Qua', hours: 1.8, pct: 62 },
+                    { day: 'Qui', hours: 2.7, pct: 94 },
+                    { day: 'Sex', hours: 1.6, pct: 56 },
+                    { day: 'Sab', hours: 0.5, pct: 22 },
+                    { day: 'Dom', hours: 0.3, pct: 14 }
+                ]
+            };
+        }
+
+        const month = app.currentMonth || new Date().toISOString().slice(0, 7);
+        const actionsArr = Object.values(app.actionsList || {}).filter(Boolean);
+        const monthActions = actionsArr.filter(a => (a.month || String(a.dataAcao || '').slice(0, 7)) === month);
+        const diariosArr = Object.values(app.diarioBordoList || {}).filter(Boolean);
+        const monthDiarios = diariosArr.filter(d => String(d.data || '').slice(0, 7) === month);
+        const gtdTasks = Array.isArray(app.gtdTasks) ? app.gtdTasks : [];
+        const focusHoursRaw = Math.max(1.2, Number(((monthDiarios.length * 1.4) + (gtdTasks.filter(t => t.done).length * 0.45)).toFixed(1)));
+
+        const approvedActions = monthActions.filter(a => a.status === 'aprovado').length;
+        const monScores = Object.values(app.monitoriasList || {}).flatMap(u => Array.isArray(u) ? u : Object.values(u || {}))
+            .map(m => parseFloat(m?.nota))
+            .filter(n => !isNaN(n) && n >= 0 && n <= 100);
+        const avgMon = monScores.length > 0 ? Math.round(monScores.reduce((s, x) => s + x, 0) / monScores.length) : 83;
+
+        const baseBars = [1.2, 2.0, 1.7, 2.5, 1.9, 0.7, 0.4].map((h, i) => {
+            const boost = monthDiarios.length > 0 ? ((monthDiarios.length % (i + 2)) * 0.25) : 0;
+            const val = Number((h + boost).toFixed(1));
+            return val;
+        });
+        const maxBar = Math.max(2.6, ...baseBars);
+        const labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+
+        return {
+            focusHours: focusHoursRaw,
+            actionsDone: approvedActions || monthActions.length || 49,
+            qualityScore: avgMon,
+            diariesCount: monthDiarios.length || 12,
+            weeklyBars: labels.map((day, idx) => ({
+                day,
+                hours: baseBars[idx],
+                pct: Math.max(12, Math.round((baseBars[idx] / maxBar) * 100))
+            }))
+        };
+    },
+
+    animateCounters(rootEl) {
+        if (!rootEl) return;
+        const nodes = rootEl.querySelectorAll('[data-mz-count]');
+        nodes.forEach(el => {
+            const target = parseFloat(el.getAttribute('data-mz-count') || '0');
+            const decimals = parseInt(el.getAttribute('data-mz-decimals') || '0', 10);
+            const suffix = el.getAttribute('data-mz-suffix') || '';
+            const duration = 980;
+            const startTs = performance.now();
+
+            const step = (now) => {
+                const progress = Math.min(1, (now - startTs) / duration);
+                const eased = 1 - Math.pow(1 - progress, 3); // Ease-Out Cubic
+                const current = target * eased;
+                const formatted = decimals > 0
+                    ? current.toFixed(decimals).replace('.', ',')
+                    : Math.round(current).toLocaleString('pt-BR');
+                el.textContent = formatted + suffix;
+                if (progress < 1) requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+        });
+    },
+
+    setSubView(subViewId) {
+        this.activeSubView = subViewId;
+        this.renderView(null, { skipSplash: true });
+    },
+
+    toggleDataSourceMode() {
+        this.dataSourceMode = this.dataSourceMode === 'live' ? 'showcase' : 'live';
+        this.renderView(null, { skipSplash: true });
+    },
+
+    _isLabManager() {
+        return !!(app && (app.isAdmin || app.currentUser?.tipoAcesso === 'Dev'));
+    },
+
+    toggleUserTesterAccess(matricula, grant = true) {
+        if (!this._isLabManager()) return;
+        const normMat = app.storage && app.storage._normalizeMat ? app.storage._normalizeMat(matricula) : String(matricula || '').trim();
+        const user = (app.users || []).find(u => {
+            const m = app.storage && app.storage._normalizeMat ? app.storage._normalizeMat(u.matricula) : String(u.matricula || '').trim();
+            return m === normMat;
+        });
+        if (!user) return;
+        const current = Array.isArray(user.abasLiberadas) ? [...user.abasLiberadas] : [...(app.ui?.getEffectiveUserTabs(user) || [])];
+        if (grant) {
+            if (!current.includes('mint_zen_teste')) current.push('mint_zen_teste');
+        } else {
+            const idx = current.indexOf('mint_zen_teste');
+            if (idx !== -1) current.splice(idx, 1);
+        }
+        user.abasLiberadas = [...new Set(current)];
+        if (app.storage && typeof app.storage.saveUsers === 'function') app.storage.saveUsers();
+        if (app.ui && typeof app.ui.showNotification === 'function') {
+            app.ui.showNotification(grant ? `Teste liberado para ${user.nome}!` : `Teste revogado de ${user.nome}.`, grant ? 'success' : 'info', 2200);
+        }
+        this.renderView(null, { skipSplash: true });
+    },
+
+    toggleGroupTesterAccess(grupo) {
+        if (!this._isLabManager() || !grupo || grupo === 'Dev') return;
+        const presets = app.ui && typeof app.ui.getPresetsGruposAcesso === 'function' ? app.ui.getPresetsGruposAcesso() : {};
+        const groupTabs = [...(presets[grupo] || [])];
+        const willEnable = !groupTabs.includes('mint_zen_teste');
+        if (willEnable) groupTabs.push('mint_zen_teste');
+        else {
+            const idx = groupTabs.indexOf('mint_zen_teste');
+            if (idx !== -1) groupTabs.splice(idx, 1);
+        }
+        if (!app.config.presetsGruposAcesso || typeof app.config.presetsGruposAcesso !== 'object') {
+            app.config.presetsGruposAcesso = {};
+        }
+        app.config.presetsGruposAcesso[grupo] = [...new Set(groupTabs)];
+        if (app.storage && typeof app.storage.saveConfig === 'function') app.storage.saveConfig();
+
+        (app.users || []).forEach(u => {
+            if ((u.tipoAcesso || 'Qualidade') === grupo) {
+                const uTabs = Array.isArray(u.abasLiberadas) ? [...u.abasLiberadas] : [...groupTabs];
+                if (willEnable && !uTabs.includes('mint_zen_teste')) uTabs.push('mint_zen_teste');
+                if (!willEnable) {
+                    const i = uTabs.indexOf('mint_zen_teste');
+                    if (i !== -1) uTabs.splice(i, 1);
+                }
+                u.abasLiberadas = [...new Set(uTabs)];
+            }
+        });
+        if (app.storage && typeof app.storage.saveUsers === 'function') app.storage.saveUsers();
+        if (app.ui && typeof app.ui.showNotification === 'function') {
+            app.ui.showNotification(willEnable ? `Grupo ${grupo} liberado para testar o Novo Layout!` : `Acesso do grupo ${grupo} removido.`, willEnable ? 'success' : 'info', 2400);
+        }
+        this.renderView(null, { skipSplash: true });
+    },
+
+    _renderTesterManagerCard() {
+        if (!this._isLabManager()) return '';
+        const presets = app.ui && typeof app.ui.getPresetsGruposAcesso === 'function' ? app.ui.getPresetsGruposAcesso() : {};
+        const testableGroups = ['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Gestor', 'Gerente'];
+        const allUsers = (app.users || []).filter(u => u && (u.tipoAcesso || 'Qualidade') !== 'Dev' && !u.turmaId && u.cargo !== 'Operador em Treinamento');
+        const unlockedUsers = allUsers.filter(u => Array.isArray(u.abasLiberadas) && u.abasLiberadas.includes('mint_zen_teste'));
+        const selectableUsers = allUsers.filter(u => !(Array.isArray(u.abasLiberadas) && u.abasLiberadas.includes('mint_zen_teste')))
+            .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+
+        return `
+            <div class="mz-reveal sl-card rounded-2xl px-4 py-4 space-y-3" style="--mz-delay: 40ms;">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                            <i data-lucide="user-check" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-extrabold text-slate-800 dark:text-white">Liberar Perfil ou Pessoa para Testar (Beta)</div>
+                            <div class="text-[11px] text-slate-500 dark:text-slate-400">Quem receber acesso verá a aba <strong>Sistema → Novo Layout (Teste Dev)</strong> e poderá ligar/desligar no portal inteiro sem afetar os demais.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Liberação por Grupo/Perfil -->
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">Por Perfil:</span>
+                    ${testableGroups.map(g => {
+                        const on = Array.isArray(presets[g]) && presets[g].includes('mint_zen_teste');
+                        return `
+                            <button type="button" onclick="app.mintZenTeste.toggleGroupTesterAccess('${g}')"
+                                class="px-3 py-1.5 rounded-xl text-[11px] font-bold border flex items-center gap-1.5 transition-all cursor-pointer ${on
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                                <i data-lucide="${on ? 'check-circle-2' : 'circle'}" class="w-3.5 h-3.5"></i>
+                                <span>${g}</span>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+
+                <!-- Liberação Individual por Colaborador -->
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <select id="sl-tester-user-select" class="flex-1 h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none">
+                        <option value="">Selecionar colaborador específico para liberar...</option>
+                        ${selectableUsers.map(u => `<option value="${String(u.matricula || '').replace(/"/g, '&quot;')}">${u.nome || 'Sem nome'} (${u.tipoAcesso || 'Qualidade'} • ${u.matricula || '-'})</option>`).join('')}
+                    </select>
+                    <button type="button" onclick="const sel = document.getElementById('sl-tester-user-select'); if(sel && sel.value) app.mintZenTeste.toggleUserTesterAccess(sel.value, true);"
+                        class="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0">
+                        <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Liberar Teste
+                    </button>
+                </div>
+
+                ${unlockedUsers.length > 0 ? `
+                    <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">Liberados (${unlockedUsers.length}):</span>
+                        ${unlockedUsers.map(u => `
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                                <span>${u.nome} (${u.tipoAcesso || 'Qualidade'})</span>
+                                <button type="button" onclick="app.mintZenTeste.toggleUserTesterAccess('${String(u.matricula || '').replace(/'/g, "\\'")}', false)" class="hover:text-rose-600 cursor-pointer" title="Revogar acesso de teste">
+                                    <i data-lucide="x" class="w-3 h-3"></i>
+                                </button>
+                            </span>
+                        `).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    renderView(containerArg = null, opts = {}) {
+        const container = containerArg || document.getElementById('view-container-mint_zen_teste');
+        if (!container) return;
+        if (!this._isDevUser()) {
+            container.innerHTML = '<div class="p-8 text-center text-sm font-bold text-rose-500">Acesso exclusivo Dev.</div>';
+            return;
+        }
+
+        this.injectStylesOnce();
+        if (!this._splashPlayedThisSession && !opts.skipSplash) {
+            this._splashPlayedThisSession = true;
+            this.playSplashReveal('Novo Layout Experimental • Teste Dev');
+        }
+
+        const metrics = this._gatherMetrics();
+        const isGlobalOn = this.isGlobalThemeEnabled();
+        const savedResources = [
+            { type: 'Vídeo Curto • 6 min', title: 'Feedback Construtivo em Chamadas Críticas', meta: 'Qualidade & Monitoria • 94% conclusão', asset: 'emeraldOrb' },
+            { type: 'Playbook Interativo', title: 'Reciclagem Express: Retenção & Empatia', meta: 'Treinamento • Diário de Bordo', asset: 'amberTorus' },
+            { type: 'Artigo Salvo • 4 min', title: 'Ciclo PDCA + Vínculo com Ações Contínuas', meta: 'Operações • Padrão 2026', asset: 'skyCapsule' },
+            { type: 'Guia Executivo', title: 'Leitura Rápida de Gaps (< 92% e Falhas)', meta: 'Liderança • Visão Semanal', asset: 'violetPrism' }
+        ];
+
+        const railTabs = [
+            { id: 'overview', icon: 'layout-dashboard', label: 'Visão Geral', desc: 'Resumo executivo e KPIs' },
+            { id: 'focus', icon: 'timer', label: 'Foco & Semana', desc: 'Ritmo semanal e horas' },
+            { id: 'library', icon: 'sparkles', label: 'Trilhas 3D', desc: 'Vídeos e playbooks salvos' },
+            { id: 'motion', icon: 'sliders-horizontal', label: 'Teste no Portal', desc: 'Configuração do modo global' }
+        ];
+
+        container.innerHTML = `
+            <div class="rounded-[28px] p-4 sm:p-6 bg-slate-50/70 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-5">
+                <!-- Banner de Controle (Teste Global no Portal + Reversão 1-Clique) -->
+                <div class="mz-reveal sl-card rounded-2xl px-4 py-3.5 flex flex-wrap items-center justify-between gap-3" style="--mz-delay: 20ms;">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 shadow-sm" style="background-color: var(--theme-color);">
+                            <i data-lucide="flask-conical" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-extrabold text-slate-800 dark:text-white flex flex-wrap items-center gap-2">
+                                <span>Softmarketing • Novo Layout Experimental (DEV)</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isGlobalOn ? 'text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}" style="${isGlobalOn ? 'background-color: var(--theme-color);' : ''}">${isGlobalOn ? 'Aplicado em Todo o Portal' : 'Apenas Aba Lab'}</span>
+                            </div>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Com o modo global ativo: barra lateral completa com <strong>hover explicativo + subabas</strong>, Splash ao logar no portal, cascata nas telas e 0 abas perdidas — respeitando sua cor do tema.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" onclick="app.mintZenTeste.playSplashReveal('Replay • Entrada no Portal Softmarketing')" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
+                            <i data-lucide="play" class="w-3.5 h-3.5" style="color: var(--theme-color);"></i> Replay Splash Login
+                        </button>
+                        <button type="button" onclick="app.mintZenTeste.toggleDataSourceMode()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
+                            <i data-lucide="database" class="w-3.5 h-3.5"></i> ${this.dataSourceMode === 'live' ? 'Dados: Portal Ao Vivo' : 'Dados: Vitrine (10,4h / 49 / 83)'}
+                        </button>
+                        <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme()" class="px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 text-white shadow-sm transition-all cursor-pointer ${isGlobalOn ? 'bg-rose-600 hover:bg-rose-700' : ''}" style="${isGlobalOn ? '' : 'background-color: var(--theme-color);'}">
+                            <i data-lucide="${isGlobalOn ? 'rotate-ccw' : 'panel-left'}" class="w-3.5 h-3.5"></i>
+                            <span>${isGlobalOn ? 'Voltar ao Layout Padrão' : 'Aplicar no Portal Todo (Teste)'}</span>
+                        </button>
+                    </div>
+                </div>
+
+                ${this._renderTesterManagerCard()}
+
+                <!-- Layout Interno com Slim Icon Rail Demonstrativo + Hover Explicativo -->
+                <div class="grid grid-cols-1 lg:grid-cols-[72px_1fr] gap-5 items-start">
+                    <aside class="mz-reveal sl-card rounded-[24px] p-2 flex lg:flex-col items-center justify-between gap-2 lg:sticky lg:top-24 overflow-visible" style="--mz-delay: 50ms;">
+                        <div class="flex lg:flex-col items-center gap-2">
+                            ${railTabs.map(t => {
+                                const active = this.activeSubView === t.id;
+                                return `
+                                    <button type="button" onclick="app.mintZenTeste.setSubView('${t.id}')" class="mz-rail-btn relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${active
+                                        ? 'text-white shadow-md'
+                                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}"
+                                        style="${active ? 'background-color: var(--theme-color);' : ''}">
+                                        <i data-lucide="${t.icon}" class="w-[18px] h-[18px]"></i>
+                                        <span class="mz-rail-tooltip hidden lg:flex flex-col absolute left-[58px] whitespace-nowrap px-3 py-2 rounded-xl bg-slate-900 text-white shadow-xl z-40 text-left">
+                                            <span class="text-[11px] font-extrabold">${t.label}</span>
+                                            <span class="text-[10px] text-slate-300 font-normal">${t.desc}</span>
+                                        </span>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                        <button type="button" onclick="app.mintZenTeste.setSubView('${this.activeSubView}')" class="mz-rail-btn relative w-11 h-11 rounded-2xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 transition-colors cursor-pointer">
+                            <i data-lucide="refresh-cw" class="w-[18px] h-[18px]"></i>
+                            <span class="mz-rail-tooltip hidden lg:block absolute left-[58px] whitespace-nowrap px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg z-40">Reanimar Cascata</span>
+                        </button>
+                    </aside>
+
+                    <div class="space-y-5 min-w-0">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div class="mz-reveal sl-card rounded-[24px] p-5" style="--mz-delay: 80ms;">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Foco na Semana</span>
+                                    <span class="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center" style="color: var(--theme-color);">
+                                        <i data-lucide="clock-3" class="w-4 h-4"></i>
+                                    </span>
+                                </div>
+                                <div class="text-3xl font-black tracking-tight text-slate-800 dark:text-white tabular-nums" data-mz-count="${metrics.focusHours}" data-mz-decimals="1" data-mz-suffix="h">0,0h</div>
+                                <div class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold" style="color: var(--theme-color);">
+                                    <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
+                                    <span>Ritmo constante em sala &amp; GTD</span>
+                                </div>
+                            </div>
+
+                            <div class="mz-reveal sl-card rounded-[24px] p-5" style="--mz-delay: 135ms;">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Ações Concluídas</span>
+                                    <span class="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center" style="color: var(--theme-color);">
+                                        <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                                    </span>
+                                </div>
+                                <div class="text-3xl font-black tracking-tight text-slate-800 dark:text-white tabular-nums" data-mz-count="${metrics.actionsDone}" data-mz-decimals="0" data-mz-suffix="">0</div>
+                                <div class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                    <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                                    <span>Entregas auditadas no mês</span>
+                                </div>
+                            </div>
+
+                            <div class="mz-reveal sl-card rounded-[24px] p-5" style="--mz-delay: 190ms;">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Índice de Qualidade</span>
+                                    <span class="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center" style="color: var(--theme-color);">
+                                        <i data-lucide="award" class="w-4 h-4"></i>
+                                    </span>
+                                </div>
+                                <div class="text-3xl font-black tracking-tight text-slate-800 dark:text-white tabular-nums" data-mz-count="${metrics.qualityScore}" data-mz-decimals="0" data-mz-suffix="%">0%</div>
+                                <div class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold" style="color: var(--theme-color);">
+                                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                    <span>Média monitorias &amp; adesão</span>
+                                </div>
+                            </div>
+
+                            <div class="mz-reveal sl-card rounded-[24px] p-5" style="--mz-delay: 245ms;">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Diários &amp; Reciclagens</span>
+                                    <span class="w-9 h-9 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sky-500">
+                                        <i data-lucide="book-open" class="w-4 h-4"></i>
+                                    </span>
+                                </div>
+                                <div class="text-3xl font-black tracking-tight text-slate-800 dark:text-white tabular-nums" data-mz-count="${metrics.diariesCount}" data-mz-decimals="0" data-mz-suffix="">0</div>
+                                <div class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                    <i data-lucide="users" class="w-3.5 h-3.5 text-sky-500"></i>
+                                    <span>Registros publicados</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                            <div class="xl:col-span-5 mz-reveal sl-card rounded-[28px] p-6 flex flex-col justify-between" style="--mz-delay: 295ms;">
+                                <div class="flex items-start justify-between gap-3 mb-6">
+                                    <div>
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider mb-2">
+                                            <i data-lucide="bar-chart-2" class="w-3 h-3"></i> Bar Chart Grow
+                                        </span>
+                                        <h3 class="text-lg font-extrabold tracking-tight text-slate-800 dark:text-white">Foco nesta semana</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Horas dedicadas em treinamentos, ações e blocos GTD</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xl font-black tabular-nums" style="color: var(--theme-color);" data-mz-count="${metrics.focusHours}" data-mz-decimals="1" data-mz-suffix="h">0,0h</div>
+                                        <div class="text-[10px] font-bold text-slate-400 uppercase">Total Semanal</div>
+                                    </div>
+                                </div>
+
+                                <div class="h-52 flex items-end justify-between gap-2.5 sm:gap-3 pt-4 pb-1 px-1">
+                                    ${metrics.weeklyBars.map((bar, idx) => {
+                                        const isPeak = bar.pct >= 88;
+                                        return `
+                                            <div class="flex-1 h-full flex flex-col items-center gap-2 group">
+                                                <span class="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">${String(bar.hours).replace('.', ',')}h</span>
+                                                <div class="w-full max-w-[34px] flex-1 rounded-full bg-slate-100 dark:bg-slate-800/80 p-1 flex items-end overflow-hidden">
+                                                    <div class="mz-pill-bar w-full rounded-full transition-filter group-hover:brightness-110"
+                                                        style="height: ${bar.pct}%; --mz-bar-delay: ${140 + idx * 65}ms; background: linear-gradient(to top, var(--theme-600), var(--theme-color), var(--theme-300)); ${isPeak ? 'box-shadow: 0 6px 16px -3px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.45);' : ''}">
+                                                    </div>
+                                                </div>
+                                                <span class="text-[11px] font-bold ${isPeak ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}">${bar.day}</span>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <div class="xl:col-span-7 mz-reveal sl-card rounded-[28px] p-6" style="--mz-delay: 355ms;">
+                                <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+                                    <div>
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                                            <i data-lucide="box" class="w-3 h-3"></i> Clay &amp; Frosted Glass 3D
+                                        </span>
+                                        <h3 class="text-lg font-extrabold tracking-tight text-slate-800 dark:text-white">Trilhas, Vídeos &amp; Guias Salvos</h3>
+                                    </div>
+                                    <span class="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                                        <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> Hover Lift (-4px)
+                                    </span>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                    ${savedResources.map((item, idx) => `
+                                        <div class="mz-reveal sl-card rounded-2xl p-3.5 flex items-center gap-3.5 cursor-pointer group" style="--mz-delay: ${410 + idx * 55}ms;" onclick="app.mintZenTeste.openResourcePreview('${item.title.replace(/'/g, "\\'")}', '${item.type.replace(/'/g, "\\'")}')">
+                                            <div class="w-24 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 shrink-0 overflow-hidden p-1 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
+                                                ${this._renderClay3DAsset(item.asset)}
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <span class="inline-block px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold mb-1.5">${item.type}</span>
+                                                <h4 class="text-xs font-extrabold text-slate-800 dark:text-white leading-snug line-clamp-2 transition-colors">${item.title}</h4>
+                                                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">${item.meta}</div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.refreshIcons();
+        this.animateCounters(container);
+    },
+
+    openResourcePreview(title, type) {
+        if (app.ui && typeof app.ui.showAlert === 'function') {
+            app.ui.showAlert(title, `Cartão interativo de demonstração (${type}).\nNo layout definitivo, este clique abre diretamente o conteúdo do portal.`, 'info');
+        }
     }
 };
