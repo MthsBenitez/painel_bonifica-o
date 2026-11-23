@@ -44239,6 +44239,13 @@ storage: {
                         });
                     }
                 },
+                anatelCampanhaFilter: null,
+                toggleAnatelCampanhaFilter(encodedCampanha) {
+                    const camp = encodedCampanha ? decodeURIComponent(encodedCampanha) : null;
+                    this.anatelCampanhaFilter = (camp && this.anatelCampanhaFilter === camp) ? null : camp;
+                    const container = document.getElementById('view-container-pesquisas_anatel');
+                    if (container) this.renderView_PesquisasAnatel(container);
+                },
                 renderView_PesquisasAnatel(container) {
                     // Inicializa a árvore de Projetos caso não exista
                     if (!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
@@ -44345,36 +44352,49 @@ storage: {
                     const reg = projeto.registros || [];
                     const canc = projeto.canceladasNovas || [];
                     
-                    let totalRealizadas = 0; let totalEscuta = 0; let totalCancFor = 0; let totalCancCq = 0; let totalNovasCanc = 0;
-                    const operadoresMap = {}; const campanhasMap = {};
-                    
-                    // Lendo registros padrão da Kantar
+                    const campanhasMap = {};
                     reg.forEach(r => {
+                        if(!campanhasMap[r.campanha]) campanhasMap[r.campanha] = { nome: r.campanha, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
+                        campanhasMap[r.campanha].realizadas += (r.realizadas || 0);
+                        campanhasMap[r.campanha].escuta += (r.escuta || 0);
+                    });
+                    canc.forEach(c => {
+                        if(!campanhasMap[c.campanha]) campanhasMap[c.campanha] = { nome: c.campanha, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
+                        campanhasMap[c.campanha].novasCanc += (c.qtd || 0);
+                    });
+
+                    const selectedCamp = (this.anatelCampanhaFilter && campanhasMap[this.anatelCampanhaFilter])
+                        ? this.anatelCampanhaFilter
+                        : null;
+                    if (!selectedCamp) this.anatelCampanhaFilter = null;
+
+                    const regFiltrados = selectedCamp ? reg.filter(r => r.campanha === selectedCamp) : reg;
+                    const cancFiltrados = selectedCamp ? canc.filter(c => c.campanha === selectedCamp) : canc;
+
+                    let totalRealizadas = 0; let totalEscuta = 0; let totalCancFor = 0; let totalCancCq = 0; let totalNovasCanc = 0;
+                    const operadoresMap = {};
+                    
+                    // Lendo registros padrão (filtrados pela campanha, quando selecionada)
+                    regFiltrados.forEach(r => {
                         totalRealizadas += r.realizadas; totalEscuta += r.escuta; totalCancFor += r.cancFor; totalCancCq += r.cancCq;
                         
                         if(!operadoresMap[r.entrevistador]) operadoresMap[r.entrevistador] = { nome: r.entrevistador, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0, motivos: [], pct: 0 };
                         operadoresMap[r.entrevistador].realizadas += r.realizadas; operadoresMap[r.entrevistador].escuta += r.escuta;
                         operadoresMap[r.entrevistador].cancFor += r.cancFor; operadoresMap[r.entrevistador].cancCq += r.cancCq;
-                        
-                        if(!campanhasMap[r.campanha]) campanhasMap[r.campanha] = { nome: r.campanha, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
-                        campanhasMap[r.campanha].realizadas += r.realizadas; campanhasMap[r.campanha].escuta += r.escuta;
                     });
 
-                    // Integrando novo relatório de Canceladas
-                    canc.forEach(c => {
+                    // Integrando relatório de Canceladas (filtrado pela campanha, quando selecionada)
+                    cancFiltrados.forEach(c => {
                         totalNovasCanc += c.qtd;
                         if(!operadoresMap[c.entrevistador]) operadoresMap[c.entrevistador] = { nome: c.entrevistador, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0, motivos: [], pct: 0 };
                         operadoresMap[c.entrevistador].novasCanc += c.qtd;
                         if(c.motivo) operadoresMap[c.entrevistador].motivos.push(c.motivo); // Salva o motivo lido
-                        
-                        if(!campanhasMap[c.campanha]) campanhasMap[c.campanha] = { nome: c.campanha, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
-                        campanhasMap[c.campanha].novasCanc += c.qtd;
                     });
                     
                     const totalMonitoriasRealizadas = totalEscuta + totalNovasCanc;
                     const pctComCanceladas = totalRealizadas > 0 ? ((totalMonitoriasRealizadas / totalRealizadas) * 100).toFixed(1) : 0;
                     
-                    const textoPronto = `Projeto: ${projeto.nome}\nAtualmente temos ${totalRealizadas} pesquisas realizadas e ${totalMonitoriasRealizadas} monitorias, representando ${pctComCanceladas}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR e ${totalNovasCanc} canceladas, impossibilitando a validação.`;
+                    const textoPronto = `${selectedCamp ? `Projeto: ${projeto.nome} | Campanha: ${selectedCamp}` : `Projeto: ${projeto.nome}`}\nAtualmente temos ${totalRealizadas} pesquisas realizadas e ${totalMonitoriasRealizadas} monitorias, representando ${pctComCanceladas}% do total de pesquisas.\n${totalEscuta} validadas pelo portal HSR e ${totalNovasCanc} canceladas, impossibilitando a validação.`;
                     
                     let html = `
                         <div class="mb-4">
@@ -44425,6 +44445,17 @@ storage: {
                     
                     // Cartões 3D Magnéticos do Projeto
                     html += `
+                        ${selectedCamp ? `
+                            <div class="mb-6 px-4 py-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/80 flex flex-wrap items-center justify-between gap-3">
+                                <div class="flex items-center gap-2.5 text-xs font-bold text-blue-800 dark:text-blue-200">
+                                    <i class="fa-solid fa-filter text-blue-600 dark:text-blue-400"></i>
+                                    <span>Exibindo números e operadores filtrados pela campanha: <strong class="px-2 py-0.5 rounded-lg bg-blue-600 text-white ml-1">${selectedCamp}</strong></span>
+                                </div>
+                                <button type="button" onclick="app.ui.toggleAnatelCampanhaFilter(null)" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-slate-700 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-xs font-extrabold transition-colors cursor-pointer flex items-center gap-1.5">
+                                    <i class="fa-solid fa-xmark"></i> Limpar Filtro (Ver Tudo)
+                                </button>
+                            </div>
+                        ` : ''}
                         <div class="grid grid-cols-2 xl:grid-cols-5 gap-6 mb-10">
                             <div class="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-slate-200 dark:border-slate-700 flex flex-col justify-center transform transition-transform duration-300 hover:-translate-y-1.5 magnetic-btn">
                                 <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2 min-h-[32px] flex items-center">Total Realizadas</div>
@@ -44459,7 +44490,13 @@ storage: {
                         
                         <!-- TABELA POR CAMPANHA COM AÇÕES -->
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-8">
-                            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white mb-6 uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha (Arquivos Individuais)</h3>
+                            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                                <div>
+                                    <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-layer-group text-slate-400"></i> Por Campanha (Arquivos Individuais)</h3>
+                                    <p class="text-[11px] text-slate-400 mt-1">Clique em qualquer campanha abaixo para filtrar os indicadores e os operadores.</p>
+                                </div>
+                                ${selectedCamp ? `<button type="button" onclick="app.ui.toggleAnatelCampanhaFilter(null)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer"><i class="fa-solid fa-rotate-left mr-1"></i> Mostrar Todas</button>` : ''}
+                            </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
                                     <tr>
@@ -44482,16 +44519,24 @@ storage: {
                         // Cálculo Matemático da Meta da Campanha
                         const metaValidadasC = Math.ceil(c.realizadas * (metaProj / 100));
                         const faltaValidadasC = Math.max(0, metaValidadasC - (c.escuta + c.novasCanc));
+                        const isSelectedCamp = selectedCamp === c.nome;
+                        const encodedCamp = encodeURIComponent(c.nome);
                         
                         html += `
-                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                <td class="p-4 font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]" title="${c.nome}">${c.nome}</td>
+                            <tr onclick="app.ui.toggleAnatelCampanhaFilter('${encodedCamp}')" class="cursor-pointer transition-colors ${isSelectedCamp ? 'bg-blue-50/90 dark:bg-blue-950/50 ring-1 ring-inset ring-blue-300 dark:ring-blue-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/30'}" title="${isSelectedCamp ? 'Clique novamente para remover o filtro' : 'Clique para filtrar operadores e números por esta campanha'}">
+                                <td class="p-4 font-bold ${isSelectedCamp ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'} max-w-[240px]" title="${c.nome}">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fa-solid ${isSelectedCamp ? 'fa-filter text-blue-600' : 'fa-folder text-slate-300 dark:text-slate-600'} text-xs shrink-0"></i>
+                                        <span class="truncate">${c.nome}</span>
+                                        ${isSelectedCamp ? '<span class="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[9px] font-black uppercase shrink-0">Ativa</span>' : ''}
+                                    </div>
+                                </td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.realizadas}</td>
                                 <td class="p-4 text-center font-medium dark:text-slate-400">${c.escuta}</td>
                                 <td class="p-4 text-center font-black ${pct < metaProj ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}">${pct}%</td>
                                 <td class="p-4 text-center font-bold ${faltaValidadasC > 0 ? 'text-orange-500' : 'text-green-500'}">${faltaValidadasC}</td>
                                 ${canManageKantar ? `
-                                <td class="p-4 text-center space-x-2">
+                                <td class="p-4 text-center space-x-2" onclick="event.stopPropagation()">
                                     <label class="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1" title="Substituir Base da Campanha">
                                         <i class="fa-solid fa-file-arrow-up"></i> Atualizar
                                         <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarKantarPadrao(this, '${c.nome}')" onclick="this.value = null">
@@ -44499,7 +44544,7 @@ storage: {
                                     <button onclick="event.stopPropagation(); app.admin.kantarRenomearCampanhaPrompt('${c.nome}')" class="bg-indigo-100 text-indigo-600 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Renomear Nome da Campanha">
                                         <i class="fa-solid fa-pen"></i> Editar
                                     </button>
-                                    <button onclick="app.admin.kantarExcluirCampanha('${c.nome}')" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
+                                    <button onclick="event.stopPropagation(); app.admin.kantarExcluirCampanha('${c.nome}')" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
                                         <i class="fa-solid fa-trash"></i> Excluir
                                     </button>
                                 </td>
@@ -44515,8 +44560,8 @@ storage: {
                         
                         <!-- TABELA POR ENTREVISTADOR -->
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-6">
-                            <div class="flex justify-between items-center mb-6">
-                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador</h3>
+                            <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+                                <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador ${selectedCamp ? `<span class="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-black normal-case">${selectedCamp}</span>` : ''}</h3>
                                 ${canManageKantar ? `<button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
                             </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
@@ -45301,10 +45346,12 @@ storage: {
                 },
                 kantarAbrirProjeto(id) {
                     app.anatelData.projetoAtivo = id;
+                    if (app.ui) app.ui.anatelCampanhaFilter = null;
                     app.ui.renderTab('pesquisas_anatel', true);
                 },
                 kantarVoltarLobby() {
                     app.anatelData.projetoAtivo = null;
+                    if (app.ui) app.ui.anatelCampanhaFilter = null;
                     app.ui.renderTab('pesquisas_anatel', true);
                 },
                 kantarExcluirProjeto(id) {
@@ -45356,6 +45403,7 @@ storage: {
                     // Varre as duas bases e aplica o novo nome em massa
                     if(proj.registros) proj.registros.forEach(r => { if(r.campanha === nomeAntigo) r.campanha = novoNome; });
                     if(proj.canceladasNovas) proj.canceladasNovas.forEach(c => { if(c.campanha === nomeAntigo) c.campanha = novoNome; });
+                    if (app.ui && app.ui.anatelCampanhaFilter === nomeAntigo) app.ui.anatelCampanhaFilter = novoNome;
                     
                     app.storage.saveAnatel().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
@@ -45367,7 +45415,8 @@ storage: {
                 verMotivosCanceladasKantar(nomeEncoded) {
                     const nome = decodeURIComponent(nomeEncoded);
                     const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
-                    const canc = proj.canceladasNovas || [];
+                    const selectedCamp = app.ui?.anatelCampanhaFilter || null;
+                    const canc = (proj.canceladasNovas || []).filter(c => !selectedCamp || c.campanha === selectedCamp);
                     const motivos = canc.filter(c => c.entrevistador === nome).map(c => c.motivo);
                     
                     if(motivos.length === 0) return;
@@ -45451,8 +45500,9 @@ storage: {
                     if(!app.anatelData.projetoAtivo) return;
                     const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
                     const metaProj = proj.meta || 10;
-                    const reg = proj.registros || [];
-                    const canc = proj.canceladasNovas || [];
+                    const selectedCamp = app.ui?.anatelCampanhaFilter || null;
+                    const reg = (proj.registros || []).filter(r => !selectedCamp || r.campanha === selectedCamp);
+                    const canc = (proj.canceladasNovas || []).filter(c => !selectedCamp || c.campanha === selectedCamp);
                     if(reg.length === 0) return app.ui.showAlert("Erro", "Sem dados para exportar.", "error");
 
                     const operadoresMap = {};
