@@ -2354,11 +2354,8 @@ storage: {
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
-                if (tabId === 'bi_banco_horas' || tabId === 'pdca_teste') {
+                if (tabId === 'bi_banco_horas' || tabId === 'pdca_teste' || tabId === 'mint_zen_teste') {
                     return this.isAdmin || tipo === 'Dev';
-                }
-                if (tabId === 'mint_zen_teste') {
-                    return this.isAdmin || tipo === 'Dev' || userAbas.includes('mint_zen_teste');
                 }
                 if (tabId === 'faltas_integracao') {
                     return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
@@ -14259,6 +14256,13 @@ storage: {
                     if (app.ui && typeof app.ui.stopGtdFloatingTimerMemoryOnly === 'function') {
                         app.ui.stopGtdFloatingTimerMemoryOnly();
                     }
+                    if (app.mintZenTeste) {
+                        app.mintZenTeste._lastMenus = null;
+                        app.mintZenTeste._loginSplashPlayed = false;
+                        if (typeof app.mintZenTeste.syncGlobalPortalTheme === 'function') {
+                            app.mintZenTeste.syncGlobalPortalTheme([]);
+                        }
+                    }
                     
                     document.getElementById('view-login').classList.remove('hidden');
                 },
@@ -16540,7 +16544,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'faltas_integracao', label:'Faltas na Integração'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'mint_zen_teste', label:'Novo Layout (Teste Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'mint_zen_teste', label:'Laboratório Visual (Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -16593,7 +16597,7 @@ storage: {
                             if (!base.includes('treinamentos')) base.push('treinamentos');
                         }
                         if (g !== 'Dev') {
-                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
+                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
                         } else {
                             if (!base.includes('bi_banco_horas')) base.push('bi_banco_horas');
                             if (!base.includes('pdca_teste')) base.push('pdca_teste');
@@ -16682,10 +16686,7 @@ storage: {
                     if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
                         const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'mint_zen_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         if (tipo !== 'Dev') {
-                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
-                            if (presetTabs.includes('mint_zen_teste') && !savedTabs.includes('mint_zen_teste')) {
-                                savedTabs.push('mint_zen_teste');
-                            }
+                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
                         } else {
                             if (!savedTabs.includes('bi_banco_horas')) savedTabs.push('bi_banco_horas');
                             if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
@@ -16699,16 +16700,13 @@ storage: {
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) {
                             const merged = [...new Set([...savedTabs, ...presetTabs])];
-                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste');
+                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
                         }
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
-                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao');
-                    if (presetTabs.includes('mint_zen_teste') && !savedTabs.includes('mint_zen_teste')) {
-                        savedTabs.push('mint_zen_teste');
-                    }
-                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'faltas_integracao'))];
+                    savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste' && id !== 'faltas_integracao');
+                    return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste' && id !== 'faltas_integracao'))];
                 },
 
                 alterarGrupoAcessoRapido(matricula, novoGrupo) {
@@ -17581,21 +17579,17 @@ storage: {
                     
                     const container = document.getElementById('theme-color-dropdown');
                     if(container) {
-                        const isMintActive = localStorage.getItem('soft_experimental_mint_zen') === '1';
-                        const canTestMint = app.hasAdminAccess && app.hasAdminAccess('mint_zen_teste');
+                        const isRailActive = localStorage.getItem('soft_portal_layout_v2') !== 'classic';
                         container.innerHTML = themes.map(t => 
                             `<button onclick="app.ui.changeThemeColor('${t.hex}')" class="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-600 shadow-sm hover:scale-110 transition-transform" style="background-color: ${t.hex};" title="${t.name}"></button>`
-                        ).join('') + (canTestMint ? `
+                        ).join('') + `
                             <div class="col-span-5 pt-2 mt-1 border-t border-slate-100 dark:border-slate-700/80 flex flex-col gap-1.5">
-                                <button type="button" onclick="app.mintZenTeste && app.mintZenTeste.toggleGlobalPortalTheme()" class="w-full py-2 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-all cursor-pointer ${isMintActive ? 'text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}" style="${isMintActive ? 'background-color: var(--theme-color);' : ''}">
-                                    <span>${isMintActive ? 'Voltar ao Layout Padrão' : 'Testar Novo Layout (Portal)'}</span>
-                                    <span class="text-[9px] font-black uppercase opacity-80">DEV</span>
-                                </button>
-                                <button type="button" onclick="document.getElementById('theme-color-dropdown')?.classList.add('hidden'); app.ui.renderTab('mint_zen_teste', true);" class="w-full py-1.5 px-2.5 rounded-lg text-[10px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer">
-                                    Abrir Aba Novo Layout (Teste Dev)
+                                <button type="button" onclick="app.mintZenTeste && app.mintZenTeste.toggleGlobalPortalTheme()" class="w-full py-2 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-all cursor-pointer ${isRailActive ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700' : 'text-white shadow-sm'}" style="${isRailActive ? '' : 'background-color: var(--theme-color);'}">
+                                    <span>${isRailActive ? 'Usar Menu Superior Clássico' : 'Usar Barra Lateral Moderna'}</span>
+                                    <i class="fa-solid fa-table-columns text-[10px] opacity-80"></i>
                                 </button>
                             </div>
-                        ` : '');
+                        `;
                     }
                 },
                 changeThemeColor(hex) {
@@ -19751,6 +19745,9 @@ storage: {
                         nav.innerHTML = '';
                         nav.classList.add('hidden');
                         if (nav.parentElement) nav.parentElement.classList.add('hidden');
+                        if (app.mintZenTeste && typeof app.mintZenTeste.syncGlobalPortalTheme === 'function') {
+                            app.mintZenTeste.syncGlobalPortalTheme([]);
+                        }
                         return;
                     } else {
                         nav.classList.remove('hidden');
@@ -40537,15 +40534,17 @@ storage: {
                         if (document.documentElement.requestFullscreen) {
                             document.documentElement.requestFullscreen().catch(e => console.log("Bloqueado pelo navegador"));
                         }
-                        // Esconde o cabeçalho e abas
+                        // Esconde o cabeçalho e a barra lateral no modo apresentação
                         if(header) header.style.display = 'none';
+                        document.body.classList.add('portal-apresentacao-fullscreen');
                     } else {
                         // Sai da tela cheia
                         if (document.fullscreenElement) {
                             document.exitFullscreen().catch(e => console.log(e));
                         }
-                        // Devolve o cabeçalho
+                        // Devolve o cabeçalho e a barra lateral
                         if(header) header.style.display = '';
+                        document.body.classList.remove('portal-apresentacao-fullscreen');
                     }
                     this.renderTab('analise_csv_dinamico', true);
                 },
@@ -40967,13 +40966,19 @@ storage: {
                                         </div>
                                     </div>
                                     <div>
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Ciclo de Qualidade (Semana):</div>
+                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2">Ciclo de Qualidade (Semana)${app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.length > 0 ? ` <span class="text-orange-500">(${app.ui.analiseFiltroMes.map(m => app.ui.formatMonthLabel(m).substring(0,3)).join(', ')})</span>` : ''}:</div>
                                         <div class="flex flex-wrap gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-1">
-                                            ${(data.ciclosDisponiveis || []).map(c => {
-                                                const isActive = app.ui.analiseFiltroCiclo && app.ui.analiseFiltroCiclo.includes(c);
-                                                const btnClass = isActive ? 'bg-orange-500 text-white border-orange-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500';
-                                                return `<button onclick="app.ui.toggleCicloFiltro('${c}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">S${c}</button>`;
-                                            }).join('')}
+                                            ${(() => {
+                                                const ciclosParaExibir = (app.ui.analiseFiltroMes && app.ui.analiseFiltroMes.length > 0 && data.ciclosPorMes)
+                                                    ? Array.from(new Set(app.ui.analiseFiltroMes.flatMap(m => data.ciclosPorMes[m] || []))).sort((a, b) => parseInt(a) - parseInt(b))
+                                                    : (data.ciclosDisponiveis || []);
+                                                if (ciclosParaExibir.length === 0) return '<span class="text-[10px] text-slate-400 italic">Nenhuma semana no período</span>';
+                                                return ciclosParaExibir.map(c => {
+                                                    const isActive = app.ui.analiseFiltroCiclo && app.ui.analiseFiltroCiclo.includes(c);
+                                                    const btnClass = isActive ? 'bg-orange-500 text-white border-orange-500 shadow-md transform -translate-y-0.5' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-300 dark:hover:border-orange-500';
+                                                    return `<button onclick="app.ui.toggleCicloFiltro('${c}')" class="px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${btnClass}">S${c}</button>`;
+                                                }).join('');
+                                            })()}
                                         </div>
                                     </div>
                                     <div>
@@ -42179,11 +42184,13 @@ storage: {
                     const portalHeader = document.querySelector('header');
                     if (this._dentalUniApresentacaoMode) {
                         if (portalHeader) portalHeader.style.display = 'none';
+                        document.body.classList.add('portal-apresentacao-fullscreen');
                         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
                             document.documentElement.requestFullscreen().catch(() => {});
                         }
                     } else {
                         if (portalHeader) portalHeader.style.display = '';
+                        document.body.classList.remove('portal-apresentacao-fullscreen');
                         if (document.fullscreenElement && document.exitFullscreen) {
                             document.exitFullscreen().catch(() => {});
                         }
@@ -50673,8 +50680,10 @@ storage: {
                         return meta;
                     };
 
+                    const temFiltroMes = filtrosMes.length > 0 && filtrosMes[0] !== "";
                     const mesesDisp = new Set();
                     const ciclosDisp = new Set();
+                    const ciclosPorMesMap = {};
                     const assuntosDisp = new Set();
                     relatoriosAtivos.forEach(rel => {
                         if (!rel.rows || rel.rows.length === 0) return;
@@ -50685,10 +50694,17 @@ storage: {
                             const dtMeta = getParsedDateMeta(rel.rows[i][colDataScan]);
                             if (dtMeta) {
                                 mesesDisp.add(dtMeta.mesRef);
-                                ciclosDisp.add(dtMeta.weekStr);
+                                if (!ciclosPorMesMap[dtMeta.mesRef]) ciclosPorMesMap[dtMeta.mesRef] = new Set();
+                                ciclosPorMesMap[dtMeta.mesRef].add(dtMeta.weekStr);
+                                if (!temFiltroMes || filtrosMes.includes(dtMeta.mesRef)) {
+                                    ciclosDisp.add(dtMeta.weekStr);
+                                }
                             }
                         }
                     });
+                    if (Array.isArray(app.ui.analiseFiltroCiclo) && app.ui.analiseFiltroCiclo.length > 0) {
+                        app.ui.analiseFiltroCiclo = app.ui.analiseFiltroCiclo.filter(c => ciclosDisp.has(c));
+                    }
                     const diasCasaOpCache = Object.create(null);
                     const getNivelMaturidadeOp = (opNome, matCfg) => {
                         let diasCasa = diasCasaOpCache[opNome];
@@ -50749,6 +50765,7 @@ storage: {
                         monitorProdutividade: {},
                         mesesDisponiveis: mesesOrdenados,
                         ciclosDisponiveis: ciclosOrdenados,
+                        ciclosPorMes: Object.fromEntries(Object.entries(ciclosPorMesMap).map(([m, s]) => [m, Array.from(s).sort((a, b) => parseInt(a) - parseInt(b))])),
                         matConfig: matConfigFallback,
                         mesesEvolutivo: {},
                         operadoresEvolutivo: {},
@@ -70919,11 +70936,12 @@ app.pdcaTeste = {
 };
 
 // ============================================================================
-// LABORATÓRIO EXPERIMENTAL (DEV ONLY): NOVO LAYOUT PORTAL + SLIM ICON RAIL
-// Totalmente isolado e 100% reversível — zero impacto para usuários padrão.
+// NOVO LAYOUT PORTAL + SLIM ICON RAIL + MOTION SYSTEM (OFICIAL PORTAL)
+// Ativo por padrão para colaboradores e gestores; Operadores e Links Públicos
+// permanecem intactos; alternância p/ Menu Superior Clássico preservada.
 // ============================================================================
 app.mintZenTeste = {
-    STORAGE_KEY: 'soft_experimental_mint_zen',
+    STORAGE_KEY: 'soft_portal_layout_v2',
     activeSubView: 'overview',
     dataSourceMode: 'live',
     _splashPlayedThisSession: false,
@@ -70935,8 +70953,16 @@ app.mintZenTeste = {
     },
 
     isGlobalThemeEnabled() {
-        if (!this._isDevUser()) return false;
-        try { return localStorage.getItem(this.STORAGE_KEY) === '1'; } catch (e) { return false; }
+        if (!app || app.isGuest) return false;
+        if (!app.isAdmin && !app.currentUser) return false;
+        if (!app.isAdmin && app.currentUser && typeof app.isUserOperador === 'function' && app.isUserOperador(app.currentUser)) {
+            return false;
+        }
+        try {
+            return localStorage.getItem(this.STORAGE_KEY) !== 'classic';
+        } catch (e) {
+            return true;
+        }
     },
 
     injectStylesOnce() {
@@ -71057,40 +71083,51 @@ app.mintZenTeste = {
                 animation-delay: var(--sl-bar-delay, 100ms);
             }
 
+            /* Modo Apresentação Tela Cheia: oculta totalmente a barra lateral e devolve largura total */
+            body.portal-apresentacao-fullscreen #mz-global-icon-rail,
+            body.portal-apresentacao-fullscreen #sl-active-subnav-bar,
+            body.portal-apresentacao-fullscreen #view-app > header {
+                display: none !important;
+            }
+            body.portal-apresentacao-fullscreen #main-content-shell {
+                padding-left: 16px !important;
+                margin-left: 0 !important;
+            }
+
             body.portal-rail-test-mode .sl-portal-cascade {
                 animation: mzCascadeUp 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
                 animation-delay: var(--sl-delay, 0ms);
             }
 
-            /* Cards elegantes em TODOS os dashboards (quando Teste está ativo) */
-            body.portal-rail-test-mode .tab-view-container .glass-card,
-            body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white,
-            body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white,
-            body.portal-rail-test-mode .tab-view-container .rounded-2xl[class*="bg-white/"],
-            body.portal-rail-test-mode .tab-view-container .rounded-3xl[class*="bg-white/"],
-            body.portal-rail-test-mode .tab-view-container .rounded-2xl.border.shadow-sm,
-            body.portal-rail-test-mode .tab-view-container .rounded-3xl.border.shadow-sm,
-            body.portal-rail-test-mode .tab-view-container .sl-dash-card {
+            /* Cards elegantes em dashboards comuns (preserva intactos Apresentação de Resultados & Dental Uni) */
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .glass-card,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl.bg-white,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl.bg-white,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl[class*="bg-white/"],
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl[class*="bg-white/"],
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl.border.shadow-sm,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl.border.shadow-sm,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .sl-dash-card {
                 border-radius: 22px !important;
                 border-color: rgba(15, 23, 42, 0.06) !important;
                 box-shadow: 0 2px 12px -3px rgba(15, 23, 42, 0.05) !important;
                 transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease !important;
             }
-            html.dark body.portal-rail-test-mode .tab-view-container .glass-card,
-            html.dark body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white,
-            html.dark body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white,
-            html.dark body.portal-rail-test-mode .tab-view-container .rounded-2xl.border.shadow-sm,
-            html.dark body.portal-rail-test-mode .tab-view-container .rounded-3xl.border.shadow-sm,
-            html.dark body.portal-rail-test-mode .tab-view-container .sl-dash-card {
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .glass-card,
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl.bg-white,
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl.bg-white,
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl.border.shadow-sm,
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl.border.shadow-sm,
+            html.dark body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .sl-dash-card {
                 border-color: rgba(255, 255, 255, 0.07) !important;
                 box-shadow: 0 4px 18px -4px rgba(0, 0, 0, 0.35) !important;
             }
-            body.portal-rail-test-mode .tab-view-container .glass-card:hover,
-            body.portal-rail-test-mode .tab-view-container .rounded-2xl.bg-white:hover,
-            body.portal-rail-test-mode .tab-view-container .rounded-3xl.bg-white:hover,
-            body.portal-rail-test-mode .tab-view-container .rounded-2xl[class*="bg-white/"]:hover,
-            body.portal-rail-test-mode .tab-view-container .rounded-3xl[class*="bg-white/"]:hover,
-            body.portal-rail-test-mode .tab-view-container .sl-dash-card:hover {
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .glass-card:hover,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl.bg-white:hover,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl.bg-white:hover,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-2xl[class*="bg-white/"]:hover,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .rounded-3xl[class*="bg-white/"]:hover,
+            body.portal-rail-test-mode .tab-view-container:not(#view-container-analise_csv_dinamico):not(#view-container-apresentacao_dental_uni) .sl-dash-card:hover {
                 transform: translateY(-4px) !important;
                 box-shadow: 0 20px 40px -14px rgba(15, 23, 42, 0.14), 0 4px 12px -2px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14) !important;
                 border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.30) !important;
@@ -71108,42 +71145,35 @@ app.mintZenTeste = {
                 id: 'softLayoutGrowTest',
                 beforeInit(chart) {
                     if (!app.mintZenTeste || !app.mintZenTeste.isGlobalThemeEnabled()) return;
+                    // Nunca altera gráficos da Apresentação de Resultados nem da Dental Uni (preserva layout e borderRadius originais)
+                    const canvasEl = chart && chart.canvas;
+                    if (canvasEl && canvasEl.closest('#view-container-analise_csv_dinamico, #view-container-apresentacao_dental_uni')) return;
+                    if (app.currentTab === 'analise_csv_dinamico' || app.currentTab === 'apresentacao_dental_uni') return;
+
                     const cfg = chart && chart.config;
                     if (!cfg) return;
                     if (!cfg.options) cfg.options = {};
-                    const isHorizontal = cfg.options.indexAxis === 'y';
-                    const isBar = cfg.type === 'bar' || (cfg.data && Array.isArray(cfg.data.datasets) && cfg.data.datasets.some(d => d && d.type === 'bar'));
+                    // Respeita gráficos que explicitamente desabilitaram animação
+                    if (cfg.options.animation === false) return;
 
+                    const isBar = cfg.type === 'bar' || (cfg.data && Array.isArray(cfg.data.datasets) && cfg.data.datasets.some(d => d && d.type === 'bar'));
                     if (isBar) {
                         cfg.options.animation = {
                             ...(typeof cfg.options.animation === 'object' && cfg.options.animation ? cfg.options.animation : {}),
-                            duration: 900,
+                            duration: 820,
                             easing: 'easeOutQuart',
                             delay(ctx) {
                                 if (ctx && ctx.type === 'data' && ctx.mode === 'default') {
-                                    return Math.min((ctx.dataIndex || 0) * 52 + (ctx.datasetIndex || 0) * 70, 560);
+                                    return Math.min((ctx.dataIndex || 0) * 45 + (ctx.datasetIndex || 0) * 60, 480);
                                 }
                                 return 0;
                             }
                         };
-
-                        if (cfg.data && Array.isArray(cfg.data.datasets)) {
-                            cfg.data.datasets.forEach(ds => {
-                                if (!ds || (ds.type && ds.type !== 'bar')) return;
-                                if (ds.borderRadius === undefined || ds.borderRadius === null || ds.borderRadius < 8) {
-                                    ds.borderRadius = isHorizontal
-                                        ? { topRight: 999, bottomRight: 999 }
-                                        : { topLeft: 999, topRight: 999 };
-                                }
-                            });
-                        }
                     } else {
                         cfg.options.animation = {
                             ...(typeof cfg.options.animation === 'object' && cfg.options.animation ? cfg.options.animation : {}),
-                            duration: 850,
-                            easing: 'easeOutQuart',
-                            animateScale: true,
-                            animateRotate: true
+                            duration: 780,
+                            easing: 'easeOutQuart'
                         };
                     }
                 }
@@ -71227,6 +71257,15 @@ app.mintZenTeste = {
         if (!viewDiv || !this.isGlobalThemeEnabled()) return;
         this.injectStylesOnce();
         this.installChartGrowPlugin();
+
+        const isPresTab = viewDiv.id === 'view-container-analise_csv_dinamico' || viewDiv.id === 'view-container-apresentacao_dental_uni';
+        const isPresMode = (viewDiv.id === 'view-container-analise_csv_dinamico' && !!app.ui?.analiseEditMode)
+            || (viewDiv.id === 'view-container-apresentacao_dental_uni' && !!app.ui?._dentalUniApresentacaoMode);
+        document.body.classList.toggle('portal-apresentacao-fullscreen', isPresMode);
+
+        // Mantém Apresentação de Resultados e Dental Uni 100% com flip-cards e gráficos originais
+        if (isPresTab) return;
+
         try {
             const blocks = viewDiv.querySelectorAll(':scope > div > div, :scope .grid > div, .glass-card');
             let idx = 0;
@@ -71252,34 +71291,27 @@ app.mintZenTeste = {
                 }
             });
 
-            // Re-dispara crescimento suave nos gráficos Chart.js já existentes ou recém-criados
-            if (window.Chart && typeof window.Chart.instances === 'object') {
-                Object.values(window.Chart.instances).forEach(ch => {
-                    if (ch && ch.canvas && viewDiv.contains(ch.canvas) && !ch._slGrowApplied) {
-                        ch._slGrowApplied = true;
-                        try { ch.reset(); ch.update(); } catch (err) {}
-                    }
-                });
-            }
-
             this.animateCounters(viewDiv);
             this.refreshIcons();
         } catch (e) {}
     },
 
     toggleGlobalPortalTheme(forceState = null) {
-        if (!this._isDevUser()) return;
+        if (!app || app.isGuest || (!app.isAdmin && !app.currentUser)) return;
         const current = this.isGlobalThemeEnabled();
         const next = forceState !== null ? !!forceState : !current;
         try {
-            if (next) localStorage.setItem(this.STORAGE_KEY, '1');
-            else localStorage.removeItem(this.STORAGE_KEY);
+            if (next) localStorage.setItem(this.STORAGE_KEY, 'rail');
+            else localStorage.setItem(this.STORAGE_KEY, 'classic');
         } catch (e) {}
 
         document.getElementById('theme-color-dropdown')?.classList.add('hidden');
-        this.playSplashReveal(next ? 'Aplicando Novo Layout em Todo o Portal' : 'Restaurando Layout Clássico do Portal');
+        this.playSplashReveal(next ? 'Ativando Barra Lateral Moderna' : 'Ativando Menu Superior Clássico');
         setTimeout(() => {
             this.syncGlobalPortalTheme();
+            if (app.ui && typeof app.ui.initThemeColors === 'function') {
+                try { app.ui.initThemeColors(); } catch (e) {}
+            }
             if (app.ui && typeof app.ui.renderNav === 'function') app.ui.renderNav();
             if (app.currentTab === 'mint_zen_teste') this.renderView(null, { skipSplash: true });
             else if (app.currentTab) {
@@ -71292,12 +71324,14 @@ app.mintZenTeste = {
     _getGroupMeta(groupName) {
         const map = {
             'Início': { icon: 'home', desc: 'Página inicial, resumo diário e foco GTD' },
+            'Resultados': { icon: 'target', desc: 'Painel financeiro, monitorias, Kantar e CSAT' },
             'Dashboards': { icon: 'pie-chart', desc: 'Painéis executivos, equipe, span e laudos' },
             'Controle & Importação': { icon: 'clipboard-check', desc: 'Notas, monitorias, diário, Kantar e resultados' },
+            'Rotina & Qualidade': { icon: 'headset', desc: 'Calendário, atas, diário, laudos e jogos' },
             'Rotina & Formulários': { icon: 'headset', desc: 'Calendário, atas, diário, laudos e ações' },
             'Formulários': { icon: 'pen-line', desc: 'Registro de ações presenciais e perfil' },
             'Apoio': { icon: 'briefcase', desc: 'Estoque, impressões, simulações e regras' },
-            'Sistema': { icon: 'sliders-horizontal', desc: 'Auditoria de ações, metas, Harmony, PDCA e testes' },
+            'Sistema': { icon: 'sliders-horizontal', desc: 'Auditoria de ações, metas, Harmony e configurações' },
             'Guias': { icon: 'book-open', desc: 'Simuladores, treinamentos, regras e LGPD' }
         };
         return map[groupName] || { icon: 'folder-kanban', desc: 'Abas e módulos deste grupo' };
@@ -71313,6 +71347,8 @@ app.mintZenTeste = {
             'span_operacoes': 'radar',
             'implantacao_ia': 'bot',
             'meu_painel': 'user-check',
+            'ranking_monitorias': 'award',
+            'pesquisa_treinamento': 'clipboard-check',
             'dashboard_estudos': 'file-bar-chart',
             'cadastros': 'clipboard-edit',
             'import_monitorias': 'file-spreadsheet',
@@ -71465,7 +71501,7 @@ app.mintZenTeste = {
                 </div>
             </div>
 
-            <!-- Suporte & Reversão do Teste -->
+            <!-- Suporte & Preferência de Layout -->
             <div class="p-2.5 space-y-1">
                 ${isDev ? `
                     <button type="button" onclick="app.ui.abrirModalFirebaseDev()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
@@ -71478,11 +71514,8 @@ app.mintZenTeste = {
                 <button type="button" onclick="app.ui.abrirModalHelp()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
                     <i data-lucide="help-circle" class="w-3.5 h-3.5 text-blue-500"></i> Central de Ajuda
                 </button>
-                <button type="button" onclick="app.mintZenTeste.playSplashReveal('Replay • Softmarketing Splash')" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
-                    <i data-lucide="play" class="w-3.5 h-3.5" style="color: var(--theme-color);"></i> Testar Splash Reveal
-                </button>
-                <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme(false)" class="w-full mt-1 px-2.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-600 text-rose-600 hover:text-white text-xs font-extrabold flex items-center justify-center gap-2 transition-colors cursor-pointer">
-                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Voltar ao Layout Padrão
+                <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme(false)" class="w-full mt-1 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer">
+                    <i data-lucide="panel-top" class="w-3.5 h-3.5"></i> Usar Menu Superior Clássico
                 </button>
             </div>
         `;
@@ -71568,8 +71601,8 @@ app.mintZenTeste = {
             try { app.ui.initThemeColors(); } catch (e) {}
         }
 
-        const isDev = this._isDevUser();
-        const enabled = isDev && this.isGlobalThemeEnabled();
+        const menusReady = Array.isArray(this._lastMenus) ? this._lastMenus : (app.isAdmin ? (app.ui?.menusAdmin || []) : []);
+        const enabled = this.isGlobalThemeEnabled() && menusReady.length > 0;
         document.body.classList.remove('mint-zen-mode');
         document.body.classList.toggle('portal-rail-test-mode', enabled);
 
@@ -71582,9 +71615,7 @@ app.mintZenTeste = {
             return;
         }
 
-        const menus = Array.isArray(this._lastMenus) && this._lastMenus.length > 0
-            ? this._lastMenus
-            : (app.ui?.menusAdmin || []);
+        const menus = menusReady;
 
         const pendingMap = this._getPendingTabsMap();
         const normTab = (id) => (id === 'gestao_equipe' || id === 'operacoes') ? 'hierarquia' : ((id === 'treinamento_capacitacao' || id === 'csat_nps') ? 'treinamentos' : id);
