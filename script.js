@@ -2633,7 +2633,7 @@ storage: {
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
                 if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'apresentacao_dental_uni', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
-                if (tipo === 'Gestor' && (tabId === 'dashboard_adm' || tabId === 'cadastros' || tabId === 'calendario' || tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
+                if (tipo === 'Gestor' && (tabId === 'dashboard_adm' || tabId === 'cadastros' || tabId === 'calendario' || tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes' || tabId === 'pesquisas_anatel')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
@@ -17130,6 +17130,7 @@ storage: {
                         } else {
                             if (!base.includes('faltas_integracao')) base.push('faltas_integracao');
                             if (!base.includes('pdca_teste')) base.push('pdca_teste');
+                            if (!base.includes('pesquisas_anatel')) base.push('pesquisas_anatel');
                         }
                         result[g] = [...new Set(base)];
                     });
@@ -45396,10 +45397,10 @@ storage: {
                         } catch (e) {}
                     }
 
-                    // Apenas perfil Dev (ou Admin mestre) pode criar/editar Projetos Kantar; demais perfis visualizam e baixam
+                    // Perfis Gestor, Gerente, Dev e Admin mestre podem criar/editar/atualizar Projetos Kantar; demais perfis visualizam e baixam
                     const canManageKantar = (app.admin && typeof app.admin.canEditKantar === 'function')
                         ? app.admin.canEditKantar()
-                        : (app.isAdmin || String(app.currentUser?.tipoAcesso || '').trim() === 'Dev');
+                        : (app.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(app.currentUser?.tipoAcesso || '').trim()));
 
                     // Verifica se existe um projeto ativo aberto na memória
                     if (!app.anatelData.projetoAtivo || !app.anatelData.projetos[app.anatelData.projetoAtivo]) {
@@ -45571,7 +45572,7 @@ storage: {
                     </div>`;
                     
                     if (reg.length === 0 && canc.length === 0) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">${canManageKantar ? 'Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.' : 'Nenhuma planilha importada neste projeto ainda. Somente o perfil Dev pode editar e importar dados.'}</p></div>`;
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">${canManageKantar ? 'Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.' : 'Nenhuma planilha importada neste projeto ainda. Apenas Gestores, Gerentes ou Dev podem editar e importar dados.'}</p></div>`;
                         container.innerHTML = html;
                         return;
                     }
@@ -46448,13 +46449,14 @@ storage: {
                 },
                 
                 // ==========================================
-                // GESTÃO DE PROJETOS KANTAR (SOMENTE DEV EDITA; TODOS PODEM VISUALIZAR E BAIXAR)
+                // GESTÃO DE PROJETOS KANTAR (GESTORES, GERENTES E DEV EDITAM/ATUALIZAM; DEMAIS VISUALIZAM E BAIXAM)
                 // ==========================================
                 canEditKantar() {
-                    return Boolean(app.isAdmin || String(app.currentUser?.tipoAcesso || '').trim() === 'Dev');
+                    const tipo = String(app.currentUser?.tipoAcesso || '').trim();
+                    return Boolean(app.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(tipo));
                 },
                 kantarCriarProjeto() {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode criar ou editar projetos Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem criar ou editar projetos Kantar.', 'error');
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-folder-plus text-blue-500"></i> Criar Novo Projeto Kantar`;
                     document.getElementById('modal-content').innerHTML = `
                         <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Insira o nome do projeto (ex: Kantar Setembro) e a meta percentual padrão:</p>
@@ -46471,7 +46473,7 @@ storage: {
                     setTimeout(() => document.getElementById('k-proj-nome')?.focus(), 80);
                 },
                 execKantarCriarProjeto() {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode criar ou editar projetos Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem criar ou editar projetos Kantar.', 'error');
                     const nome = document.getElementById('k-proj-nome').value.trim();
                     const meta = parseFloat(document.getElementById('k-proj-meta').value) || 10;
                     if(!nome) return app.ui.showAlert('Aviso', 'Nome é obrigatório', 'error');
@@ -46516,11 +46518,11 @@ storage: {
                     app.ui.renderTab('pesquisas_anatel', true);
                 },
                 kantarExcluirProjeto(id) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir projetos Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem excluir projetos Kantar.', 'error');
                     app.ui.showConfirm("Cuidado!", "Tem certeza que deseja excluir todo este projeto e suas planilhas importadas? Não tem volta.", `app.admin.execKantarExcluirProjeto('${id}')`, true);
                 },
                 execKantarExcluirProjeto(id) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir projetos Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem excluir projetos Kantar.', 'error');
                     if (app.anatelData?.projetos) delete app.anatelData.projetos[id];
                     if (app.anatelData?.projetoAtivo === id) {
                         app.anatelData.projetoAtivo = null;
@@ -46539,7 +46541,7 @@ storage: {
                         .catch(() => app.ui.showAlert('Erro', 'Falha ao excluir projeto na nuvem.', 'error'));
                 },
                 kantarAtualizarMeta(val) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode editar a meta do projeto.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem editar a meta do projeto.', 'error');
                     if (!app.anatelData?.projetoAtivo) return;
                     const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
                     if (!proj) return;
@@ -46553,12 +46555,12 @@ storage: {
                         .catch(() => app.ui.showAlert('Erro', 'Falha ao salvar meta na nuvem.', 'error'));
                 },
                 limparKantarProjeto() {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode esvaziar este projeto.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem esvaziar este projeto.', 'error');
                     if (!app.anatelData?.projetoAtivo) return;
                     app.ui.showConfirm("Zerar Dados", "Isso apagará TODAS as planilhas (Padrão e Canceladas) de DENTRO DESTE PROJETO. Continuar?", `app.admin.execLimparKantarProjeto()`, true);
                 },
                 execLimparKantarProjeto() {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode esvaziar este projeto.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem esvaziar este projeto.', 'error');
                     const proj = app.anatelData?.projetos?.[app.anatelData.projetoAtivo];
                     if (!proj) return;
                     proj.registros = [];
@@ -46569,13 +46571,13 @@ storage: {
                         .catch(() => app.ui.showAlert('Erro', 'Falha ao limpar dados na nuvem.', 'error'));
                 },
                 kantarExcluirCampanha(nomeCampanha) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir campanhas.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem excluir campanhas.', 'error');
                     if (!app.anatelData?.projetoAtivo) return;
                     window._kantarCampanhaTarget = nomeCampanha;
                     app.ui.showConfirm("Excluir Campanha", `Isso removerá apenas a campanha <b>${app.utils.escapeHtml(nomeCampanha)}</b> deste projeto. Continuar?`, `app.admin.execKantarExcluirCampanha(window._kantarCampanhaTarget)`, true);
                 },
                 execKantarExcluirCampanha(nomeCampanha) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir campanhas.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem excluir campanhas.', 'error');
                     let proj = app.anatelData?.projetos?.[app.anatelData.projetoAtivo];
                     if (!proj) return;
                     proj.registros = (proj.registros || []).filter(r => r.campanha !== nomeCampanha);
@@ -46587,7 +46589,7 @@ storage: {
                 },
 
                 kantarRenomearCampanhaPrompt(nomeAntigo) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode renomear campanhas.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem renomear campanhas.', 'error');
                     window._kantarRenameFrom = nomeAntigo;
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen text-indigo-500"></i> Renomear Campanha`;
                     document.getElementById('modal-content').innerHTML = `
@@ -46604,7 +46606,7 @@ storage: {
                 },
 
                 execKantarRenomearCampanha(nomeAntigo) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode renomear campanhas.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem renomear campanhas.', 'error');
                     const novoNome = document.getElementById('rename-camp-input').value.trim();
                     if(!novoNome || novoNome === nomeAntigo) {
                         document.getElementById('global-modal').classList.add('hidden');
@@ -46651,7 +46653,7 @@ storage: {
                 },
 
                 processarKantarCanceladas(input) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode importar dados Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem importar dados Kantar.', 'error');
                     if (!app.anatelData?.projetoAtivo) return;
                     const file = input.files[0];
                     if (!file) return;
@@ -47285,7 +47287,7 @@ storage: {
                 },
 
                 processarKantarPadrao(input, updateCampanhaNome = null) {
-                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode importar dados Kantar.', 'error');
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Apenas Gestores, Gerentes ou Dev podem importar dados Kantar.', 'error');
                     if (!app.anatelData?.projetoAtivo) return;
                     const files = Array.from(input.files);
                     if (files.length === 0) return;
@@ -47297,11 +47299,6 @@ storage: {
                     app.ui.showAlert("Processando...", "Lendo relatórios Padrão. Isso levará alguns segundos...", "info");
                     
                     let processedCount = 0;
-                    
-                    // Se for atualização de campanha, removemos a campanha antiga primeiro
-                    if (updateCampanhaNome) {
-                        proj.registros = proj.registros.filter(r => r.campanha !== updateCampanhaNome);
-                    }
                     
                     files.forEach(file => {
                         const reader = new FileReader();
@@ -47315,6 +47312,11 @@ storage: {
                                 const firstSheet = workbook.SheetNames[0];
                                 const worksheet = workbook.Sheets[firstSheet];
                                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: 0 });
+
+                                // Ao atualizar ou reimportar arquivo com mesmo nome de campanha, substitui os registros antigos dessa campanha
+                                if (updateCampanhaNome || proj.registros.some(r => r.campanha === campanhaName)) {
+                                    proj.registros = proj.registros.filter(r => r.campanha !== campanhaName);
+                                }
                                 
                                 jsonData.forEach(row => {
                                     const keyEntrevistador = Object.keys(row).find(k => k.trim().toUpperCase() === 'ENTREVISTADOR') || Object.keys(row).find(k => k.trim().toUpperCase().includes('ENTREVISTADOR'));
@@ -72058,11 +72060,48 @@ app.pdcaTeste = {
         }
     },
 
-    _saveLocalBackup() {
-        try {
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.ciclos || {}));
-            localStorage.setItem(this.HIDDEN_STORAGE_KEY, JSON.stringify(this.ocultos || {}));
-        } catch (e) {}
+    _saveLocalTimer: null,
+    _saveLocalBackup(immediate = false) {
+        const writeNow = () => {
+            this._saveLocalTimer = null;
+            try {
+                const ciclosObj = (this.ciclos && typeof this.ciclos === 'object') ? this.ciclos : {};
+                const keys = Object.keys(ciclosObj);
+                if (keys.length <= 1000) {
+                    const str = JSON.stringify(ciclosObj);
+                    if (str.length < 1800000) {
+                        localStorage.setItem(this.STORAGE_KEY, str);
+                    }
+                }
+                const ocStr = JSON.stringify(this.ocultos || {});
+                if (ocStr.length < 400000) {
+                    localStorage.setItem(this.HIDDEN_STORAGE_KEY, ocStr);
+                }
+            } catch (e) {}
+        };
+        if (immediate) {
+            if (this._saveLocalTimer) {
+                clearTimeout(this._saveLocalTimer);
+                this._saveLocalTimer = null;
+            }
+            writeNow();
+            return;
+        }
+        if (this._saveLocalTimer) clearTimeout(this._saveLocalTimer);
+        this._saveLocalTimer = setTimeout(writeNow, 350);
+    },
+
+    _normalizeCiclosDict(raw) {
+        const out = {};
+        if (!raw || typeof raw !== 'object') return out;
+        const entries = Array.isArray(raw) ? raw.entries() : Object.entries(raw);
+        for (const [k, v] of entries) {
+            if (!v || typeof v !== 'object') continue;
+            const id = String(v.id || k || '').trim();
+            if (!id) continue;
+            out[id] = v.id ? v : { ...v, id };
+        }
+        return out;
     },
 
     _loadLocalHidden() {
@@ -72081,40 +72120,53 @@ app.pdcaTeste = {
         const stale = (Date.now() - Number(this._lastCloudFetchTs || 0)) > 20000;
         if (this._loadedCloud && !force && !stale) return;
         if (Object.keys(this.ciclos || {}).length === 0) {
-            this.ciclos = this._loadLocalBackup();
+            this.ciclos = this._normalizeCiclosDict(this._loadLocalBackup());
         }
         if (Object.keys(this.ocultos || {}).length === 0) {
             this.ocultos = this._loadLocalHidden();
         }
         if (this._loadingCloud) return;
         this._loadingCloud = true;
+        let changed = false;
         try {
             const [resCiclos, resOcultos] = await Promise.all([
                 app.storage._fetchFirebaseNodeFast(this.FIREBASE_NODE, 350, 12000),
                 app.storage._fetchFirebaseNodeFast(this.HIDDEN_NODE, 350, 10000).catch(() => null)
             ]);
             if (resCiclos && resCiclos.ok && resCiclos.val && typeof resCiclos.val === 'object') {
-                this.ciclos = resCiclos.val;
+                const norm = this._normalizeCiclosDict(resCiclos.val);
+                if (Object.keys(norm).length !== Object.keys(this.ciclos || {}).length || Object.keys(norm).length > 0) {
+                    this.ciclos = norm;
+                    changed = true;
+                }
             }
             if (resOcultos && resOcultos.ok && resOcultos.val && typeof resOcultos.val === 'object') {
                 this.ocultos = resOcultos.val;
+                changed = true;
             }
-            this._saveLocalBackup();
+            if (changed) {
+                this._saveLocalBackup();
+            }
             this._loadedCloud = true;
-            this._lastCloudFetchTs = Date.now();
             this._stampSyncTime();
-            // Auto-importa em background cedendo o frame ao navegador (evita travar a UI)
-            const targetOp = this.filtroOperacao && this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : null;
-            setTimeout(() => {
-                if (app.currentTab === 'pdca_teste') {
-                    this.syncGapsOperacao(targetOp, { silent: true, renderAfter: true, skipAlreadySynced: true }).catch(() => {});
+            // Só auto-sincroniza ao abrir a aba se o quadro estiver completamente vazio e somente para a apresentação selecionada (evita descompressão em massa que trava/derruba o navegador)
+            if (Object.keys(this.ciclos || {}).length === 0 && !this._initialEmptySyncDone) {
+                this._initialEmptySyncDone = true;
+                const singleSrcId = (this.selectedAprId && this.selectedAprId !== '__atual__') ? [this.selectedAprId] : (app.analiseCSVDinamicoData?.consolidado ? ['__atual__'] : null);
+                if (singleSrcId) {
+                    setTimeout(() => {
+                        if (app.currentTab === 'pdca_teste') {
+                            this.syncGapsOperacao(null, { sourceIds: singleSrcId, silent: true, renderAfter: true, skipAlreadySynced: true }).catch(() => {});
+                        }
+                    }, 120);
                 }
-            }, 60);
+            }
         } catch (e) {
             console.warn('[PDCA] Fallback local:', e);
         } finally {
             this._loadingCloud = false;
-            if (app.currentTab === 'pdca_teste') {
+            this._lastCloudFetchTs = Date.now();
+            if (changed && app.currentTab === 'pdca_teste') {
                 this.renderView();
             }
         }
@@ -72141,8 +72193,8 @@ app.pdcaTeste = {
 
     async _persistBatchCiclos(novos) {
         if (!Array.isArray(novos) || novos.length === 0) return 0;
-        const patchObj = {};
         const userWho = app.currentUser?.nome || app.currentUser?.matricula || 'Sistema';
+        const enrichedList = [];
         novos.forEach(c => {
             if (!c || !c.id) return;
             const enriched = {
@@ -72152,19 +72204,27 @@ app.pdcaTeste = {
                 atualizadoEm: c.atualizadoEm || new Date().toISOString()
             };
             this.ciclos[enriched.id] = enriched;
-            patchObj[enriched.id] = app.storage.sanitizeFirebaseObject(enriched);
+            enrichedList.push(enriched);
         });
         this._saveLocalBackup();
-        try {
-            await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, patchObj, 'PATCH', 15000);
-            this._stampSyncTime();
-        } catch (e) {
-            console.warn('[PDCA] Erro no lote PATCH, tentando individual:', e);
-            for (const c of novos) {
-                await this._persistCiclo(c);
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < enrichedList.length; i += CHUNK_SIZE) {
+            const chunk = enrichedList.slice(i, i + CHUNK_SIZE);
+            const patchObj = {};
+            chunk.forEach(item => {
+                patchObj[item.id] = app.storage.sanitizeFirebaseObject(item);
+            });
+            try {
+                await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, patchObj, 'PATCH', 15000);
+            } catch (e) {
+                console.warn('[PDCA] Falha ao gravar chunk na nuvem:', e);
+            }
+            if (i + CHUNK_SIZE < enrichedList.length) {
+                await new Promise(r => setTimeout(r, 0));
             }
         }
-        return novos.length;
+        this._stampSyncTime();
+        return enrichedList.length;
     },
 
     async _deleteCiclo(id) {
@@ -72188,13 +72248,46 @@ app.pdcaTeste = {
         }
     },
 
+    _shrinkConsolidadoForPdca(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const opsArr = Array.isArray(raw.rankOperadores) && raw.rankOperadores.length > 0
+            ? raw.rankOperadores
+            : Object.values(raw.operadores || {});
+        const slimOps = opsArr.map(op => {
+            if (!op || typeof op !== 'object') return null;
+            return {
+                nome: op.nome || op.operador || '',
+                operador: op.operador || op.nome || '',
+                media: op.media,
+                notaMedia: op.notaMedia,
+                monitorias: op.monitorias ?? (Array.isArray(op.notas) ? op.notas.length : 0),
+                setor: op.setor || '',
+                supervisor: op.supervisor || '',
+                criticas: op.criticas ?? op.falhasCriticas ?? 0
+            };
+        }).filter(Boolean);
+        return {
+            mediaTotal: raw.mediaTotal,
+            conformidadePct: raw.conformidadePct,
+            infoOperacao: raw.infoOperacao,
+            customTitle: raw.customTitle,
+            falhasCriticas: raw.falhasCriticas,
+            falhasCriticasArray: raw.falhasCriticasArray,
+            falhasComuns: raw.falhasComuns,
+            falhasComunsArray: raw.falhasComunsArray,
+            rankOperadores: slimOps,
+            tmaSnapshot: raw.tmaSnapshot || null,
+            tmaIdeal: raw.tmaIdeal || null
+        };
+    },
+
     _readConsolidadoFromApr(aprId, aprObjOverride = null, cacheOnly = false) {
         if (!aprObjOverride && (!aprId || aprId === '__atual__')) {
             return app.analiseCSVDinamicoData?.consolidado || null;
         }
         const apr = aprObjOverride || (app.apresentacoesList || {})[aprId];
         if (!apr) return null;
-        if (apr.consolidado) return apr.consolidado;
+        if (apr.consolidado) return this._shrinkConsolidadoForPdca(apr.consolidado);
 
         if (!this._consolidadoCache) this._consolidadoCache = new Map();
         const verTag = `${apr.atualizadoEm || ''}|${apr.timestamp || ''}|${typeof apr.payloadData === 'string' ? apr.payloadData.length : 'obj'}`;
@@ -72207,17 +72300,17 @@ app.pdcaTeste = {
         try {
             let consolidado = null;
             if (typeof apr.payloadData === 'object') {
-                consolidado = apr.payloadData?.consolidado || null;
+                consolidado = this._shrinkConsolidadoForPdca(apr.payloadData?.consolidado || null);
             } else {
                 const rawStr = String(apr.payloadData);
                 const isCompressed = !rawStr.trim().startsWith('{');
                 const jsonStr = isCompressed ? LZString.decompressFromBase64(rawStr) : rawStr;
                 if (jsonStr) {
                     const parsed = JSON.parse(jsonStr);
-                    consolidado = parsed?.consolidado || null;
+                    consolidado = this._shrinkConsolidadoForPdca(parsed?.consolidado || null);
                 }
             }
-            if (this._consolidadoCache.size > 40) {
+            if (this._consolidadoCache.size >= 8) {
                 const firstKey = this._consolidadoCache.keys().next().value;
                 this._consolidadoCache.delete(firstKey);
             }
