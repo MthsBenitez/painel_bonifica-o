@@ -2562,7 +2562,7 @@ storage: {
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
                 if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'apresentacao_dental_uni', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
-                if (tipo === 'Gestor' && (tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
+                if (tipo === 'Gestor' && (tabId === 'dashboard_adm' || tabId === 'cadastros' || tabId === 'calendario' || tabId === 'hierarquia' || tabId === 'gestao_equipe' || tabId === 'span_operacoes' || tabId === 'implantacao_ia' || tabId === 'treinamentos' || tabId === 'treinamento_capacitacao' || tabId === 'csat_nps' || tabId === 'gestao_impressoes' || tabId === 'impressoes')) return true;
                 const isPerfilGestao = ['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo);
                 if (tabId) return userAbas.includes(tabId);
                 return isPerfilGestao;
@@ -3606,12 +3606,34 @@ storage: {
                     if(needsSave) app.storage.saveNotifications();
                 },
 
+                _getSeenHeaderNotifKey() {
+                    const targetId = app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || 'default').trim();
+                    return 'soft_header_seen_notif_' + targetId;
+                },
+                _loadSeenHeaderNotifs() {
+                    try {
+                        const raw = localStorage.getItem(this._getSeenHeaderNotifKey());
+                        const parsed = raw ? JSON.parse(raw) : [];
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (e) { return []; }
+                },
+                _saveSeenHeaderNotifs(ids) {
+                    try {
+                        localStorage.setItem(this._getSeenHeaderNotifKey(), JSON.stringify(Array.isArray(ids) ? ids : []));
+                    } catch (e) {}
+                },
+                markDropdownSeen() {
+                    const unreadIds = this.getRelevant().filter(n => !n.read).map(n => String(n.id || n.timestamp || ''));
+                    this._saveSeenHeaderNotifs(unreadIds);
+                    this.updateBadge();
+                },
                 toggleDropdown(e) {
                     e.stopPropagation();
                     const drop = document.getElementById('notif-dropdown');
                     if(drop.classList.contains('hidden')) {
                         drop.classList.remove('hidden');
                         this.renderList();
+                        this.markDropdownSeen();
                     } else {
                         drop.classList.add('hidden');
                     }
@@ -3627,14 +3649,20 @@ storage: {
                     return Object.values(app.notificationsList).filter(n => n.userId === targetId).sort((a,b) => b.timestamp - a.timestamp);
                 },
                 updateBadge() {
-                    const unread = this.getRelevant().filter(n => !n.read).length;
+                    const unreadList = this.getRelevant().filter(n => !n.read);
+                    const unreadIds = unreadList.map(n => String(n.id || n.timestamp || ''));
+                    if (unreadIds.length === 0) {
+                        this._saveSeenHeaderNotifs([]);
+                    }
+                    const seenSet = new Set(this._loadSeenHeaderNotifs());
+                    const unseenCount = unreadIds.filter(id => !seenSet.has(id)).length;
                     const badge = document.getElementById('notif-badge');
                     if (badge) {
-                        if(unread > 0) badge.classList.remove('hidden');
+                        if(unseenCount > 0) badge.classList.remove('hidden');
                         else badge.classList.add('hidden');
                     }
                     if (app.mintZenTeste && typeof app.mintZenTeste.refreshRailUtilities === 'function') {
-                        app.mintZenTeste.refreshRailUtilities();
+                        app.mintZenTeste.refreshRailUtilities(false);
                     }
                 },
                 markAllAsRead() {
@@ -4588,10 +4616,13 @@ storage: {
 
                     // PREVENÇÃO DE DUPLICIDADE: Se o usuário está editando e re-enviando
                     if (existingAct && existingAct.status === 'aprovado') {
+                        const existingActMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                            ? app.calc.getActionMonthKey(existingAct)
+                            : (existingAct.month || '');
                         const userIdx = app.users.findIndex(x => String(x.matricula).trim() === String(app.currentUser.matricula).trim());
-                        if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[existingAct.month] && app.users[userIdx].results[existingAct.month]['g4']) {
-                            let currentVal = parseInt(app.users[userIdx].results[existingAct.month]['g4'].val) || 0;
-                            app.users[userIdx].results[existingAct.month]['g4'].val = Math.max(0, currentVal - 1).toString();
+                        if(userIdx > -1 && existingActMonth && app.users[userIdx].results && app.users[userIdx].results[existingActMonth] && app.users[userIdx].results[existingActMonth]['g4']) {
+                            let currentVal = parseInt(app.users[userIdx].results[existingActMonth]['g4'].val) || 0;
+                            app.users[userIdx].results[existingActMonth]['g4'].val = Math.max(0, currentVal - 1).toString();
                             if(app.currentUser && String(app.currentUser.matricula).trim() === String(app.users[userIdx].matricula).trim()) app.currentUser = app.users[userIdx];
                             app.storage.saveUsers();
                         }
@@ -4736,9 +4767,13 @@ storage: {
                     if(!app.actionsList[id]) return;
                     app.actionsList[id].status = 'reprovado';
                     const act = app.actionsList[id];
+                    const actMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(act)
+                        : (act.month || app.currentMonth);
+                    if (actMonth) act.month = actMonth;
                     
                     app.storage.saveActions(id).then(() => {
-                        app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi reprovada. Fale com a gestão.`, 'error');
+                        app.notifications.notify(act.matricula, 'Ação Reprovada', `Sua ação enviada para ${app.ui.formatMonthLabel(actMonth)} foi reprovada. Fale com a gestão.`, 'error');
                         app.ui.showAlert("Feito", "Ação reprovada e descartada da métrica.", "info");
                         app.ui.renderTab('validar_acoes', true);
                     });
@@ -4761,7 +4796,7 @@ storage: {
                     if(acts.length === 0) return app.ui.showAlert("Erro", "Não há ações registradas para exportar.", "error");
 
                     const rows = acts.map(a => ({
-                        "ID Ação": a.id, "Mês Ref.": a.month, "Data Realização": a.dataAcao, "Status": a.status,
+                        "ID Ação": a.id, "Mês Ref.": (app.calc && typeof app.calc.getActionMonthKey === 'function' ? app.calc.getActionMonthKey(a) : a.month), "Data Realização": a.dataAcao, "Status": a.status,
                         "Monitor": a.nome, "Matrícula": a.matricula, "Operação": a.codigoOpe,
                         "Gestor Alinhado": a.gestor, "Ofensor": a.ofensor, "Objetivo": a.objetivo,
                         "Descrição da Ação": a.acaoRealizada, "Qtd Operadores": a.operadores, "Brindes": a.brindes,
@@ -4826,7 +4861,9 @@ storage: {
                         return { list: single ? [single] : [], isSingle: true, scopeLabel: single?.codigoOpe || 'Ação Individual' };
                     }
                     const allActs = Object.values(app.actionsList || {}).filter(Boolean);
-                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
+                    const getActMonth = (a) => (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? (app.calc.getActionMonthKey(a) || app.currentMonth)
+                        : (a.dataAcao ? String(a.dataAcao).substring(0, 7) : (a.month || app.currentMonth));
                     const monthActs = allActs.filter(a => getActMonth(a) === app.currentMonth);
                     const statusFilt = app.ui?.currentActionFilter || '';
                     let list = statusFilt ? monthActs.filter(a => a.status === statusFilt) : monthActs.slice();
@@ -9964,10 +10001,53 @@ storage: {
                     }
 
                     doc.save(`Lista_Presenca_Integracao_${dataArquivo}.pdf`);
+
+                    if ((!turmaId || (this.turmaEmEdicao && this.turmaEmEdicao.id === turmaId)) && t.tipoTurma === 'integracao' && !t.travada) {
+                        this._persistirIntegracaoAoBaixar(t);
+                    }
                 } catch (err) {
                     console.error("Erro ao gerar PDF de lista de assinatura:", err);
                     app.ui.showAlert("Erro", "Não foi possível gerar o PDF da lista de assinatura.", "error");
                 }
+            },
+
+            _persistirIntegracaoAoBaixar(t) {
+                if (!t || t.tipoTurma !== 'integracao' || t.travada) return;
+                if (!t.id) t.id = 'turma_' + Date.now();
+                if (!t.dataInicio) t.dataInicio = new Date().toISOString().split('T')[0];
+                this._sincronizarDadosHeaderIntegracao(t);
+
+                const total = Array.isArray(t.colaboradores) ? t.colaboradores.length : 0;
+                if (total === 0) return;
+                const presentes = t.colaboradores.filter(c => c.presenca !== 'Faltou' && c.statusGeral !== 'Faltou na Integração').length;
+                const faltas = total - presentes;
+                const taxa = total > 0 ? Math.round((presentes / total) * 100) : 0;
+
+                t.presenteismo = { total, presentes, faltas, percentual: taxa };
+                if (!t.status) t.status = 'Em Andamento';
+                t.travada = false;
+                t.atualizadoEm = Date.now();
+
+                if (!app.turmasTreinamentoList) app.turmasTreinamentoList = {};
+                app.turmasTreinamentoList[t.id] = JSON.parse(JSON.stringify(t));
+                this.sincronizarLoginsAlunosTurma(t);
+
+                app.storage.saveTurmasTreinamento(t.id).then(() => {
+                    if (app.faltasIntegracao && typeof app.faltasIntegracao.sinalizarFaltasTurma === 'function') {
+                        app.faltasIntegracao.sinalizarFaltasTurma(t);
+                        if (typeof app.faltasIntegracao.updateHeaderPill === 'function') {
+                            app.faltasIntegracao.updateHeaderPill();
+                        }
+                    }
+                    if (app.ui && typeof app.ui.showToast === 'function') {
+                        app.ui.showToast(`Lista PDF baixada e integração "${t.numeroTurma}" salva automaticamente em aberto!`, 'success');
+                    }
+                }).catch(err => {
+                    console.error("Erro ao salvar integração automaticamente ao baixar PDF:", err);
+                    if (app.ui && typeof app.ui.showToast === 'function') {
+                        app.ui.showToast('Lista PDF baixada! Cópia da integração mantida localmente (sem nuvem no momento).', 'warning');
+                    }
+                });
             },
 
             salvarIntegracao(finalizar = false) {
@@ -14233,7 +14313,11 @@ storage: {
             calc: {
                 getActionMonthKey(act) {
                     if (!act) return '';
-                    return act.month || (act.dataAcao ? String(act.dataAcao).substring(0, 7) : '');
+                    const da = String(act.dataAcao || act.data || '').trim();
+                    if (/^\d{4}-\d{2}/.test(da)) return da.substring(0, 7);
+                    const mBr = da.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+                    if (mBr) return `${mBr[3]}-${mBr[2]}`;
+                    return String(act.month || '').trim();
                 },
                 countApprovedFromSources(user, monthKey, opts = {}) {
                     const normMat = (m) => (app.storage && typeof app.storage._normalizeMat === 'function')
@@ -17056,6 +17140,9 @@ storage: {
                         } else {
                             if (!savedTabs.includes('faltas_integracao')) savedTabs.push('faltas_integracao');
                             if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
+                            if (!savedTabs.includes('dashboard_adm')) savedTabs.push('dashboard_adm');
+                            if (!savedTabs.includes('cadastros')) savedTabs.push('cadastros');
+                            if (!savedTabs.includes('calendario')) savedTabs.push('calendario');
                         }
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) {
@@ -20497,6 +20584,9 @@ storage: {
                         } catch(e) {}
                     }
 
+                    if (app.mintZenTeste && typeof app.mintZenTeste.markTabAsSeen === 'function') {
+                        app.mintZenTeste.markTabAsSeen(tabId);
+                    }
                     this.renderNav();
                     if (typeof this.syncGtdFloatingTimer === 'function') this.syncGtdFloatingTimer();
                     if (app.notifications && typeof app.notifications.updateIndicatorsHeaderPill === 'function') {
@@ -20676,8 +20766,10 @@ storage: {
                     if(!app.hasAdminAccess('validar_acoes')) return;
                     
                     const allActs = Object.values(app.actionsList || {}).filter(Boolean);
-                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
-                    // Filtra estritamente pelo mês selecionado no topo para nunca misturar meses na troca de competência
+                    const getActMonth = (a) => (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? (app.calc.getActionMonthKey(a) || app.currentMonth)
+                        : (a.dataAcao ? String(a.dataAcao).substring(0, 7) : (a.month || app.currentMonth));
+                    // Filtra estritamente pela competência real da ação para nunca misturar meses na troca de competência
                     const monthActs = allActs.filter(a => getActMonth(a) === app.currentMonth);
                     const pendentes = monthActs.filter(a => a.status === 'pendente').length;
                     const aprovados = monthActs.filter(a => a.status === 'aprovado').length;
@@ -20996,7 +21088,9 @@ storage: {
                     const operacoes = Object.values(app.operacoesList).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
                     const todayIso = localStorage.getItem('soft_acao_data_draft') || new Date().toISOString().split('T')[0];
                     const myMat = String(app.currentUser?.matricula || '').trim();
-                    const getActMonth = (a) => a.month || (a.dataAcao ? String(a.dataAcao).substring(0, 7) : app.currentMonth);
+                    const getActMonth = (a) => (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? (app.calc.getActionMonthKey(a) || app.currentMonth)
+                        : (a.dataAcao ? String(a.dataAcao).substring(0, 7) : (a.month || app.currentMonth));
                     const myActions = Object.values(app.actionsList || {}).filter(a => a && String(a.matricula || '').trim() === myMat && getActMonth(a) === app.currentMonth).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
 
                     let html = `
@@ -23213,19 +23307,32 @@ storage: {
                                 });
                             });
                             
-                            if(resultsForMonth.status === 'agendado') {
-                                pendentes.push(u);
+                    const _nowFbDash = new Date();
+                    const _todayFbIso = `${_nowFbDash.getFullYear()}-${String(_nowFbDash.getMonth() + 1).padStart(2, '0')}-${String(_nowFbDash.getDate()).padStart(2, '0')}`;
+                    const _curCalMonth = _todayFbIso.slice(0, 7);
+
+                    qualidadeUsers.forEach(u => {
+                        const resultsMap = (u && u.results && typeof u.results === 'object') ? u.results : {};
+                        Object.entries(resultsMap).forEach(([refMonth, rawRes]) => {
+                            if (!rawRes || rawRes.status !== 'agendado') return;
+                            const dtFb = String(rawRes.fbDate || '').trim();
+                            const inSelectedCalMonth = dtFb && dtFb.startsWith(app.currentMonth);
+                            const isCurrentUpcoming = (app.currentMonth === _curCalMonth) && (!dtFb || dtFb >= _todayFbIso);
+                            if (refMonth === app.currentMonth || inSelectedCalMonth || isCurrentUpcoming) {
+                                pendentes.push({ user: u, res: rawRes, refMonth });
                             }
-                        }
+                        });
                     });
 
-                    // Sort seguro para datas
-                    pendentes.sort((a,b) => {
-                        const da = a.results[app.currentMonth]?.fbDate;
-                        const db = b.results[app.currentMonth]?.fbDate;
-                        if(!da) return 1;
-                        if(!db) return -1;
-                        return new Date(da) - new Date(db);
+                    // Sort seguro por data e horário do agendamento
+                    pendentes.sort((a, b) => {
+                        const da = a.res?.fbDate || '';
+                        const db = b.res?.fbDate || '';
+                        if (!da && !db) return 0;
+                        if (!da) return 1;
+                        if (!db) return -1;
+                        if (da !== db) return da.localeCompare(db);
+                        return String(a.res?.fbTime || '23:59').localeCompare(String(b.res?.fbTime || '23:59'));
                     });
                     
                     const mediaGeral = usersComResultado > 0 ? ((somaPct / usersComResultado) * 100).toFixed(1) : 0;
@@ -23396,8 +23503,10 @@ storage: {
                         const _todayFbIso = `${_nowFbDash.getFullYear()}-${String(_nowFbDash.getMonth() + 1).padStart(2, '0')}-${String(_nowFbDash.getDate()).padStart(2, '0')}`;
                         const dayOrderCounter = {};
                         html += `<div class="space-y-2.5 overflow-y-auto pr-1 max-h-[260px] custom-scrollbar">`;
-                        pendentes.forEach(p => {
-                            const r = p.results[app.currentMonth];
+                        pendentes.forEach(item => {
+                            const p = item.user;
+                            const r = item.res || {};
+                            const refMonth = item.refMonth || app.currentMonth;
                             const dKey = r.fbDate || 'sem-data';
                             dayOrderCounter[dKey] = (dayOrderCounter[dKey] || 0) + 1;
                             const ordemDia = dayOrderCounter[dKey];
@@ -23406,18 +23515,21 @@ storage: {
                             const isToday = r.fbDate === _todayFbIso;
                             const cleanNomeP = app.utils.fixEncoding(p.nome);
                             const avatarP = p.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanNomeP)}&background=cbd5e1&color=ffffff&size=96`;
+                            const refTag = (refMonth && refMonth !== app.currentMonth)
+                                ? `<span class="ml-1.5 px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-bold">Ref. ${refMonth.split('-').reverse().join('/')}</span>`
+                                : '';
                             const badge = isToday
                                 ? `<span class="bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 px-2 py-0.5 rounded text-[10px] font-black uppercase">Hoje</span>`
                                 : `<span class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold tabular-nums">${dataFmt}</span>`;
                             
                             html += `
-                                <div class="bg-slate-50/80 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 flex justify-between items-center gap-2.5 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ if(app.ui?.selectUserForCadastros) { app.ui.selectUserForCadastros('${p.matricula}'); } else { const el=document.getElementById('adm-user-select'); if(el){el.value='${p.matricula}'; app.admin.loadUserEditor();} } }, 150);" title="Abrir lançamento do colaborador">
+                                <div class="bg-slate-50/80 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 flex justify-between items-center gap-2.5 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all" onclick="if ('${refMonth}' && app.currentMonth !== '${refMonth}' && typeof app.changeMonth === 'function') { app.currentMonth = '${refMonth}'; try{localStorage.setItem('soft_current_month','${refMonth}');}catch(e){} const gm=document.getElementById('global-month'); if(gm) gm.value='${refMonth}'; } app.ui.renderTab('cadastros', true); setTimeout(()=>{ if(app.ui?.selectUserForCadastros) { app.ui.selectUserForCadastros('${p.matricula}'); } else { const el=document.getElementById('adm-user-select'); if(el){el.value='${p.matricula}'; app.admin.loadUserEditor();} } }, 150);" title="Abrir lançamento do colaborador (${refMonth.split('-').reverse().join('/')})">
                                     <div class="flex items-center gap-2.5 min-w-0 flex-1">
                                         <span class="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center shrink-0 tabular-nums" title="Ordem no dia">${ordemDia}º</span>
                                         <img src="${avatarP}" class="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0" alt="${app.utils.escapeHtml(cleanNomeP)}">
                                         <div class="min-w-0">
                                             <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${cleanNomeP}</div>
-                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 mt-0.5 tabular-nums"><i class="fa-regular fa-clock"></i> ${hrFmt}</div>
+                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 mt-0.5 tabular-nums flex-wrap"><i class="fa-regular fa-clock"></i> ${hrFmt}${refTag}</div>
                                         </div>
                                     </div>
                                     <div class="shrink-0 flex items-center gap-1.5">${badge}<i class="fa-solid fa-chevron-right text-[10px] text-slate-300"></i></div>
@@ -26427,7 +26539,7 @@ storage: {
                                             <button type="button" onclick="app.diarioBordo.viewMode = 'turmas'; app.ui.renderTab('diario_bordo', true);" class="px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-bold text-xs transition cursor-pointer">
                                                 Cancelar
                                             </button>
-                                            <button type="button" onclick="app.diarioBordo.gerarListaAssinaturaIntegracaoPDF()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-extrabold text-xs border border-slate-200 dark:border-slate-600 transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                            <button type="button" onclick="app.diarioBordo.gerarListaAssinaturaIntegracaoPDF()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-extrabold text-xs border border-slate-200 dark:border-slate-600 transition flex items-center gap-2 cursor-pointer active:scale-95" title="Baixar PDF e salvar automaticamente a integração em aberto">
                                                 <i class="fa-solid fa-file-pdf text-rose-500"></i> Lista p/ Assinatura (PDF)
                                             </button>
                                             <button type="button" onclick="app.diarioBordo.salvarIntegracao(false)" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95">
@@ -26631,7 +26743,7 @@ storage: {
                                             <i class="fa-solid fa-xmark"></i> Cancelar e Voltar
                                         </button>
                                         <div class="flex flex-wrap items-center gap-2.5">
-                                            <button type="button" onclick="app.diarioBordo.gerarListaAssinaturaIntegracaoPDF()" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-extrabold text-xs border border-slate-200 dark:border-slate-600 transition flex items-center gap-2 cursor-pointer active:scale-95">
+                                            <button type="button" onclick="app.diarioBordo.gerarListaAssinaturaIntegracaoPDF()" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-extrabold text-xs border border-slate-200 dark:border-slate-600 transition flex items-center gap-2 cursor-pointer active:scale-95" title="Baixar PDF e salvar automaticamente a integração em aberto">
                                                 <i class="fa-solid fa-file-pdf text-rose-500"></i> Lista p/ Assinatura (PDF)
                                             </button>
                                             <button type="button" onclick="app.diarioBordo.salvarIntegracao(false)" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95">
@@ -28377,7 +28489,9 @@ storage: {
                     Object.values(app.actionsList || {}).forEach(act => {
                         if (!act || loggedActionIds.has(act.id)) return;
                         const dataFmt = act.data ? (act.data.includes('-') ? act.data.split('-').reverse().join('/') : act.data) : '-';
-                        const actionMonth = act.month || (act.data && act.data.includes('-') ? act.data.substring(0, 7) : mesAtivo);
+                        const actionMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                            ? (app.calc.getActionMonthKey(act) || mesAtivo)
+                            : ((act.data && act.data.includes('-')) ? act.data.substring(0, 7) : (act.month || mesAtivo));
 
                         if (Array.isArray(act.brindesItems) && act.brindesItems.length > 0) {
                             act.brindesItems.forEach((b, idx) => {
@@ -50864,8 +50978,11 @@ storage: {
                     if(!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
                     
                     const acoesAprovadas = Object.values(app.actionsList || {}).filter(a => a.status === 'aprovado').sort((a,b) => b.timestamp - a.timestamp);
+                    const getActMonth = (a) => (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(a)
+                        : (a.dataAcao ? String(a.dataAcao).substring(0, 7) : (a.month || ''));
                     
-                    const mesesDisponiveis = [...new Set(acoesAprovadas.map(a => a.month))].sort().reverse();
+                    const mesesDisponiveis = [...new Set(acoesAprovadas.map(a => getActMonth(a)).filter(Boolean))].sort().reverse();
                     const comboMeses = mesesDisponiveis.map(m => `<option value="${m}">${app.ui.formatMonthLabel(m)}</option>`).join('');
 
                     let htmlList = '';
@@ -50888,8 +51005,9 @@ storage: {
                         acoesAprovadas.forEach(act => {
                             const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(act.id);
                             const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                            const actMonthVal = getActMonth(act);
                             htmlList += `
-                                <div data-month="${act.month}" class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
+                                <div data-month="${actMonthVal}" class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
                                     <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${act.id}', this.parentElement)">
                                         <div class="check-indicator absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
                                         <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
@@ -52530,10 +52648,11 @@ storage: {
 
                     if (!mat) {
                         editorArea.innerHTML = `
-                            <div class="p-12 text-center text-slate-400 dark:text-slate-500">
+                            <div class="p-8 text-center text-slate-400 dark:text-slate-500">
                                 <i class="fa-solid fa-hand-pointer text-3xl mb-3 block opacity-50"></i>
                                 Selecione um colaborador na lista ao lado para lançar ou validar suas notas.
                             </div>
+                            <div id="fb-day-timeline-box" class="px-4 pb-4">${this.renderFeedbackDayTimelineHtml(null, null, '')}</div>
                         `;
                         return;
                     }
@@ -52782,14 +52901,20 @@ storage: {
                     const nowDt = new Date();
                     const todayIso = `${nowDt.getFullYear()}-${String(nowDt.getMonth() + 1).padStart(2, '0')}-${String(nowDt.getDate()).padStart(2, '0')}`;
 
-                    // Coleta todos os agendamentos/assinaturas com data neste mês para descobrir os dias disponíveis
+                    // Coleta todos os agendamentos/assinaturas com data (prioriza competência selecionada + agendamentos na data/mês vigente)
                     const scheduledAll = [];
+                    const dedupFbKey = new Set();
                     (app.users || []).forEach(u => {
-                        if (!u || !u.results || !u.results[mes]) return;
-                        const res = u.results[mes];
-                        if ((res.status === 'agendado' || res.status === 'validado') && res.fbDate) {
-                            scheduledAll.push({ user: u, res });
-                        }
+                        if (!u || !u.results || typeof u.results !== 'object') return;
+                        Object.entries(u.results).forEach(([refMonth, res]) => {
+                            if (!res || !res.fbDate) return;
+                            if (res.status !== 'agendado' && res.status !== 'validado') return;
+                            if (refMonth !== mes && !String(res.fbDate).startsWith(mes) && res.fbDate < todayIso) return;
+                            const k = `${u.matricula}_${refMonth}`;
+                            if (dedupFbKey.has(k)) return;
+                            dedupFbKey.add(k);
+                            scheduledAll.push({ user: u, res, refMonth });
+                        });
                     });
 
                     const datesSet = new Set(scheduledAll.map(item => item.res.fbDate).filter(Boolean));
@@ -52801,12 +52926,21 @@ storage: {
                     }
                     const dtBr = targetDate ? targetDate.split('-').reverse().join('/') : '--/--/----';
 
-                    // Itens salvos nesse dia
+                    // Itens salvos nesse dia (evita duplicata do mesmo monitor no mesmo dia priorizando a competência ativa ou pendente)
                     const normCur = String(currentMat || '').trim().toUpperCase();
-                    const itemsForDay = scheduledAll
+                    const dayPickMap = new Map();
+                    scheduledAll
                         .filter(item => item.res.fbDate === targetDate)
-                        .map(item => ({
+                        .forEach(item => {
+                            const matKey = String(item.user.matricula || '').trim().toUpperCase();
+                            const prev = dayPickMap.get(matKey);
+                            if (!prev || item.refMonth === mes || (prev.res.status !== 'agendado' && item.res.status === 'agendado')) {
+                                dayPickMap.set(matKey, item);
+                            }
+                        });
+                    const itemsForDay = Array.from(dayPickMap.values()).map(item => ({
                             matricula: item.user.matricula,
+                            refMonth: item.refMonth || mes,
                             nome: app.utils.fixEncoding(item.user.nome),
                             foto: item.user.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(app.utils.fixEncoding(item.user.nome))}&background=cbd5e1&color=ffffff&size=128`,
                             time: item.res.fbTime || '23:59',
@@ -52925,7 +53059,7 @@ storage: {
                                                 ? '<div class="flex items-center text-slate-300 dark:text-slate-600 shrink-0"><i class="fa-solid fa-chevron-right text-xs"></i></div>'
                                                 : '';
                                             return `
-                                                <button type="button" ${!item.isPreview ? `onclick="app.ui?.selectUserForCadastros ? app.ui.selectUserForCadastros('${esc(item.matricula)}') : null"` : ''} class="w-40 shrink-0 text-left rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col gap-2 ${ringCls}" title="${esc(item.nome)} (#${esc(item.matricula)}) • ${esc(item.rawTime)}">
+                                                <button type="button" ${!item.isPreview ? `onclick="if('${esc(item.refMonth || '')}' && app.currentMonth !== '${esc(item.refMonth || '')}' && typeof app.changeMonth === 'function'){ app.currentMonth = '${esc(item.refMonth || '')}'; try{localStorage.setItem('soft_current_month','${esc(item.refMonth || '')}');}catch(e){} const gm=document.getElementById('global-month'); if(gm) gm.value='${esc(item.refMonth || '')}'; if(app.ui?.renderCadastrosUserList) app.ui.renderCadastrosUserList(); } if(app.ui?.selectUserForCadastros) app.ui.selectUserForCadastros('${esc(item.matricula)}');"` : ''} class="w-40 shrink-0 text-left rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col gap-2 ${ringCls}" title="${esc(item.nome)} (#${esc(item.matricula)}) • ${esc(item.rawTime)}${item.refMonth && item.refMonth !== mes ? ' • Ref. ' + item.refMonth.split('-').reverse().join('/') : ''}">
                                                     <div class="flex items-center justify-between gap-1">
                                                         <span class="px-1.5 py-0.5 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black tabular-nums">${idx + 1}º • ${esc(item.rawTime)}</span>
                                                         ${statusTag}
@@ -54306,7 +54440,9 @@ storage: {
                             if (!act) return;
                             const stAct = String(act.status || '').toLowerCase().trim();
                             if (stAct === 'aprovado' || stAct === 'aprovada') {
-                                const mesRef = act.month || (act.data ? act.data.substring(0, 7) : app.currentMonth);
+                                const mesRef = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                                    ? (app.calc.getActionMonthKey(act) || app.currentMonth)
+                                    : (act.dataAcao ? String(act.dataAcao).substring(0, 7) : (act.month || app.currentMonth));
                                 const userIdx = app.users.findIndex(x => x && String(x.matricula).trim() === String(act.matricula || '').trim());
                                 if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
                                     const u = app.users[userIdx];
@@ -57075,6 +57211,7 @@ Object.assign(app.ui, {
                         if (!this._biBancoHorasState) {
                             this._biBancoHorasState = {
                                 fileName: '',
+                                filesMeta: [],
                                 refDateLabel: '',
                                 uploadedAt: null,
                                 uploadedByNome: '',
@@ -57109,9 +57246,14 @@ Object.assign(app.ui, {
                         const cloud = app.biBancoHorasData;
                         if (!cloud || typeof cloud !== 'object') return;
                         const recs = this._normalizeBiRecordsList(cloud.rawRecords);
+                        const rawFilesMeta = this._normalizeBiRecordsList(cloud.filesMeta);
+                        const filesMeta = rawFilesMeta.length > 0
+                            ? rawFilesMeta
+                            : (cloud.fileName ? [{ fileName: cloud.fileName, refDateLabel: cloud.refDateLabel || '', count: recs.length, uploadedAt: cloud.uploadedAt || null }] : []);
                         if (!this._biBancoHorasState) {
                             this._biBancoHorasState = {
                                 fileName: '',
+                                filesMeta: [],
                                 refDateLabel: '',
                                 uploadedAt: null,
                                 uploadedByNome: '',
@@ -57131,6 +57273,7 @@ Object.assign(app.ui, {
                             };
                         }
                         this._biBancoHorasState.fileName = cloud.fileName || '';
+                        this._biBancoHorasState.filesMeta = filesMeta;
                         this._biBancoHorasState.refDateLabel = cloud.refDateLabel || '';
                         this._biBancoHorasState.uploadedAt = cloud.uploadedAt || null;
                         this._biBancoHorasState.uploadedByNome = cloud.uploadedByNome || '';
@@ -57502,71 +57645,190 @@ Object.assign(app.ui, {
                         st.charts = {};
                     },
 
-                    biBancoHorasHandleFile(inputOrFile) {
-                        const file = inputOrFile && inputOrFile.files ? inputOrFile.files[0] : inputOrFile;
-                        if (!file) return;
-
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            try {
-                                const text = e.target.result;
-                                const parsed = this.processBancoHorasCSV(text, file.name);
-                                const st = this._initBiBancoHorasState();
-                                const uploadedAt = Date.now();
-                                const uploadedByNome = (app.currentUser && app.currentUser.nome) || (app.isAdmin ? 'Administrador' : 'Dev');
-                                st.fileName = parsed.fileName;
-                                st.refDateLabel = parsed.refDateLabel;
-                                st.uploadedAt = uploadedAt;
-                                st.uploadedByNome = uploadedByNome;
-                                st.rawRecords = parsed.records;
-                                st.activeStatus = 'ALL';
-                                st.searchQuery = '';
-                                st.sortField = 'pendenteSec';
-                                st.sortDir = 'desc';
-
-                                app.biBancoHorasData = {
-                                    fileName: parsed.fileName,
-                                    refDateLabel: parsed.refDateLabel,
-                                    uploadedAt,
-                                    uploadedByNome,
-                                    uploadedByMat: (app.currentUser && app.currentUser.matricula) || 'admin',
-                                    rawRecords: parsed.records
-                                };
-
-                                const refreshView = () => {
-                                    if (document.getElementById('bi-banco-horas-dashboard')) {
-                                        this.renderTab('bi_banco_horas', true);
+                    _biReadFileAsCsvText(file) {
+                        return new Promise((resolve, reject) => {
+                            if (!file) return reject(new Error('Arquivo inválido.'));
+                            const nameLower = String(file.name || '').toLowerCase();
+                            const isExcel = nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls');
+                            const reader = new FileReader();
+                            reader.onerror = () => reject(new Error(`Falha ao ler o arquivo "${file.name}".`));
+                            reader.onload = (e) => {
+                                try {
+                                    if (isExcel) {
+                                        if (!window.XLSX) throw new Error('Leitor Excel (XLSX) não carregado.');
+                                        const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                                        const firstSheet = wb.Sheets[wb.SheetNames[0]];
+                                        const csvText = window.XLSX.utils.sheet_to_csv(firstSheet, { FS: ';' });
+                                        resolve(csvText);
+                                    } else {
+                                        resolve(String(e.target.result || ''));
                                     }
-                                };
-
-                                if (app.storage && typeof app.storage.saveBiBancoHoras === 'function') {
-                                    app.storage.saveBiBancoHoras().then(() => {
-                                        refreshView();
-                                        this.showAlert(
-                                            "CSV Processado e Salvo na Nuvem",
-                                            `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}". Cada usuário já pode visualizar seu saldo individual no Perfil.`,
-                                            "success"
-                                        );
-                                    });
-                                } else {
-                                    refreshView();
-                                    this.showAlert(
-                                        "CSV Processado",
-                                        `${parsed.records.length} colaboradores analisados a partir de "${parsed.fileName}".`,
-                                        "success"
-                                    );
+                                } catch (err) {
+                                    reject(err);
                                 }
-                            } catch (err) {
-                                console.error('Erro ao processar CSV de Banco de Horas:', err);
-                                this.showAlert("Erro na Leitura do CSV", err.message || String(err), "error");
-                            }
+                            };
+                            if (isExcel) reader.readAsArrayBuffer(file);
+                            else reader.readAsText(file, 'UTF-8');
+                        });
+                    },
+
+                    _biBuildFilesSummary(filesMeta) {
+                        const list = Array.isArray(filesMeta) ? filesMeta : [];
+                        if (list.length === 0) return { fileName: '', refDateLabel: '' };
+                        if (list.length === 1) {
+                            return { fileName: list[0].fileName || '', refDateLabel: list[0].refDateLabel || '' };
+                        }
+                        const names = list.map(f => f.fileName).filter(Boolean);
+                        const refs = [...new Set(list.map(f => f.refDateLabel).filter(Boolean))];
+                        return {
+                            fileName: `${list.length} arquivos (${names.join(', ')})`,
+                            refDateLabel: refs.length === 1 ? refs[0] : `${list.length} arquivos consolidados`
                         };
-                        reader.readAsText(file, 'UTF-8');
+                    },
+
+                    async biBancoHorasHandleFile(inputOrFile, append = false) {
+                        const files = (inputOrFile && inputOrFile.files && inputOrFile.files.length > 0)
+                            ? Array.from(inputOrFile.files)
+                            : (Array.isArray(inputOrFile) ? inputOrFile.filter(Boolean) : (inputOrFile ? [inputOrFile] : []));
+                        if (files.length === 0) return;
+
+                        try {
+                            const parsedList = [];
+                            for (const file of files) {
+                                const text = await this._biReadFileAsCsvText(file);
+                                const parsed = this.processBancoHorasCSV(text, file.name);
+                                parsed.records.forEach(r => { r.sourceFile = parsed.fileName; });
+                                parsedList.push(parsed);
+                            }
+
+                            const st = this._initBiBancoHorasState();
+                            const uploadedAt = Date.now();
+                            const uploadedByNome = (app.currentUser && app.currentUser.nome) || (app.isAdmin ? 'Administrador' : 'Dev');
+                            const incomingNames = new Set(parsedList.map(p => p.fileName));
+
+                            let baseRecords = append && Array.isArray(st.rawRecords)
+                                ? st.rawRecords.filter(r => !r.sourceFile || !incomingNames.has(r.sourceFile))
+                                : [];
+                            let baseMeta = append && Array.isArray(st.filesMeta)
+                                ? st.filesMeta.filter(m => m && m.fileName && !incomingNames.has(m.fileName))
+                                : [];
+
+                            if (append && baseMeta.length === 0 && st.fileName && baseRecords.length > 0) {
+                                baseMeta = [{ fileName: st.fileName, refDateLabel: st.refDateLabel || '', count: baseRecords.length, uploadedAt: st.uploadedAt || uploadedAt }];
+                            }
+
+                            const dedupMap = new Map();
+                            const mergedWithoutCracha = [];
+                            let dupCount = 0;
+
+                            const pushRec = (rec, countDup = false) => {
+                                const crClean = String(rec.cracha || '').trim().toUpperCase();
+                                const crKey = crClean.replace(/^0+/, '') || crClean;
+                                if (!crKey) {
+                                    mergedWithoutCracha.push(rec);
+                                    return;
+                                }
+                                if (countDup && dedupMap.has(crKey)) dupCount++;
+                                dedupMap.set(crKey, rec);
+                            };
+
+                            baseRecords.forEach(r => pushRec(r, false));
+                            parsedList.forEach(p => {
+                                p.records.forEach(r => pushRec(r, true));
+                                baseMeta.push({
+                                    fileName: p.fileName,
+                                    refDateLabel: p.refDateLabel,
+                                    count: p.records.length,
+                                    uploadedAt
+                                });
+                            });
+
+                            const finalRecords = [...dedupMap.values(), ...mergedWithoutCracha];
+                            const summary = this._biBuildFilesSummary(baseMeta);
+
+                            st.fileName = summary.fileName;
+                            st.filesMeta = baseMeta;
+                            st.refDateLabel = summary.refDateLabel;
+                            st.uploadedAt = uploadedAt;
+                            st.uploadedByNome = uploadedByNome;
+                            st.rawRecords = finalRecords;
+                            st.activeStatus = 'ALL';
+                            st.searchQuery = '';
+                            st.sortField = 'pendenteSec';
+                            st.sortDir = 'desc';
+
+                            app.biBancoHorasData = {
+                                fileName: summary.fileName,
+                                filesMeta: baseMeta,
+                                refDateLabel: summary.refDateLabel,
+                                uploadedAt,
+                                uploadedByNome,
+                                uploadedByMat: (app.currentUser && app.currentUser.matricula) || 'admin',
+                                rawRecords: finalRecords
+                            };
+
+                            const refreshView = () => {
+                                if (document.getElementById('bi-banco-horas-dashboard')) {
+                                    this.renderTab('bi_banco_horas', true);
+                                }
+                            };
+
+                            const dupNote = dupCount > 0 ? `<br><span class="text-xs text-slate-500">(${dupCount} matrícula(s) repetida(s) foram atualizadas pelo arquivo mais recente.)</span>` : '';
+                            const msgTxt = `${finalRecords.length} colaborador(es) consolidado(s) a partir de ${baseMeta.length} arquivo(s).${dupNote}`;
+
+                            if (app.storage && typeof app.storage.saveBiBancoHoras === 'function') {
+                                app.storage.saveBiBancoHoras().then(() => {
+                                    refreshView();
+                                    this.showAlert("Arquivos Processados e Salvos na Nuvem", msgTxt, "success");
+                                });
+                            } else {
+                                refreshView();
+                                this.showAlert("Arquivos Processados", msgTxt, "success");
+                            }
+                        } catch (err) {
+                            console.error('Erro ao processar arquivos de Banco de Horas:', err);
+                            this.showAlert("Erro na Leitura dos Arquivos", err.message || String(err), "error");
+                        }
+                    },
+
+                    biBancoHorasRemoveFile(fileName) {
+                        const st = this._initBiBancoHorasState();
+                        const target = String(fileName || '');
+                        if (!target) return;
+                        const remainingMeta = (st.filesMeta || []).filter(m => m && m.fileName !== target);
+                        const remainingRecs = (st.rawRecords || []).filter(r => r && r.sourceFile !== target);
+
+                        if (remainingMeta.length === 0 || remainingRecs.length === 0) {
+                            return this.biBancoHorasClearCloud();
+                        }
+
+                        const summary = this._biBuildFilesSummary(remainingMeta);
+                        st.fileName = summary.fileName;
+                        st.filesMeta = remainingMeta;
+                        st.refDateLabel = summary.refDateLabel;
+                        st.rawRecords = remainingRecs;
+
+                        app.biBancoHorasData = {
+                            ...(app.biBancoHorasData || {}),
+                            fileName: summary.fileName,
+                            filesMeta: remainingMeta,
+                            refDateLabel: summary.refDateLabel,
+                            rawRecords: remainingRecs
+                        };
+
+                        if (app.storage && typeof app.storage.saveBiBancoHoras === 'function') {
+                            app.storage.saveBiBancoHoras().then(() => {
+                                this.renderTab('bi_banco_horas', true);
+                            });
+                        } else {
+                            this.renderTab('bi_banco_horas', true);
+                        }
                     },
 
                     biBancoHorasClearCloud() {
                         const st = this._initBiBancoHorasState();
                         st.fileName = '';
+                        st.filesMeta = [];
                         st.refDateLabel = '';
                         st.uploadedAt = null;
                         st.uploadedByNome = '';
@@ -58244,12 +58506,24 @@ Object.assign(app.ui, {
                                             </div>
                                             <h2 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-white tracking-tight">BI de Banco de Horas</h2>
                                             <p class="text-xs text-slate-500 dark:text-slate-400">
-                                                ${hasData ? `Snapshot na nuvem: <strong>${esc(st.fileName)}</strong> • Referência: ${esc(st.refDateLabel)}${st.uploadedAt ? ` • Enviado em ${new Date(st.uploadedAt).toLocaleString('pt-BR')}${st.uploadedByNome ? ` por ${esc(st.uploadedByNome)}` : ''}` : ''}` : 'Suba o arquivo CSV de Banco de Horas (Crachá, Funcionário, Crédito, Débito, Saldo, Compensadas, Pendente). O arquivo fica salvo na nuvem.'}
+                                                ${hasData ? `Snapshot na nuvem: <strong>${esc(st.fileName)}</strong> • Referência: ${esc(st.refDateLabel)}${st.uploadedAt ? ` • Enviado em ${new Date(st.uploadedAt).toLocaleString('pt-BR')}${st.uploadedByNome ? ` por ${esc(st.uploadedByNome)}` : ''}` : ''}` : 'Suba um ou mais arquivos (CSV ou XLSX) de Banco de Horas (Crachá, Funcionário, Crédito, Débito, Saldo, Compensadas, Pendente). Os dados ficam consolidados e salvos na nuvem.'}
                                             </p>
+                                            ${hasData && Array.isArray(st.filesMeta) && st.filesMeta.length > 0 ? `
+                                                <div class="flex flex-wrap items-center gap-1.5 mt-2">
+                                                    ${st.filesMeta.map(fm => `
+                                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50/90 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-200 border border-indigo-200/80 dark:border-indigo-800 text-[11px] font-bold">
+                                                            <i class="fa-solid fa-file-csv text-indigo-500 text-[10px]"></i>
+                                                            <span>${esc(fm.fileName)}</span>
+                                                            <span class="text-[10px] opacity-75 tabular-nums">(${fm.count || 0})</span>
+                                                            ${st.filesMeta.length > 1 ? `<button type="button" onclick='app.ui.biBancoHorasRemoveFile(${JSON.stringify(String(fm.fileName || ""))})' class="ml-0.5 text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 cursor-pointer" title="Remover este arquivo da consolidação"><i class="fa-solid fa-xmark text-[10px]"></i></button>` : ''}
+                                                        </span>
+                                                    `).join('')}
+                                                </div>
+                                            ` : ''}
                                         </div>
                                     </div>
 
-                                    <div class="flex flex-wrap items-center gap-3">
+                                    <div class="flex flex-wrap items-center gap-2.5">
                                         ${hasData ? `
                                             <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
                                                 <input type="checkbox" ${st.hideZeroMovement ? 'checked' : ''} onchange="app.ui.biBancoHorasSetFilter('hideZeroMovement', this.checked)" class="w-4 h-4 accent-indigo-600 cursor-pointer">
@@ -58258,11 +58532,16 @@ Object.assign(app.ui, {
                                             <button type="button" onclick="app.ui.showConfirm('Limpar Banco de Horas na Nuvem', 'Deseja remover o snapshot atual de Banco de Horas da nuvem?', 'app.ui.biBancoHorasClearCloud()', true)" class="px-3.5 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-black transition flex items-center gap-1.5 cursor-pointer" title="Remover snapshot salvo na nuvem">
                                                 <i class="fa-solid fa-trash-can"></i> Limpar Nuvem
                                             </button>
+                                            <label class="cursor-pointer px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md transition flex items-center gap-2 active:scale-95" title="Adicionar e consolidar um ou mais arquivos junto com os atuais">
+                                                <i class="fa-solid fa-file-circle-plus"></i>
+                                                <span>Incluir Arquivo(s)</span>
+                                                <input type="file" multiple accept=".csv,.txt,.xlsx,.xls" onclick="this.value = null" onchange="app.ui.biBancoHorasHandleFile(this, true)" class="hidden">
+                                            </label>
                                         ` : ''}
-                                        <label class="cursor-pointer px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-2 active:scale-95">
+                                        <label class="cursor-pointer px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition flex items-center gap-2 active:scale-95" title="Selecionar um ou mais arquivos (substitui o snapshot atual)">
                                             <i class="fa-solid fa-file-arrow-up"></i>
-                                            <span>${hasData ? 'Subir Novo CSV' : 'Subir Arquivo CSV'}</span>
-                                            <input type="file" accept=".csv,.txt" onchange="app.ui.biBancoHorasHandleFile(this)" class="hidden">
+                                            <span>${hasData ? 'Substituir por Novo(s)' : 'Subir Arquivo(s) CSV/XLSX'}</span>
+                                            <input type="file" multiple accept=".csv,.txt,.xlsx,.xls" onclick="this.value = null" onchange="app.ui.biBancoHorasHandleFile(this, false)" class="hidden">
                                         </label>
                                     </div>
                                 </div>
@@ -58272,13 +58551,13 @@ Object.assign(app.ui, {
                                         <div class="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl">
                                             <i class="fa-solid fa-file-csv"></i>
                                         </div>
-                                        <h3 class="text-base font-black text-slate-800 dark:text-white">Aguardando Importação do Arquivo CSV</h3>
+                                        <h3 class="text-base font-black text-slate-800 dark:text-white">Aguardando Importação de Um ou Mais Arquivos</h3>
                                         <p class="text-xs text-slate-500 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
-                                            O motor analítico lerá exclusivamente as 7 colunas do relatório de ponto (<strong>Crachá</strong>, <strong>Funcionário</strong>, <strong>Total Horas Crédito</strong>, <strong>Total Horas Débito</strong>, <strong>Total Saldo</strong>, <strong>Total Horas Compensadas</strong> e <strong>Total Saldo Pendente</strong>), calculando passivo, débito, Pareto 80/20, dispersão, matriz de transição, outliers (&gt;2&sigma;) e divergências de ponto automaticamente.
+                                            Selecione <strong>um ou vários arquivos</strong> (CSV ou XLSX) de uma só vez. O motor consolidará automaticamente as 7 colunas do relatório de ponto (<strong>Crachá</strong>, <strong>Funcionário</strong>, <strong>Total Horas Crédito</strong>, <strong>Total Horas Débito</strong>, <strong>Total Saldo</strong>, <strong>Total Horas Compensadas</strong> e <strong>Total Saldo Pendente</strong>) em um único painel.
                                         </p>
                                         <label class="inline-flex cursor-pointer px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-md transition items-center gap-2">
-                                            <i class="fa-solid fa-upload"></i> Selecionar Arquivo CSV do Banco de Horas
-                                            <input type="file" accept=".csv,.txt" onchange="app.ui.biBancoHorasHandleFile(this)" class="hidden">
+                                            <i class="fa-solid fa-upload"></i> Selecionar Um ou Mais Arquivos
+                                            <input type="file" multiple accept=".csv,.txt,.xlsx,.xls" onclick="this.value = null" onchange="app.ui.biBancoHorasHandleFile(this, false)" class="hidden">
                                         </label>
                                     </div>
                                 ` : `
@@ -72275,11 +72554,20 @@ app.mintZenTeste = {
                     display: none !important;
                 }
                 body.portal-rail-test-mode #view-app > header {
-                    margin-left: 82px !important;
+                    margin: 12px 16px 0 90px !important;
+                    top: 12px !important;
+                    width: auto !important;
+                    border-radius: 20px !important;
+                    border: 1px solid rgba(255, 255, 255, 0.72) !important;
+                    box-shadow: 0 10px 28px -12px rgba(15, 23, 42, 0.14) !important;
                     transition: margin-left 0.25s ease;
                 }
+                html.dark body.portal-rail-test-mode #view-app > header {
+                    border-color: rgba(51, 65, 85, 0.75) !important;
+                    box-shadow: 0 12px 30px -12px rgba(2, 6, 23, 0.5) !important;
+                }
                 body.portal-rail-test-mode #main-content-shell {
-                    padding-left: 96px !important;
+                    padding-left: 92px !important;
                     transition: padding-left 0.25s ease;
                 }
             }
@@ -72823,7 +73111,64 @@ app.mintZenTeste = {
         `;
     },
 
-    refreshRailUtilities() {
+    _getRailUserKey() {
+        return app.isAdmin ? 'ADM' : String(app.currentUser?.matricula || 'default').trim();
+    },
+
+    _normRailTabId(id) {
+        if (!id) return '';
+        if (id === 'gestao_equipe' || id === 'operacoes') return 'hierarquia';
+        if (id === 'treinamento_capacitacao' || id === 'csat_nps') return 'treinamentos';
+        if (id === 'minhas_atas') return 'ata_reuniao';
+        return id;
+    },
+
+    _loadRailSeenMap() {
+        try {
+            const raw = localStorage.getItem('soft_rail_seen_tabs_' + this._getRailUserKey());
+            const parsed = raw ? JSON.parse(raw) : {};
+            return (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch (e) { return {}; }
+    },
+
+    _saveRailSeenMap(map) {
+        try {
+            localStorage.setItem('soft_rail_seen_tabs_' + this._getRailUserKey(), JSON.stringify(map || {}));
+        } catch (e) {}
+    },
+
+    _loadRailBellSeen() {
+        try {
+            const raw = localStorage.getItem('soft_rail_seen_bell_' + this._getRailUserKey());
+            const parsed = raw ? JSON.parse(raw) : null;
+            return (parsed && typeof parsed === 'object') ? parsed : null;
+        } catch (e) { return null; }
+    },
+
+    _saveRailBellSeen(obj) {
+        try {
+            const key = 'soft_rail_seen_bell_' + this._getRailUserKey();
+            if (!obj) localStorage.removeItem(key);
+            else localStorage.setItem(key, JSON.stringify(obj));
+        } catch (e) {}
+    },
+
+    markTabAsSeen(tabId) {
+        const normId = this._normRailTabId(tabId);
+        if (!normId) return;
+        const rawMap = this._getRawPendingTabsMap();
+        const entry = rawMap[normId] || rawMap[tabId];
+        if (!entry) return;
+        const seen = this._loadRailSeenMap();
+        seen[normId] = {
+            count: entry.count || 0,
+            keys: Array.isArray(entry.itemKeys) ? entry.itemKeys : null,
+            ts: Date.now()
+        };
+        this._saveRailSeenMap(seen);
+    },
+
+    refreshRailUtilities(markBellViewed = false) {
         if (!this.isGlobalThemeEnabled()) return;
         const notifBox = document.getElementById('sl-rail-notif-flyout-body');
         if (notifBox) notifBox.innerHTML = this._renderNotificationsFlyoutContent();
@@ -72833,12 +73178,32 @@ app.mintZenTeste = {
         const badge = document.getElementById('sl-rail-bell-badge');
         if (badge) {
             const list = (app.notifications && typeof app.notifications.getRelevant === 'function') ? app.notifications.getRelevant() : [];
-            const unread = list.filter(n => !n.read).length;
+            const unreadIds = list.filter(n => !n.read).map(n => String(n.id || n.timestamp || ''));
             const faltasPill = document.getElementById('header-faltas-int-pill');
             const faltasVis = faltasPill && !faltasPill.classList.contains('hidden');
             const faltasCnt = faltasVis ? (parseInt(document.getElementById('header-faltas-int-text')?.textContent || '0', 10) || 0) : 0;
-            const totalAlert = unread + faltasCnt;
+            const totalAlert = unreadIds.length + faltasCnt;
+
+            if (totalAlert === 0) {
+                this._saveRailBellSeen(null);
+            } else if (markBellViewed === true) {
+                this._saveRailBellSeen({ notifIds: unreadIds, faltasCnt, ts: Date.now() });
+            }
+
+            const seenBell = this._loadRailBellSeen();
+            let hasUnseenBell = false;
             if (totalAlert > 0) {
+                if (!seenBell) {
+                    hasUnseenBell = true;
+                } else {
+                    const seenNotifSet = new Set(Array.isArray(seenBell.notifIds) ? seenBell.notifIds : []);
+                    const hasNewNotif = unreadIds.some(id => !seenNotifSet.has(id));
+                    const hasMoreFaltas = faltasCnt > (seenBell.faltasCnt || 0);
+                    hasUnseenBell = hasNewNotif || hasMoreFaltas;
+                }
+            }
+
+            if (hasUnseenBell) {
                 badge.title = `${totalAlert} alerta(s) ou notificação(ões)`;
                 badge.classList.remove('hidden');
             } else {
@@ -72848,49 +73213,114 @@ app.mintZenTeste = {
         this.refreshIcons();
     },
 
-    _getPendingTabsMap() {
+    _getRawPendingTabsMap() {
         const pending = {};
         try {
             const faltasPill = document.getElementById('header-faltas-int-pill');
             const faltasVis = faltasPill && !faltasPill.classList.contains('hidden');
             const faltasCnt = faltasVis ? (parseInt(document.getElementById('header-faltas-int-text')?.textContent || '0', 10) || 0) : 0;
-            if (faltasCnt > 0) pending['faltas_integracao'] = { count: faltasCnt, label: `${faltasCnt} pend.` };
+            if (faltasCnt > 0) pending['faltas_integracao'] = { count: faltasCnt, label: `${faltasCnt} pend.`, itemKeys: null };
 
             const indPill = document.getElementById('header-ind-alert-pill');
             if (indPill && !indPill.classList.contains('hidden')) {
-                pending['meu_painel'] = { count: 1, label: 'Fechamento' };
+                const indTxt = String(document.getElementById('header-ind-alert-text')?.textContent || 'Fechamento').trim();
+                pending['meu_painel'] = { count: 1, label: 'Fechamento', itemKeys: [indTxt] };
             }
 
             if (app.hasAdminAccess && app.hasAdminAccess('validar_acoes')) {
                 const m = app.currentMonth || new Date().toISOString().slice(0, 7);
-                const pendActs = Object.values(app.actionsList || {}).filter(a => a && a.status === 'pendente' && (a.month || String(a.dataAcao || '').slice(0, 7)) === m).length;
-                if (pendActs > 0) pending['validar_acoes'] = { count: pendActs, label: `${pendActs} pend.` };
+                const pendList = Object.values(app.actionsList || {}).filter(a => {
+                    if (!a || a.status !== 'pendente') return false;
+                    const actM = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(a)
+                        : (String(a.dataAcao || '').slice(0, 7) || a.month || '');
+                    return actM === m;
+                });
+                if (pendList.length > 0) {
+                    const keys = pendList.map((a, idx) => String(a.id || `${a.matricula || ''}_${a.dataAcao || idx}`));
+                    pending['validar_acoes'] = { count: pendList.length, label: `${pendList.length} pend.`, itemKeys: keys };
+                }
             }
 
             if (!app.isAdmin && app.currentUser) {
                 const uMat = String(app.currentUser.matricula || '').trim();
-                const devActs = Object.values(app.actionsList || {}).filter(a => a && a.status === 'reprovado' && String(a.matricula || '').trim() === uMat).length;
-                if (devActs > 0) pending['registrar_acao'] = { count: devActs, label: `${devActs} corrigir` };
+                const devList = Object.values(app.actionsList || {}).filter(a => a && a.status === 'reprovado' && String(a.matricula || '').trim() === uMat);
+                if (devList.length > 0) {
+                    const keys = devList.map((a, idx) => String(a.id || `${a.dataAcao || idx}`));
+                    pending['registrar_acao'] = { count: devList.length, label: `${devList.length} corrigir`, itemKeys: keys };
+                }
             }
 
             let gtdCount = 0;
+            const gtdKeys = [];
             const recBtn = document.getElementById('header-rec-reminders-btn');
             if (recBtn && !recBtn.classList.contains('hidden')) {
-                gtdCount += parseInt(document.getElementById('rec-reminders-badge')?.textContent || '0', 10) || 0;
+                const recCnt = parseInt(document.getElementById('rec-reminders-badge')?.textContent || '0', 10) || 0;
+                if (recCnt > 0) {
+                    gtdCount += recCnt;
+                    gtdKeys.push('rec:' + recCnt);
+                }
             }
             if (app.gtd && typeof app.gtd.loadNotes === 'function') {
                 const todayIso = new Date().toISOString().slice(0, 10);
-                const overdue = app.gtd.loadNotes().filter(n => n && n.gtdStatus !== 'concluida' && n.dueDate && String(n.dueDate) < todayIso).length;
-                gtdCount += overdue;
+                const overdueList = app.gtd.loadNotes().filter(n => n && n.gtdStatus !== 'concluida' && n.dueDate && String(n.dueDate) < todayIso);
+                overdueList.forEach((n, idx) => gtdKeys.push('note:' + String(n.id || `${n.title || ''}_${n.dueDate || idx}`)));
+                gtdCount += overdueList.length;
             }
-            if (gtdCount > 0) pending['produtividade_gtd'] = { count: gtdCount, label: `${gtdCount} alerta${gtdCount > 1 ? 's' : ''}` };
+            if (gtdCount > 0) pending['produtividade_gtd'] = { count: gtdCount, label: `${gtdCount} alerta${gtdCount > 1 ? 's' : ''}`, itemKeys: gtdKeys };
 
             if (app.notifications && typeof app.notifications.getRelevant === 'function') {
-                const unreadApres = app.notifications.getRelevant().filter(n => !n.read && /apresenta/i.test(String(n.title || ''))).length;
-                if (unreadApres > 0) pending['analise_csv_dinamico'] = { count: unreadApres, label: `${unreadApres} nova${unreadApres > 1 ? 's' : ''}` };
+                const unreadApresList = app.notifications.getRelevant().filter(n => !n.read && /apresenta/i.test(String(n.title || '')));
+                if (unreadApresList.length > 0) {
+                    const keys = unreadApresList.map((n, idx) => String(n.id || n.timestamp || idx));
+                    pending['analise_csv_dinamico'] = { count: unreadApresList.length, label: `${unreadApresList.length} nova${unreadApresList.length > 1 ? 's' : ''}`, itemKeys: keys };
+                }
             }
         } catch (e) {}
         return pending;
+    },
+
+    _getPendingTabsMap() {
+        const rawMap = this._getRawPendingTabsMap();
+        const seen = this._loadRailSeenMap();
+        const currentNorm = this._normRailTabId(app.currentTab);
+        const visible = {};
+        let seenDirty = false;
+
+        Object.keys(seen).forEach(k => {
+            if (!rawMap[k]) {
+                delete seen[k];
+                seenDirty = true;
+            }
+        });
+
+        Object.entries(rawMap).forEach(([tabId, entry]) => {
+            const normId = this._normRailTabId(tabId);
+            if (currentNorm && currentNorm === normId) {
+                seen[normId] = {
+                    count: entry.count || 0,
+                    keys: Array.isArray(entry.itemKeys) ? entry.itemKeys : null,
+                    ts: Date.now()
+                };
+                seenDirty = true;
+                return;
+            }
+
+            const seenEntry = seen[normId];
+            if (seenEntry) {
+                if (Array.isArray(entry.itemKeys) && Array.isArray(seenEntry.keys)) {
+                    const seenSet = new Set(seenEntry.keys);
+                    const hasUnseenItem = entry.itemKeys.some(k => !seenSet.has(k));
+                    if (!hasUnseenItem) return;
+                } else if ((entry.count || 0) <= (seenEntry.count || 0)) {
+                    return;
+                }
+            }
+            visible[tabId] = entry;
+        });
+
+        if (seenDirty) this._saveRailSeenMap(seen);
+        return visible;
     },
 
     syncGlobalPortalTheme(menusArg = null) {
@@ -73019,7 +73449,7 @@ app.mintZenTeste = {
                 </button>
 
                 <!-- Alertas, Pendências e Notificações Consolidados -->
-                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities()">
+                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities(true)" onclick="app.mintZenTeste.refreshRailUtilities(true)">
                     <button type="button" class="relative w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
                         <i data-lucide="bell" class="w-[18px] h-[18px]"></i>
                         <span id="sl-rail-bell-badge" class="hidden absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#0f172a] animate-pulse"></span>
@@ -73032,7 +73462,7 @@ app.mintZenTeste = {
                 </div>
 
                 <!-- Engrenagem de Configurações (Mês, Nuvem, Tema, Cores, Suporte, Conta/Sair e Voltar) -->
-                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities()">
+                <div class="sl-rail-group relative w-full flex justify-center" onmouseenter="app.mintZenTeste.refreshRailUtilities(false)">
                     <button type="button" class="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
                         <i data-lucide="settings" class="w-[18px] h-[18px]"></i>
                     </button>
@@ -73052,7 +73482,7 @@ app.mintZenTeste = {
             let subBar = existingSubBar || document.createElement('div');
             subBar.id = 'sl-active-subnav-bar';
             if (activeGroup && activeGroup.items.length > 1) {
-                subBar.className = 'hidden md:flex items-center gap-1.5 max-w-[1920px] w-[98%] mx-auto px-2 sm:px-4 lg:px-6 py-2 overflow-x-auto no-scrollbar';
+                subBar.className = 'hidden md:flex items-center gap-1.5 w-full px-3.5 py-2 overflow-x-auto no-scrollbar';
                 subBar.innerHTML = `
                     <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 shrink-0">${activeGroup.group}:</span>
                     ${activeGroup.items.map(sub => {
@@ -73181,7 +73611,12 @@ app.mintZenTeste = {
 
         const month = app.currentMonth || new Date().toISOString().slice(0, 7);
         const actionsArr = Object.values(app.actionsList || {}).filter(Boolean);
-        const monthActions = actionsArr.filter(a => (a.month || String(a.dataAcao || '').slice(0, 7)) === month);
+        const monthActions = actionsArr.filter(a => {
+            const actM = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                ? app.calc.getActionMonthKey(a)
+                : (String(a.dataAcao || '').slice(0, 7) || a.month || '');
+            return actM === month;
+        });
         const diariosArr = Object.values(app.diarioBordoList || {}).filter(Boolean);
         const monthDiarios = diariosArr.filter(d => String(d.data || '').slice(0, 7) === month);
         const gtdTasks = Array.isArray(app.gtdTasks) ? app.gtdTasks : [];
