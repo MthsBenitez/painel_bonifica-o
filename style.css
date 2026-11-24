@@ -127,7 +127,7 @@
         /* ========================================================
            CORREÇÃO GLOBAL: FORMULÁRIOS NO MODO NOTURNO
            ======================================================== */
-        .dark input:not([type="checkbox"]):not([type="radio"]), 
+        .dark input:not([type="checkbox"]):not([type="radio"]):not(.home-hero-search-input), 
         .dark select, 
         .dark textarea {
             background-color: #1e293b !important; /* bg-slate-800 */
@@ -136,7 +136,7 @@
             color-scheme: dark !important; /* Força ícones de calendário/relógio a ficarem claros */
         }
         
-        .dark input::placeholder, 
+        .dark input:not(.home-hero-search-input)::placeholder, 
         .dark textarea::placeholder {
             color: #94a3b8 !important; /* text-slate-400 */
         }
@@ -702,7 +702,7 @@ input, textarea, select {
     caret-color: #60a5fa;
 }
 
-input:focus, textarea:focus, select:focus {
+input:not(.home-hero-search-input):focus, textarea:focus, select:focus {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
 }
 

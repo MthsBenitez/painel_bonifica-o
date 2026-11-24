@@ -648,7 +648,12 @@ storage: {
                             if (app.currentUser && !app.isAdmin) {
                                 const mNorm = this._normalizeMat(app.currentUser.matricula);
                                 const freshUser = (app.users || []).find(u => this._normalizeMat(u.matricula) === mNorm);
-                                if (freshUser) app.currentUser = freshUser;
+                                if (freshUser) {
+                                    app.currentUser = freshUser;
+                                    if (app.ui && typeof app.ui.applyGlobalHomeTheme === 'function') {
+                                        app.ui.applyGlobalHomeTheme();
+                                    }
+                                }
                             }
                             if (typeof app.syncOperacoesFromSetorial === 'function') app.syncOperacoesFromSetorial();
                             if (app.faltasIntegracao && typeof app.faltasIntegracao.updateHeaderPill === 'function') app.faltasIntegracao.updateHeaderPill();
@@ -1111,9 +1116,14 @@ storage: {
                     const viewApp = document.getElementById('view-app');
                     if (!viewApp || viewApp.classList.contains('hidden')) return;
                     if (!app.currentUser && !app.isAdmin) return;
+                    if (app.pdcaTeste && app.pdcaTeste.modalState) return;
+                    if (app.diarioBordo && (app.diarioBordo.diarioEmEdicao || app.diarioBordo.turmaEmEdicao)) return;
+                    const ignoredFixedIds = new Set(['view-login', 'view-app', 'session-wait-screen', 'error-boundary-screen', 'portal-global-theme-bg', 'legendary-overlay', 'mz-global-icon-rail']);
+                    const hasOpenModal = Array.from(document.querySelectorAll('.fixed.inset-0:not(.hidden)')).some(el => !ignoredFixedIds.has(el.id) && window.getComputedStyle(el).display !== 'none');
+                    if (hasOpenModal) return;
                     const gm = document.getElementById('global-modal');
                     if (gm && !gm.classList.contains('hidden')) return;
-                    if (app.diarioBordo && (app.diarioBordo.diarioEmEdicao || app.diarioBordo.turmaEmEdicao)) return;
+                    if (app.ui && Date.now() - Number(app.ui._lastPasteOrShortcutTs || 0) < 3000) return;
                     const activeEl = document.activeElement;
                     if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) return;
 
@@ -1130,8 +1140,20 @@ storage: {
                         app.ui._refreshSpanOrHierarquiaInPlace();
                         return;
                     }
+                    if (tab === 'home') {
+                        if (app.notifications && typeof app.notifications.buildIndicatorsAlertCardHtml === 'function') {
+                            const slot = document.getElementById('home-ind-alert-slot');
+                            if (slot) {
+                                const nextHtml = app.notifications.buildIndicatorsAlertCardHtml() || '';
+                                if (slot.innerHTML !== nextHtml) slot.innerHTML = nextHtml;
+                            }
+                        }
+                        if (Array.isArray(loadedKeys) && loadedKeys.includes('events') && app.ui && typeof app.ui._renderHomeCalendarWidget === 'function') {
+                            app.ui._renderHomeCalendarWidget();
+                        }
+                        return;
+                    }
                     const tabDependsOn = {
-                        'home': ['events', 'diario_bordo', 'visaoGeralData', 'monitorias', 'notifications'],
                         'diario_bordo': ['diario_bordo', 'turmas_treinamento'],
                         'faltas_integracao': ['turmas_treinamento'],
                         'calendario': ['events'],
@@ -1298,9 +1320,9 @@ storage: {
                             } catch(e) {}
                             document.getElementById('view-login').classList.add('hidden');
                             document.getElementById('view-app').classList.remove('hidden');
-                    if (app.mintZenTeste && typeof app.mintZenTeste.onPortalLogin === 'function') {
-                        app.mintZenTeste.onPortalLogin();
-                    }
+                            if (app.mintZenTeste && typeof app.mintZenTeste.onPortalLogin === 'function') {
+                                app.mintZenTeste.onPortalLogin();
+                            }
                             const btnFbDev = document.getElementById('btn-firebase-dev');
                             if (btnFbDev) btnFbDev.classList.add('hidden');
                             if (app.storage && typeof app.storage.iniciarHeartbeatPresenca === 'function') {
@@ -1566,7 +1588,7 @@ storage: {
                     });
                     return String(maxIdx + 1);
                 },
-                _mergeUserRecord(existing, localU, mKey) {
+                _mergeUserRecord(existing, localU, mKey, opts = {}) {
                     const merged = Object.assign({}, existing, localU);
                     // Proteção de Cargo/Grupo: preserva cargo mais recente (roleUpdatedAt) e nunca deixa sync automático rebaixar para Operador
                     const exTipo = String(existing?.tipoAcesso || '').trim();
@@ -1577,12 +1599,15 @@ storage: {
                     const locExplicitRoleTs = Number(localU?.roleUpdatedAt || 0);
                     const exIsOp = !exTipo || exTipo === 'Operador';
                     const locIsOp = !locTipo || locTipo === 'Operador';
+                    const exLocked = existing?.ignorarSyncTurma === true;
+                    const locLocked = localU?.ignorarSyncTurma === true;
+                    const bulkSafe = !!(opts && opts.bulkSave);
 
                     let winnerRole = merged;
-                    if (!exIsOp && locIsOp && !(locExplicitRoleTs > exRoleTs)) {
+                    if (!exIsOp && locIsOp && (bulkSafe || !(locExplicitRoleTs > exRoleTs))) {
                         // Servidor já tem cargo promovido (ex: Jovem Aprendiz) — bloqueia downgrade automático vindo de outra sessão/turma
                         winnerRole = existing;
-                    } else if (exIsOp && !locIsOp && !(exExplicitRoleTs > locRoleTs)) {
+                    } else if (exIsOp && !locIsOp && (bulkSafe || !(exExplicitRoleTs > locRoleTs))) {
                         // Local já tem cargo promovido — bloqueia downgrade automático vindo de registro antigo de turma
                         winnerRole = localU;
                     } else if (exRoleTs > locRoleTs && exTipo) {
@@ -1605,9 +1630,14 @@ storage: {
                     if (merged.tipoAcesso && merged.tipoAcesso !== 'Operador') {
                         merged.turmaId = null;
                         merged.turmaNumero = null;
+                        merged.turmaTreinadorMatricula = null;
+                        merged.turmaTreinadorNome = null;
+                        merged.ignorarSyncTurma = true;
                         if (String(merged.cargo || '').toLowerCase().includes('operador')) {
                             merged.cargo = null;
                         }
+                    } else if ((exLocked || locLocked) && bulkSafe) {
+                        merged.ignorarSyncTurma = true;
                     }
                     const exFotoTs = Number(existing?.fotoUpdatedAt || 0);
                     const locFotoTs = Number(localU?.fotoUpdatedAt || 0);
@@ -1696,7 +1726,7 @@ storage: {
                                     if (mKey && !removedSet.has(mKey)) {
                                         const prev = userMap.get(mKey);
                                         if (prev) {
-                                            userMap.set(mKey, this._mergeUserRecord(prev, u, mKey));
+                                            userMap.set(mKey, this._mergeUserRecord(prev, u, mKey, { bulkSave: true }));
                                         } else {
                                             userMap.set(mKey, Object.assign({}, u));
                                         }
@@ -1710,7 +1740,7 @@ storage: {
                                     if (!mKey || removedSet.has(mKey)) return;
                                     const existing = userMap.get(mKey);
                                     if (existing) {
-                                        userMap.set(mKey, this._mergeUserRecord(existing, u, mKey));
+                                        userMap.set(mKey, this._mergeUserRecord(existing, u, mKey, { bulkSave: true }));
                                     } else {
                                         userMap.set(mKey, Object.assign({}, u));
                                     }
@@ -1757,7 +1787,7 @@ storage: {
                     }
 
                     const isAuthPayload = payload.senha !== undefined || payload.primeiroAcesso !== undefined;
-                    const isStructurePayload = payload.tipoAcesso !== undefined || payload.cargo !== undefined || payload.subclasse !== undefined || payload.abasLiberadas !== undefined || payload.gestorMatricula !== undefined || payload.turmaId !== undefined || payload.turmaNumero !== undefined || payload.roleUpdatedAt !== undefined || payload.operacoes !== undefined || payload.nome !== undefined;
+                    const isStructurePayload = payload.tipoAcesso !== undefined || payload.cargo !== undefined || payload.subclasse !== undefined || payload.abasLiberadas !== undefined || payload.gestorMatricula !== undefined || payload.turmaId !== undefined || payload.turmaNumero !== undefined || payload.turmaTreinadorMatricula !== undefined || payload.turmaTreinadorNome !== undefined || payload.ignorarSyncTurma !== undefined || payload.roleUpdatedAt !== undefined || payload.operacoes !== undefined || payload.nome !== undefined;
                     const isProfileSyncPayload = isAuthPayload || isStructurePayload || payload.foto !== undefined || payload.fotoUpdatedAt !== undefined;
                     let idx = -1;
                     (app.users || []).forEach((u, i) => {
@@ -2482,8 +2512,11 @@ storage: {
                 if (tabId === 'bi_banco_horas' || tabId === 'mint_zen_teste') {
                     return this.isAdmin || tipo === 'Dev';
                 }
-                if (tabId === 'pdca_teste' || tabId === 'faltas_integracao') {
+                if (tabId === 'pdca_teste') {
                     return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
+                }
+                if (tabId === 'faltas_integracao') {
+                    return this.isAdmin || ['Dev', 'Gestor', 'Gerente', 'R&S'].includes(String(tipo || '').trim());
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
                 if (tipo === 'Jovem Aprendiz' && ['hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'diario_bordo', 'qualidade_treinamento', 'treinamentos', 'analise_csv_dinamico', 'apresentacao_dental_uni', 'dashboard_adm', 'analitico_visao_geral', 'gestao_atas', 'ata_reuniao', 'cadastros', 'import_monitorias', 'validar_acoes', 'gestao_impressoes', 'impressoes', 'calendario', 'produtividade_gtd'].includes(tabId)) return true;
@@ -3371,6 +3404,9 @@ storage: {
 
                 const gmEl = document.getElementById('global-month');
                 if (gmEl && gmEl.value !== newMonthStr) gmEl.value = newMonthStr;
+                if (this.mintZenTeste && typeof this.mintZenTeste.refreshRailMonthDisplay === 'function') {
+                    this.mintZenTeste.refreshRailMonthDisplay();
+                }
 
                 if (this.currentTab === 'controle_estoque') { this.ui.renderTab('controle_estoque', true); }
                 
@@ -5145,6 +5181,24 @@ storage: {
                         }
                         return false;
                     });
+                },
+
+                /**
+                 * Retorna true apenas quando a ata foi criada pelo usuário informado.
+                 * Evita que participantes extras, supervisores ou co-participantes recebam atas de terceiros no próprio histórico.
+                 */
+                isAtaCreatedByUser(ata, user = app.currentUser) {
+                    if (!ata || !user) return false;
+                    const curMat = String(user.matricula || '').trim().toUpperCase();
+                    const curNome = String(user.nome || '').trim();
+                    const ataMat = String(ata.matricula || '').trim().toUpperCase();
+                    if (ataMat) {
+                        return Boolean(curMat && ataMat === curMat);
+                    }
+                    const ataMatQ1 = String(ata.matriculaQualidade || '').trim().toUpperCase();
+                    if (curMat && ataMatQ1) return ataMatQ1 === curMat;
+                    if (curNome && ata.autor) return this.isStrictNameMatch(curNome, String(ata.autor).trim());
+                    return false;
                 },
 
                 _normContatoKey(nome) {
@@ -7786,7 +7840,8 @@ storage: {
                 if (!t || t.tipoTurma === 'reciclagem' || !Array.isArray(t.colaboradores) || t.colaboradores.length === 0) return;
                 if (!Array.isArray(app.users)) app.users = [];
 
-                let usersModificados = false;
+                let usersAdded = false;
+                const modifiedExisting = [];
                 t.colaboradores.forEach(colab => {
                     const mat = String(colab.matricula || '').trim().toUpperCase();
                     const nome = String(colab.nome || '').trim().toUpperCase();
@@ -7800,11 +7855,19 @@ storage: {
                         ? app.utils.encryptPassword(senhaPlana) 
                         : ('enc$v1$' + senhaPlana);
 
+                    const matchingUsers = app.users.filter(u => u && String(u.matricula || '').trim().toUpperCase() === mat);
+                    const hasPromotedOrLocked = matchingUsers.some(u => {
+                        const tp = String(u.tipoAcesso || '').trim();
+                        return u.ignorarSyncTurma === true || (tp && tp !== 'Operador');
+                    });
+                    if (hasPromotedOrLocked) return;
+
                     const existingIdx = app.users.findIndex(u => String(u.matricula || '').trim().toUpperCase() === mat);
                     if (existingIdx > -1) {
                         const u = app.users[existingIdx];
                         const tipoAtual = String(u.tipoAcesso || '').trim();
                         if (!tipoAtual || tipoAtual === 'Operador') {
+                            let touched = false;
                             const jaVinculado = u.tipoAcesso === 'Operador' && u.turmaId === t.id && u.cargo === 'Operador em Treinamento';
                             if (!jaVinculado) {
                                 u.tipoAcesso = 'Operador';
@@ -7817,11 +7880,12 @@ storage: {
                                 if (!Array.isArray(u.abasLiberadas) || u.abasLiberadas.length === 0) {
                                     u.abasLiberadas = ['pesquisa_treinamento'];
                                 }
-                                usersModificados = true;
+                                touched = true;
                             }
-                            if (rawCpf && !u.cpf) { u.cpf = rawCpf; usersModificados = true; }
+                            if (rawCpf && !u.cpf) { u.cpf = rawCpf; touched = true; }
                             if (!Array.isArray(u.operacoes)) u.operacoes = [];
-                            if (t.operacao && !u.operacoes.includes(t.operacao)) { u.operacoes.push(t.operacao); usersModificados = true; }
+                            if (t.operacao && !u.operacoes.includes(t.operacao)) { u.operacoes.push(t.operacao); touched = true; }
+                            if (touched) modifiedExisting.push(u);
                         }
                     } else if (persistirNaNuvem) {
                         app.users.push({
@@ -7848,12 +7912,29 @@ storage: {
                         if (app.storage && typeof app.storage.markUserPasswordDirty === 'function') {
                             app.storage.markUserPasswordDirty(mat);
                         }
-                        usersModificados = true;
+                        usersAdded = true;
                     }
                 });
 
-                if (usersModificados && persistirNaNuvem) {
-                    app.storage.saveUsers();
+                if (persistirNaNuvem) {
+                    if (usersAdded) {
+                        app.storage.saveUsers();
+                    } else if (modifiedExisting.length > 0 && app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                        modifiedExisting.forEach(u => {
+                            app.storage.saveUserByMatricula(u.matricula, {
+                                tipoAcesso: u.tipoAcesso,
+                                cargo: u.cargo,
+                                subclasse: u.subclasse || null,
+                                turmaId: u.turmaId || null,
+                                turmaNumero: u.turmaNumero || '',
+                                turmaTreinadorMatricula: u.turmaTreinadorMatricula || '',
+                                turmaTreinadorNome: u.turmaTreinadorNome || '',
+                                abasLiberadas: u.abasLiberadas,
+                                operacoes: u.operacoes,
+                                ...(u.cpf ? { cpf: u.cpf } : {})
+                            }).catch(() => {});
+                        });
+                    }
                 }
             },
 
@@ -12890,7 +12971,8 @@ storage: {
                                 app.eventsList[id].status = 'Finalizado';
                                 app.storage.saveEvents().then(() => {
                                     document.getElementById('view-event-modal').classList.add('hidden');
-                                    app.ui.renderTab('calendario', true);
+                                    if (app.currentTab === 'home' && typeof app.ui._renderHomeCalendarWidget === 'function') app.ui._renderHomeCalendarWidget();
+                                    else app.ui.renderTab('calendario', true);
                                     app.ui.showAlert("Fantástico!", "Evento marcado como finalizado com sucesso.", "success");
                                 });
                             };
@@ -12960,7 +13042,8 @@ storage: {
                 finalizarSave() {
                     app.storage.saveEvents().then(() => {
                         document.getElementById('calendar-modal').classList.add('hidden');
-                        app.ui.renderTab('calendario', true);
+                        if (app.currentTab === 'home' && typeof app.ui._renderHomeCalendarWidget === 'function') app.ui._renderHomeCalendarWidget();
+                        else app.ui.renderTab('calendario', true);
                         app.ui.showAlert("Operação Concluída", "Calendário atualizado com sucesso.", "success");
                         
                         // Libera botão novamente
@@ -13059,7 +13142,8 @@ storage: {
                     const eventTitle = eventBackup.titulo || eventBackup.tema || 'Evento';
                     
                     delete app.eventsList[id];
-                    app.ui.renderTab('calendario', true);
+                    if (app.currentTab === 'home' && typeof app.ui._renderHomeCalendarWidget === 'function') app.ui._renderHomeCalendarWidget();
+                    else app.ui.renderTab('calendario', true);
                     
                     if (app.undo && typeof app.undo.register === 'function') {
                         app.undo.register(
@@ -13067,7 +13151,8 @@ storage: {
                             () => {
                                 app.eventsList[id] = eventBackup;
                                 app.storage.saveEvents().then(() => {
-                                    app.ui.renderTab('calendario', true);
+                                    if (app.currentTab === 'home' && typeof app.ui._renderHomeCalendarWidget === 'function') app.ui._renderHomeCalendarWidget();
+                                    else app.ui.renderTab('calendario', true);
                                 });
                             },
                             () => {
@@ -14367,6 +14452,9 @@ storage: {
                     document.getElementById('login-pwd').value = '';
                     
                     document.getElementById('view-app').classList.add('hidden');
+                    if (app.ui && typeof app.ui.clearGlobalHomeTheme === 'function') {
+                        app.ui.clearGlobalHomeTheme();
+                    }
                     document.getElementById('terms-modal').classList.add('hidden');
                     document.getElementById('guidelines-modal').classList.add('hidden');
                     
@@ -16242,11 +16330,10 @@ storage: {
                                 if (val && typeof val === 'object') {
                                     this._adminCloudCache = val;
                                     this._reconcileBundle('admin');
-                                    if (app.ui && app.isAdmin && (app.currentTab === 'home' || app.currentTab === 'produtividade_gtd')) {
+                                    if (app.ui && app.isAdmin && app.currentTab === 'produtividade_gtd') {
                                         const activeContainer = document.getElementById('view-container-' + app.currentTab);
                                         if (activeContainer) {
-                                            if (app.currentTab === 'home') app.ui.renderView_Home(activeContainer);
-                                            else if (app.currentTab === 'produtividade_gtd') app.ui.renderView_ProdutividadeGTD(activeContainer);
+                                            app.ui.renderView_ProdutividadeGTD(activeContainer);
                                         }
                                     }
                                 }
@@ -16677,7 +16764,7 @@ storage: {
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
-                gruposAcessoLista: ['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'],
+                gruposAcessoLista: ['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'R&S', 'Dev', 'Gestor', 'Gerente'],
 
                 getPresetsGruposAcesso() {
                     const todasAbas = this.getAllSystemTabs();
@@ -16690,6 +16777,7 @@ storage: {
                         'Qualidade': defaultUserIds,
                         'Treinamento': [...new Set(treinoDefaults)],
                         'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias', 'apresentacao_dental_uni'])],
+                        'R&S': ['faltas_integracao'],
                         'Dev': allIds,
                         'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'faltas_integracao', 'pdca_teste', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds.filter(id => id !== 'harmony')
@@ -16706,7 +16794,7 @@ storage: {
                             : [...(defaults[g] || defaultUserIds)];
                         // Migração automática: substitui a extinta aba 'operacoes' e unifica 'gestao_equipe' com 'hierarquia'
                         base = base.filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev' && id !== 'minhas_atas');
-                        if (!base.includes('home')) base.unshift('home');
+                        if (g !== 'R&S' && !base.includes('home')) base.unshift('home');
                         if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('produtividade_gtd')) base.push('produtividade_gtd');
                         if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('qualidade_treinamento')) base.push('qualidade_treinamento');
                         if (['Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].includes(g) && !base.includes('diario_bordo')) base.push('diario_bordo');
@@ -16731,7 +16819,10 @@ storage: {
                             if (!base.includes('bi_banco_horas')) base.push('bi_banco_horas');
                             if (!base.includes('mint_zen_teste')) base.push('mint_zen_teste');
                         }
-                        if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
+                        if (g === 'R&S') {
+                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'mint_zen_teste' && id !== 'pdca_teste');
+                            if (!base.includes('faltas_integracao')) base.push('faltas_integracao');
+                        } else if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
                             base = base.filter(id => id !== 'faltas_integracao' && id !== 'pdca_teste');
                         } else {
                             if (!base.includes('faltas_integracao')) base.push('faltas_integracao');
@@ -16755,7 +16846,7 @@ storage: {
                     let savedTabs = (Array.isArray(user.abasLiberadas) && user.abasLiberadas.length > 0)
                         ? [...user.abasLiberadas].filter(id => id !== 'operacoes' && id !== 'dashboard_firebase_dev')
                         : [...presetTabs];
-                    if (!savedTabs.includes('home')) savedTabs.unshift('home');
+                    if (tipo !== 'R&S' && !savedTabs.includes('home')) savedTabs.unshift('home');
                     // Operador vinculado a turma tem acesso garantido à aba de pesquisa CSAT
                     if (!tipoExplicit || tipoExplicit === 'Operador') {
                         if (!savedTabs.includes('pesquisa_treinamento')) {
@@ -16808,7 +16899,7 @@ storage: {
                     if (savedTabs.length <= 2 && savedTabs.includes('implantacao_ia')) {
                         savedTabs = [...new Set([...savedTabs, ...presetTabs])];
                     }
-                    if (!['Gestor', 'Gerente', 'Dev'].includes(tipo) && !savedTabs.includes('meu_painel')) {
+                    if (!['Gestor', 'Gerente', 'Dev', 'R&S'].includes(tipo) && !savedTabs.includes('meu_painel')) {
                         savedTabs = [...new Set([...savedTabs, ...presetTabs])];
                     }
 
@@ -16836,6 +16927,11 @@ storage: {
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
                     }
+                    if (tipo === 'R&S') {
+                        savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
+                        if (!savedTabs.includes('faltas_integracao')) savedTabs.push('faltas_integracao');
+                        return [...new Set(savedTabs)];
+                    }
                     savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste' && id !== 'faltas_integracao');
                     return savedTabs.length > 0 ? [...new Set(savedTabs)] : [...new Set(presetTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste' && id !== 'faltas_integracao'))];
                 },
@@ -16858,11 +16954,15 @@ storage: {
                     }
                     if (novoGrupo === 'Operador') {
                         alvo.cargo = 'Operador em Treinamento';
+                        alvo.ignorarSyncTurma = false;
                         alvo.abasLiberadas = ['pesquisa_treinamento'];
                     } else {
                         alvo.cargo = null;
                         alvo.turmaId = null;
                         alvo.turmaNumero = null;
+                        alvo.turmaTreinadorMatricula = null;
+                        alvo.turmaTreinadorNome = null;
+                        alvo.ignorarSyncTurma = true;
                         alvo.abasLiberadas = [...(presets[novoGrupo] || [])];
                     }
                     if (novoGrupo === 'Gerente' || novoGrupo === 'Gestor') {
@@ -16891,6 +16991,9 @@ storage: {
                         cargo: alvo.cargo || null,
                         turmaId: alvo.turmaId || null,
                         turmaNumero: alvo.turmaNumero || null,
+                        turmaTreinadorMatricula: alvo.turmaTreinadorMatricula || null,
+                        turmaTreinadorNome: alvo.turmaTreinadorNome || null,
+                        ignorarSyncTurma: !!alvo.ignorarSyncTurma,
                         abasLiberadas: alvo.abasLiberadas,
                         gestorMatricula: alvo.gestorMatricula || null,
                         roleUpdatedAt: nowRoleTs,
@@ -17900,6 +18003,9 @@ storage: {
                         localStorage.setItem('theme', 'dark');
                         if (chk) chk.checked = false;
                     }
+                    if (typeof this.applyGlobalHomeTheme === 'function') {
+                        this.applyGlobalHomeTheme();
+                    }
                     this.refreshCurrentView(); 
                 },
 
@@ -18693,6 +18799,9 @@ storage: {
                     }
                     
                     document.getElementById('view-app').classList.remove('hidden');
+                    if (typeof this.applyGlobalHomeTheme === 'function') {
+                        this.applyGlobalHomeTheme();
+                    }
                     if (app.mintZenTeste && typeof app.mintZenTeste.onPortalLogin === 'function') {
                         app.mintZenTeste.onPortalLogin();
                     }
@@ -22316,32 +22425,18 @@ storage: {
                     const monthLabel = this.formatMonthLabel(app.currentMonth);
                     const operacoes = Object.values(app.operacoesList || {}).map(op => `<option value="${op.nome}">${op.nome}</option>`).join('');
 
-                    // Coleta histórico de atas do usuário (ou todas no caso de ADM)
+                    // Coleta histórico de atas criadas exclusivamente pelo usuário logado
                     const curMatRaw = String(app.currentUser?.matricula || '').trim();
                     const curMat = curMatRaw.toUpperCase();
-                    const curNome = String(app.currentUser?.nome || '').trim();
                     const mesFiltro = this.minhasAtasFiltroMes || app.currentMonth || 'todos';
 
                     const allUserAtas = Object.values(app.atasList || {}).filter(a => {
                         if (!a) return false;
                         if (app.isAdmin && !app.currentUser) return true;
-                        const aMat = String(a.matricula || '').trim().toUpperCase();
-                        if (curMat && aMat === curMat) return true;
-                        const aMatQual1 = String(a.matriculaQualidade || '').trim().toUpperCase();
-                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim().toUpperCase();
-                        if (curMat && (aMatQual1 === curMat || aMatQual2 === curMat)) return true;
-                        if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
-                            const matchedUsers = app.ata.findQualidadeUsersForAta(a);
-                            if (matchedUsers.some(u => String(u.matricula || '').trim().toUpperCase() === curMat)) return true;
+                        if (app.ata && typeof app.ata.isAtaCreatedByUser === 'function') {
+                            return app.ata.isAtaCreatedByUser(a, app.currentUser);
                         }
-                        if (curNome && app.ata && typeof app.ata.isStrictNameMatch === 'function') {
-                            const camposNome = [a.autor, a.qualidade, a.qualidade2, a.sup];
-                            if (Array.isArray(a.rawExtras)) {
-                                a.rawExtras.forEach(p => { if (p && p.nome) camposNome.push(p.nome); });
-                            }
-                            if (camposNome.some(c => c && app.ata.isStrictNameMatch(curNome, String(c).trim()))) return true;
-                        }
-                        return false;
+                        return Boolean(curMat && String(a.matricula || '').trim().toUpperCase() === curMat);
                     });
 
                     const myAtas = (mesFiltro === 'todos'
@@ -22502,7 +22597,7 @@ storage: {
                                         <h3 class="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
                                             <i class="fa-solid fa-clock-rotate-left text-blue-600"></i> Histórico / Devolutivas
                                         </h3>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Acompanhe suas atas e calibrações vinculadas a você</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Acompanhe as atas e calibrações criadas por você</p>
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <select onchange="app.ui.minhasAtasFiltroMes=this.value; app.ui.renderTab('ata_reuniao', true)" class="px-2.5 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold cursor-pointer">
@@ -22539,7 +22634,8 @@ storage: {
                                                     : `<span class="bg-orange-100 text-orange-600 px-2.5 py-1 rounded-md font-black uppercase tracking-widest text-[9px] shadow-xs">Aguardando Gestor</span>`));
 
                                         const fortesPlain = String(ata.fortes || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '-';
-                                        const canEditAta = isDevolvido || app.isAdmin || (!isAprovado && !isAprovSemBonus && curMat && String(ata.matricula || '').trim().toUpperCase() === curMat);
+                                        const isOwner = !app.currentUser || (app.ata && typeof app.ata.isAtaCreatedByUser === 'function' ? app.ata.isAtaCreatedByUser(ata, app.currentUser) : (curMat && String(ata.matricula || '').trim().toUpperCase() === curMat));
+                                        const canEditAta = app.isAdmin || (isOwner && (isDevolvido || (!isAprovado && !isAprovSemBonus)));
 
                                         return `
                                             <div class="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 shadow-xs hover:shadow-md transition-shadow">
@@ -23130,23 +23226,35 @@ storage: {
                     if(pendentes.length === 0) {
                         html += `<div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-center p-6 min-h-[210px]"><i class="fa-regular fa-calendar-check text-4xl mb-2.5 opacity-40"></i><p class="text-xs font-semibold">Nenhum feedback pendente de validação neste período.</p></div>`;
                     } else {
-                        html += `<div class="space-y-2.5 overflow-y-auto pr-1 max-h-[235px] custom-scrollbar">`;
+                        const _nowFbDash = new Date();
+                        const _todayFbIso = `${_nowFbDash.getFullYear()}-${String(_nowFbDash.getMonth() + 1).padStart(2, '0')}-${String(_nowFbDash.getDate()).padStart(2, '0')}`;
+                        const dayOrderCounter = {};
+                        html += `<div class="space-y-2.5 overflow-y-auto pr-1 max-h-[260px] custom-scrollbar">`;
                         pendentes.forEach(p => {
                             const r = p.results[app.currentMonth];
+                            const dKey = r.fbDate || 'sem-data';
+                            dayOrderCounter[dKey] = (dayOrderCounter[dKey] || 0) + 1;
+                            const ordemDia = dayOrderCounter[dKey];
                             const dataFmt = r.fbDate ? new Date(r.fbDate + 'T00:00:00').toLocaleDateString('pt-BR') : '--';
                             const hrFmt = r.fbTime || '--:--';
-                            const isToday = r.fbDate === new Date().toISOString().split('T')[0];
+                            const isToday = r.fbDate === _todayFbIso;
+                            const cleanNomeP = app.utils.fixEncoding(p.nome);
+                            const avatarP = p.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanNomeP)}&background=cbd5e1&color=ffffff&size=96`;
                             const badge = isToday
                                 ? `<span class="bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 px-2 py-0.5 rounded text-[10px] font-black uppercase">Hoje</span>`
                                 : `<span class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold tabular-nums">${dataFmt}</span>`;
                             
                             html += `
-                                <div class="bg-slate-50/80 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-200/70 dark:border-slate-700/70 flex justify-between items-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ document.getElementById('adm-user-select').value='${p.matricula}'; app.admin.loadUserEditor(); }, 150);" title="Abrir lançamento do colaborador">
-                                    <div class="min-w-0 pr-2">
-                                        <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${p.nome}</div>
-                                        <div class="text-[10px] font-medium text-slate-400 flex items-center gap-1.5 mt-0.5"><i class="fa-regular fa-clock"></i> Horário: ${hrFmt}</div>
+                                <div class="bg-slate-50/80 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 flex justify-between items-center gap-2.5 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-all" onclick="app.ui.renderTab('cadastros', true); setTimeout(()=>{ if(app.ui?.selectUserForCadastros) { app.ui.selectUserForCadastros('${p.matricula}'); } else { const el=document.getElementById('adm-user-select'); if(el){el.value='${p.matricula}'; app.admin.loadUserEditor();} } }, 150);" title="Abrir lançamento do colaborador">
+                                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                                        <span class="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center shrink-0 tabular-nums" title="Ordem no dia">${ordemDia}º</span>
+                                        <img src="${avatarP}" class="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0" alt="${app.utils.escapeHtml(cleanNomeP)}">
+                                        <div class="min-w-0">
+                                            <div class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${cleanNomeP}</div>
+                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 mt-0.5 tabular-nums"><i class="fa-regular fa-clock"></i> ${hrFmt}</div>
+                                        </div>
                                     </div>
-                                    <div class="shrink-0 flex items-center gap-2">${badge}<i class="fa-solid fa-chevron-right text-[10px] text-slate-300"></i></div>
+                                    <div class="shrink-0 flex items-center gap-1.5">${badge}<i class="fa-solid fa-chevron-right text-[10px] text-slate-300"></i></div>
                                 </div>
                             `;
                         });
@@ -25231,15 +25339,12 @@ storage: {
                     let html = `
                         <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white">Central de Lançamento e Validação de Notas</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe quem já validou, veja o valor final em tempo real e colete a assinatura com senha do colaborador em <strong class="text-green-600">${app.ui.formatMonthLabel(app.currentMonth)}</strong>.</p>
+                                <h2 class="text-2xl font-extrabold text-slate-900 dark:text-white">Central de Lançamento e Validação de Notas</h2>
+                                <p class="text-slate-600 dark:text-slate-200 text-sm mt-1">Acompanhe quem já validou, veja o valor final em tempo real e colete a assinatura com senha do colaborador em <strong class="text-emerald-700 dark:text-emerald-300 font-black">${app.ui.formatMonthLabel(app.currentMonth)}</strong>.</p>
                             </div>
                             <div class="flex flex-wrap gap-2">
-                                <button type="button" onclick="app.admin.exportBonusReport()" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40 font-bold py-2.5 px-4 rounded-xl border border-emerald-200 dark:border-emerald-800 shadow-sm flex items-center gap-2 text-xs transition-colors">
+                                <button type="button" onclick="app.admin.exportBonusReport()" class="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold py-2.5 px-4 rounded-xl border border-emerald-500/80 shadow-md shadow-emerald-600/20 flex items-center gap-2 text-xs transition-all cursor-pointer">
                                     <i class="fa-solid fa-file-excel"></i> Exportar Folha (.xlsx)
-                                </button>
-                                <button type="button" onclick="app.admin.clearAllUsersMonth()" class="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 font-bold py-2.5 px-4 rounded-xl border border-red-200 dark:border-red-800 shadow-sm flex items-center gap-2 text-xs transition-colors">
-                                    <i class="fa-solid fa-trash-can"></i> Zerar Lançamentos do Mês
                                 </button>
                             </div>
                         </div>
@@ -30575,36 +30680,14 @@ storage: {
                     if(app.isAdmin) return;
                     const curMatRaw = String(app.currentUser?.matricula || '').trim();
                     const curMat = curMatRaw.toUpperCase();
-                    const curNome = String(app.currentUser?.nome || '').trim();
 
                     const mesFiltro = this.minhasAtasFiltroMes || 'todos';
                     const allAtas = Object.values(app.atasList || {}).filter(a => {
                         if (!a) return false;
-                        const aMat = String(a.matricula || '').trim().toUpperCase();
-                        // 1. O próprio autor/criador da ata
-                        if (curMat && aMat === curMat) return true;
-                        
-                        // 2. Vinculação por matrícula direta de qualidade
-                        const aMatQual1 = String(a.matriculaQualidade || '').trim().toUpperCase();
-                        const aMatQual2 = String(a.matriculaQualidade2 || '').trim().toUpperCase();
-                        if (curMat && (aMatQual1 === curMat || aMatQual2 === curMat)) return true;
-
-                        // 3. Usuários identificados de forma estrita pela função mestre de calibração
-                        if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
-                            const matchedUsers = app.ata.findQualidadeUsersForAta(a);
-                            if (matchedUsers.some(u => String(u.matricula || '').trim().toUpperCase() === curMat)) return true;
+                        if (app.ata && typeof app.ata.isAtaCreatedByUser === 'function') {
+                            return app.ata.isAtaCreatedByUser(a, app.currentUser);
                         }
-
-                        // 4. Checagem estrita por nome (autor, qualidade, supervisor ou participante adicional)
-                        if (curNome && app.ata && typeof app.ata.isStrictNameMatch === 'function') {
-                            const camposNome = [a.autor, a.qualidade, a.qualidade2, a.sup];
-                            if (Array.isArray(a.rawExtras)) {
-                                a.rawExtras.forEach(p => { if (p && p.nome) camposNome.push(p.nome); });
-                            }
-                            if (camposNome.some(c => c && app.ata.isStrictNameMatch(curNome, String(c).trim()))) return true;
-                        }
-
-                        return false;
+                        return Boolean(curMat && String(a.matricula || '').trim().toUpperCase() === curMat);
                     });
 
                     const atas = mesFiltro === 'todos' 
@@ -30623,7 +30706,7 @@ storage: {
                         <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div>
                                 <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Atas Abertas / Histórico</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acervo detalhado de reuniões e calibrações vinculadas a você.</p>
+                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acervo detalhado das reuniões e calibrações criadas por você.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <select onchange="app.ui.minhasAtasFiltroMes=this.value; app.ui.renderTab('minhas_atas', true)" class="p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 outline-none bg-white dark:bg-slate-900 dark:text-white font-bold shadow-sm">
@@ -30748,12 +30831,16 @@ storage: {
                     const presets = this.getPresetsGruposAcesso();
                     if (novoCargo === 'Operador') {
                         u.cargo = 'Operador em Treinamento';
+                        u.ignorarSyncTurma = false;
                         u.subclasse = null;
                         u.abasLiberadas = ['pesquisa_treinamento'];
                     } else {
                         u.cargo = null;
                         u.turmaId = null;
                         u.turmaNumero = null;
+                        u.turmaTreinadorMatricula = null;
+                        u.turmaTreinadorNome = null;
+                        u.ignorarSyncTurma = true;
                         u.subclasse = novoCargo === 'Treinamento' ? (u.subclasse || 'Instrutor') : null;
                         if (presets[novoCargo]) {
                             u.abasLiberadas = [...presets[novoCargo]];
@@ -30772,6 +30859,9 @@ storage: {
                         cargo: u.cargo || null,
                         turmaId: u.turmaId || null,
                         turmaNumero: u.turmaNumero || null,
+                        turmaTreinadorMatricula: u.turmaTreinadorMatricula || null,
+                        turmaTreinadorNome: u.turmaTreinadorNome || null,
+                        ignorarSyncTurma: !!u.ignorarSyncTurma,
                         abasLiberadas: u.abasLiberadas,
                         gestorMatricula: u.gestorMatricula || null,
                         roleUpdatedAt: nowRoleTs,
@@ -31004,7 +31094,7 @@ storage: {
                             <div>
                                 <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Cargo</label>
                                 <select id="hier-edit-cargo" onchange="const sc = document.getElementById('hier-edit-subclasse-box'); if (sc) sc.style.display = this.value === 'Treinamento' ? 'block' : 'none';" class="${selCls}">
-                                    ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'R&S', 'Dev', 'Gestor', 'Gerente'].map(c => `<option value="${c}" ${cargo === c ? 'selected' : ''}>${c}</option>`).join('')}
                                 </select>
                             </div>
                             <div id="hier-edit-subclasse-box" style="display: ${cargo === 'Treinamento' ? 'block' : 'none'}">
@@ -31040,17 +31130,21 @@ storage: {
                     const gestorAntes = u.gestorMatricula || '';
                     const novoCargo = document.getElementById('hier-edit-cargo').value;
                     const novoGestor = document.getElementById('hier-edit-gestor').value;
-                    if (novoCargo !== cargoAntes) {
+                    if (novoCargo !== cargoAntes || novoCargo !== 'Operador') {
                         u.tipoAcesso = novoCargo;
                         if (novoCargo === 'Operador') {
                             u.cargo = 'Operador em Treinamento';
+                            u.ignorarSyncTurma = false;
                             u.abasLiberadas = ['pesquisa_treinamento'];
                         } else {
                             u.cargo = null;
                             u.turmaId = null;
                             u.turmaNumero = null;
+                            u.turmaTreinadorMatricula = null;
+                            u.turmaTreinadorNome = null;
+                            u.ignorarSyncTurma = true;
                             const presets = this.getPresetsGruposAcesso();
-                            if (presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
+                            if (novoCargo !== cargoAntes && presets[novoCargo]) u.abasLiberadas = [...presets[novoCargo]];
                         }
                     }
                     if (novoCargo === 'Treinamento') {
@@ -31083,6 +31177,9 @@ storage: {
                         cargo: u.cargo || null,
                         turmaId: u.turmaId || null,
                         turmaNumero: u.turmaNumero || null,
+                        turmaTreinadorMatricula: u.turmaTreinadorMatricula || null,
+                        turmaTreinadorNome: u.turmaTreinadorNome || null,
+                        ignorarSyncTurma: !!u.ignorarSyncTurma,
                         abasLiberadas: u.abasLiberadas,
                         subclasse: u.subclasse || null,
                         gestorMatricula: u.gestorMatricula || null,
@@ -31918,7 +32015,8 @@ storage: {
                                     : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 shadow-sm"><i class="fa-regular fa-clock text-slate-400"></i> Planejado (0%)</span>`));
 
                         // Cálculo do calendário do projeto para a régua do Gantt
-                        const hojeISO = new Date().toISOString().split('T')[0];
+                        const _nowGantt = new Date();
+                        const hojeISO = `${_nowGantt.getFullYear()}-${String(_nowGantt.getMonth() + 1).padStart(2, '0')}-${String(_nowGantt.getDate()).padStart(2, '0')}`;
                         const dtProjIniStr = p.dataInicio || hojeISO;
                         let minMs = this._parseDateMs(dtProjIniStr, Date.now());
                         let maxMs = minMs + (86400000 * 7);
@@ -31946,33 +32044,38 @@ storage: {
                         const totalDiasUteis = this._diferencaDias(minDateISO, maxDateISO);
                         const dtInicioFmt = this._formatarDataBR(minDateISO);
                         const dtFimFmt = this._formatarDataBR(maxDateISO);
+                        const totalRangeMs = Math.max(86400000, (maxMs - minMs) + 86400000);
 
-                        // Marcadores da régua de calendário (5 a 7 marcos reais de data DD/MM)
+                        // Marcadores da régua de calendário alinhados exatamente com os trilhos
                         const numTicks = Math.min(6, Math.max(3, Math.round(totalSpanDias / 6)));
                         let ticksHtml = '';
                         for (let i = 0; i < numTicks; i++) {
                             const fraction = numTicks > 1 ? (i / (numTicks - 1)) : 0;
                             const tickMs = minMs + (fraction * (maxMs - minMs));
                             const tickIso = new Date(tickMs).toISOString().split('T')[0];
-                            const leftPct = (fraction * 100).toFixed(1);
+                            const leftPct = Math.min(100, Math.max(0, ((tickMs - minMs) / totalRangeMs) * 100));
+                            const alignCls = i === 0 ? 'translate-x-0 items-start' : (i === numTicks - 1 ? '-translate-x-full items-end' : '-translate-x-1/2 items-center');
+                            const leftTickFinal = i === numTicks - 1 ? 100 : leftPct;
                             ticksHtml += `
-                                <div class="absolute -top-1 transform -translate-x-1/2 flex flex-col items-center pointer-events-none" style="left: ${leftPct}%">
-                                    <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${this._formatarDiaMes(tickIso)}</span>
-                                    <div class="w-px h-1.5 bg-slate-300 dark:bg-slate-700 mt-0.5"></div>
+                                <div class="absolute top-0.5 transform ${alignCls} flex flex-col pointer-events-none px-1" style="left: ${leftTickFinal.toFixed(2)}%">
+                                    <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">${this._formatarDiaMes(tickIso)}</span>
+                                    <div class="w-px h-1.5 bg-slate-300 dark:bg-slate-600 mt-0.5"></div>
                                 </div>
                             `;
                         }
 
-                        // Marcador do dia de "Hoje"
+                        // Marcador do dia de "Hoje" (alinhado na mesma escala em cabeçalho e faixas)
                         const hojeMs = this._parseDateMs(hojeISO, Date.now());
-                        let hojeMarkerHtml = '';
-                        if (hojeMs >= minMs && hojeMs <= maxMs && (maxMs > minMs)) {
-                            const hojePct = Math.min(100, Math.max(0, ((hojeMs - minMs) / (maxMs - minMs)) * 100)).toFixed(1);
-                            hojeMarkerHtml = `
-                                <div class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-10 pointer-events-none" style="left: ${hojePct}%">
-                                    <span class="absolute -top-3.5 -translate-x-1/2 bg-rose-500 text-white text-[8px] font-black uppercase px-1 rounded shadow-xs">Hoje</span>
+                        let hojeHeaderMarkerHtml = '';
+                        let hojeLineHtml = '';
+                        if (hojeMs >= minMs && hojeMs <= maxMs) {
+                            const hojePct = Math.min(99.5, Math.max(0.5, (((hojeMs - minMs) + 43200000) / totalRangeMs) * 100)).toFixed(2);
+                            hojeHeaderMarkerHtml = `
+                                <div class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-20 pointer-events-none" style="left: ${hojePct}%">
+                                    <span class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[8px] font-black uppercase px-1.5 py-0.5 rounded shadow-xs whitespace-nowrap">Hoje</span>
                                 </div>
                             `;
+                            hojeLineHtml = `<div class="absolute top-0 bottom-0 w-0.5 bg-rose-500/75 z-10 pointer-events-none" style="left: ${hojePct}%"></div>`;
                         }
 
                         // Construção das faixas sobrepostas do Gráfico Gantt
@@ -31984,20 +32087,29 @@ storage: {
                                 : this._parseDateMs(etp.dataFim, eStartMs + (parseInt(etp.diasEstimados, 10) || 5) * 86400000);
                             
                             const offsetMs = Math.max(0, eStartMs - minMs);
-                            const spanMs = Math.max(86400000, maxMs - minMs);
-                            const leftPct = Math.min(100, Math.max(0, (offsetMs / spanMs) * 100)).toFixed(2);
+                            const leftNum = Math.min(97.5, Math.max(0, (offsetMs / totalRangeMs) * 100));
                             
-                            let widthPct;
+                            let widthNum;
                             if (isSemPrev) {
-                                widthPct = Math.max(12, (100 - parseFloat(leftPct))).toFixed(2);
+                                widthNum = Math.max(8, 100 - leftNum);
                             } else {
                                 const durMs = Math.max(86400000, eEndMs - eStartMs + 86400000);
-                                widthPct = Math.min(100 - parseFloat(leftPct), Math.max(3, (durMs / spanMs) * 100)).toFixed(2);
+                                widthNum = Math.min(100 - leftNum, Math.max(2.4, (durMs / totalRangeMs) * 100));
                             }
+                            const leftPct = leftNum.toFixed(2);
+                            const widthPct = widthNum.toFixed(2);
 
                             const cor = etp.cor || '#4f46e5';
                             const numAtts = (etp.atualizacoes || []).length;
                             const numPlanos = (etp.planosAcao || []).length;
+                            const diasLabel = `${etp.diasEstimados || 1}d úteis`;
+                            const isCompactBar = !isSemPrev && widthNum < 18;
+                            const isTinyBar = !isSemPrev && widthNum < 9;
+                            const rightEdgePct = leftNum + widthNum;
+                            const placeExternalLeft = rightEdgePct > 80;
+                            const extPosStyle = placeExternalLeft
+                                ? `right: calc(${(100 - leftNum).toFixed(2)}% + 6px);`
+                                : `left: calc(${rightEdgePct.toFixed(2)}% + 6px);`;
 
                             const tooltip = isSemPrev
                                 ? `${esc(etp.nome)}&#10;• Calendário: A partir de ${this._formatarDataBR(etp.dataInicio)} (Sem Previsão de Término)&#10;• Responsável: ${esc(etp.responsavelNome || etp.responsavelTipo)}&#10;• Atualizações: ${numAtts}&#10;• Planos de Ação: ${numPlanos}&#10;• Status: ${etp.concluido ? 'Concluído' : 'Pendente'}&#10;(Clique para editar esta etapa)`
@@ -32009,10 +32121,10 @@ storage: {
 
                             return `
                                 <div class="flex items-center gap-2 sm:gap-3 py-1 group/lane">
-                                    <div class="w-40 sm:w-56 shrink-0 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between gap-1.5" title="${esc(etp.nome)}">
-                                        <div class="flex items-center gap-1.5 truncate">
+                                    <div class="w-44 sm:w-64 lg:w-72 shrink-0 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between gap-1.5" title="${esc(etp.nome)}">
+                                        <div class="flex items-center gap-1.5 min-w-0 flex-1">
                                             <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style="background-color: ${cor}"></span>
-                                            <span class="truncate">${idx + 1}. ${esc(etp.nome)}</span>
+                                            <span class="leading-tight break-words">${idx + 1}. ${esc(etp.nome)}</span>
                                         </div>
                                         <div class="flex items-center gap-0.5 shrink-0 opacity-70 group-hover/lane:opacity-100 transition">
                                             <button type="button" onclick="app.ui.moverEtapaIA('${esc(p.key)}', '${esc(etp.id)}', -1)" ${idx === 0 ? 'disabled class="p-1 text-slate-300 dark:text-slate-700 cursor-not-allowed"' : 'class="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition"'} title="Mover etapa para cima">
@@ -32023,25 +32135,34 @@ storage: {
                                             </button>
                                         </div>
                                     </div>
-                                    <div class="flex-1 relative h-9 bg-slate-100 dark:bg-slate-800/80 rounded-xl overflow-hidden p-0.5 border border-slate-200/60 dark:border-slate-700/60">
-                                        ${hojeMarkerHtml}
+                                    <div class="flex-1 relative h-9 bg-slate-100 dark:bg-slate-800/80 rounded-xl overflow-hidden border border-slate-200/60 dark:border-slate-700/60">
+                                        ${hojeLineHtml}
                                         <div onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" 
                                              data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}"
                                              style="${barStyle}" 
-                                             class="absolute top-0.5 bottom-0.5 rounded-lg text-white shadow-sm flex items-center justify-between px-2 cursor-pointer transition-all hover:scale-[1.01] hover:brightness-110 select-none group"
+                                             class="absolute top-0.5 bottom-0.5 rounded-lg text-white shadow-sm flex items-center ${isTinyBar ? 'justify-center px-1' : 'justify-between px-2'} overflow-hidden cursor-pointer transition-all hover:brightness-110 select-none z-20"
                                              title="${tooltip}">
-                                            <div class="flex items-center gap-1.5 truncate text-[11px] font-bold">
-                                                <i class="${etp.concluido ? 'fa-solid fa-circle-check text-emerald-200' : 'fa-regular fa-clock text-white/80'} text-[10px]"></i>
-                                                <span class="truncate text-[10px] hidden sm:inline">${isSemPrev ? `A partir de ${this._formatarDiaMes(etp.dataInicio)}` : `${this._formatarDiaMes(etp.dataInicio)} - ${this._formatarDiaMes(etp.dataFim)}`}</span>
-                                            </div>
-                                            ${isSemPrev ? `
-                                                <span class="text-[9px] font-black tracking-wider uppercase shrink-0 ml-1 bg-amber-500/90 text-white px-1.5 py-0.5 rounded shadow-xs flex items-center gap-1">
-                                                    <i class="fa-regular fa-calendar-xmark text-[9px]"></i> Sem Previsão
-                                                </span>
+                                            ${isTinyBar ? `
+                                                <i class="${etp.concluido ? 'fa-solid fa-circle-check text-emerald-200' : 'fa-regular fa-clock text-white/90'} text-[10px]"></i>
                                             ` : `
-                                                <span class="text-[10px] font-black tabular-nums shrink-0 ml-1 bg-black/25 px-1.5 py-0.5 rounded">${etp.diasEstimados || 1}d úteis</span>
+                                                <div class="flex items-center gap-1.5 min-w-0 truncate text-[11px] font-bold">
+                                                    <i class="${etp.concluido ? 'fa-solid fa-circle-check text-emerald-200' : 'fa-regular fa-clock text-white/80'} text-[10px] shrink-0"></i>
+                                                    ${!isCompactBar ? `<span class="truncate text-[10px] hidden sm:inline">${isSemPrev ? `A partir de ${this._formatarDiaMes(etp.dataInicio)}` : `${this._formatarDiaMes(etp.dataInicio)} - ${this._formatarDiaMes(etp.dataFim)}`}</span>` : ''}
+                                                </div>
+                                                ${isSemPrev ? `
+                                                    <span class="text-[9px] font-black tracking-wider uppercase shrink-0 ml-1 bg-amber-500/90 text-white px-1.5 py-0.5 rounded shadow-xs flex items-center gap-1">
+                                                        <i class="fa-regular fa-calendar-xmark text-[9px]"></i> Sem Previsão
+                                                    </span>
+                                                ` : `
+                                                    <span class="text-[10px] font-black tabular-nums shrink-0 ml-1 bg-black/25 px-1.5 py-0.5 rounded whitespace-nowrap">${diasLabel}</span>
+                                                `}
                                             `}
                                         </div>
+                                        ${isTinyBar ? `
+                                            <button type="button" onclick="app.ui.abrirModalEditarEtapaIA(this.getAttribute('data-opkey'), this.getAttribute('data-etapa'))" data-opkey="${esc(p.key)}" data-etapa="${esc(etp.id)}" style="${extPosStyle}" class="absolute top-1/2 -translate-y-1/2 z-20 px-1.5 py-0.5 rounded-md bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-700 text-[10px] font-extrabold text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap shadow-2xs hover:border-indigo-400 transition cursor-pointer" title="${tooltip}">
+                                                ${this._formatarDiaMes(etp.dataInicio)} · ${diasLabel}
+                                            </button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             `;
@@ -32312,11 +32433,14 @@ storage: {
                                         </div>
                                     </div>
 
-                                    <!-- Régua de Calendário com Datas Reais -->
+                                    <!-- Régua de Calendário com Datas Reais (mesma largura exata dos trilhos) -->
                                     <div class="space-y-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
-                                        <div class="relative h-6 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-3 border border-slate-200/50 dark:border-slate-700/50">
-                                            ${ticksHtml}
-                                            ${hojeMarkerHtml}
+                                        <div class="flex items-center gap-2 sm:gap-3 mb-2 pt-2">
+                                            <div class="w-44 sm:w-64 lg:w-72 shrink-0 text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">Etapas</div>
+                                            <div class="flex-1 relative h-6 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
+                                                ${ticksHtml}
+                                                ${hojeHeaderMarkerHtml}
+                                            </div>
                                         </div>
 
                                         <!-- Linhas das Etapas -->
@@ -32534,32 +32658,6 @@ storage: {
                                    </div>`
                             }
                         </div>
-
-                        <!-- Painel de Operações Setoriais sem Harmony (Exclusivo ADM/Gestão) -->
-                        ${(isSuperOrDev && opsSemPlano.length > 0) ? `
-                            <div class="mt-8 p-6 rounded-3xl border border-amber-300/80 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20">
-                                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                                    <div>
-                                        <h3 class="font-extrabold text-base text-amber-900 dark:text-amber-200 flex items-center gap-2">
-                                            <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Operações Setoriais sem Implantação Harmony (${opsSemPlano.length})
-                                        </h3>
-                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">As operações abaixo constam no Setorial, mas ainda não possuem cronograma do Harmony configurado.</p>
-                                    </div>
-                                </div>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                    ${opsSemPlano.map(op => `
-                                        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 shadow-sm flex flex-col justify-between">
-                                            <div>
-                                                <div class="font-bold text-sm text-slate-800 dark:text-white truncate" title="${esc(op.nome)}">${esc(op.nome)}</div>
-                                                <div class="text-xs text-slate-400 mt-0.5 tabular-nums"><i class="fa-solid fa-users mr-1"></i>${op.hc} operadores</div>
-                                            </div>
-                                            <button type="button" onclick="app.ui.iniciarPlanoRapidoHarmony(this.getAttribute('data-op'))" data-op="${esc(op.nomeRaw)}" class="mt-3 w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
-                                                <i class="fa-solid fa-rocket"></i> Iniciar Harmony
-                                            </button>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>` : ''}
                     `;
                     this.aplicarFiltrosImplantacaoIA();
                 },
@@ -34685,6 +34783,7 @@ storage: {
                         Qualidade: 'bg-blue-500', 
                         Treinamento: 'bg-emerald-500',
                         'Jovem Aprendiz': 'bg-cyan-500',
+                        'R&S': 'bg-pink-500',
                         Dev: 'bg-purple-500',
                         Operador: 'bg-teal-500' 
                     };
@@ -34693,6 +34792,7 @@ storage: {
                         'Qualidade': 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
                         'Treinamento': 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
                         'Jovem Aprendiz': 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-cyan-800',
+                        'R&S': 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-300 dark:border-pink-800',
                         'Dev': 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800',
                         'Gestor': 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
                         'Gerente': 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800'
@@ -34733,7 +34833,7 @@ storage: {
                                 <div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 ml-auto max-w-full">
                                     ${podeEditarHierarquia ? `
                                         <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
-                                            ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
+                                            ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'R&S', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
                                         </select>
                                         ${cargo === 'Treinamento' ? `
                                             <select onchange="app.ui.alterarSubclasseTreinamentoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-black uppercase border cursor-pointer outline-none bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs" title="Denominação da Subclasse de Treinamento">
@@ -34838,6 +34938,7 @@ storage: {
                         { id: 'Qualidade', label: 'Qualidade', count: app.users.filter(u => cargoDe(u) === 'Qualidade').length },
                         { id: 'Treinamento', label: 'Treinamento', count: app.users.filter(u => cargoDe(u) === 'Treinamento').length },
                         { id: 'Jovem Aprendiz', label: 'Jovem Aprendiz', count: app.users.filter(u => cargoDe(u) === 'Jovem Aprendiz').length },
+                        { id: 'R&S', label: 'R&S', count: app.users.filter(u => cargoDe(u) === 'R&S').length },
                         { id: 'Operador', label: 'Operadores (Turmas)', count: app.users.filter(u => cargoDe(u) === 'Operador').length },
                         { id: 'Dev', label: 'Dev', count: app.users.filter(u => cargoDe(u) === 'Dev').length }
                     ].map(r => `<button type="button" data-role="${r.id}" onclick="app.ui.filterHierarquiaView(undefined, '${r.id}')" class="hierarquia-role-pill px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${activeRole === r.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${r.label} <span class="opacity-60 ml-0.5 tabular-nums">${r.count}</span></button>`).join('');
@@ -36577,12 +36678,12 @@ storage: {
                         const opNomeEnc = encodeURIComponent(op.nome);
 
                         tabelaRowsHtml += `
-                            <tr class="${rowClass} hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                            <tr class="${rowClass} hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group/oprow">
                                 <td class="py-3 px-4 font-bold text-slate-700 dark:text-slate-300">
                                     <div class="flex items-center gap-3">
                                         <i class="fa-solid fa-headset text-slate-300 dark:text-slate-600 text-lg"></i>
                                         <div class="flex flex-col">
-                                            <span class="group-hover:text-blue-600 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${opNomeEnc}')">${op.nome}</span>${tempoCasaBadge}
+                                            <span class="group-hover/oprow:text-blue-600 dark:group-hover/oprow:text-blue-400 transition-colors cursor-pointer" onclick="app.ui.openOperadorAnaliseModal('${opNomeEnc}')">${op.nome}</span>${tempoCasaBadge}
                                         </div>
                                     </div>
                                 </td>
@@ -51849,10 +51950,14 @@ storage: {
                         app.users[idx].abasLiberadas = abasLiberadas;
                         if (tipoAcesso === 'Operador') {
                             app.users[idx].cargo = 'Operador em Treinamento';
+                            app.users[idx].ignorarSyncTurma = false;
                         } else {
                             app.users[idx].cargo = null;
                             app.users[idx].turmaId = null;
                             app.users[idx].turmaNumero = null;
+                            app.users[idx].turmaTreinadorMatricula = null;
+                            app.users[idx].turmaTreinadorNome = null;
+                            app.users[idx].ignorarSyncTurma = true;
                         }
                         if (tipoAcesso === 'Gerente' || tipoAcesso === 'Gestor') {
                             app.users[idx].gestorMatricula = null;
@@ -51919,6 +52024,9 @@ storage: {
                                     cargo: app.users[idx].cargo || null,
                                     turmaId: app.users[idx].turmaId || null,
                                     turmaNumero: app.users[idx].turmaNumero || null,
+                                    turmaTreinadorMatricula: app.users[idx].turmaTreinadorMatricula || null,
+                                    turmaTreinadorNome: app.users[idx].turmaTreinadorNome || null,
+                                    ignorarSyncTurma: !!app.users[idx].ignorarSyncTurma,
                                     roleUpdatedAt: nowRoleTs,
                                     gestorMatricula: app.users[idx].gestorMatricula || null,
                                     operacoes,
@@ -52320,13 +52428,15 @@ storage: {
                             </div>
                         `;
                     } else {
+                        const _nowDt = new Date();
+                        const _todayIso = `${_nowDt.getFullYear()}-${String(_nowDt.getMonth() + 1).padStart(2, '0')}-${String(_nowDt.getDate()).padStart(2, '0')}`;
                         html += `
                             <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-end">
                                 <div class="xl:col-span-5">
                                     <h4 class="font-bold text-xs text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-2"><i class="fa-solid fa-calendar-plus text-blue-500"></i> Agendar Feedback (Opcional)</h4>
                                     <div class="flex gap-2">
-                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data</label><input type="date" id="schedule-date" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white" min="${new Date().toISOString().split('T')[0]}"></div>
-                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Horário</label><input type="time" id="schedule-time" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white"></div>
+                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Data</label><input type="date" id="schedule-date" onchange="app.admin._timelineCustomDate=this.value; app.admin.updateFeedbackDayTimeline();" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white" min="${_todayIso}"></div>
+                                        <div class="w-1/2"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Horário</label><input type="time" id="schedule-time" oninput="app.admin.updateFeedbackDayTimeline();" onchange="app.admin.updateFeedbackDayTimeline();" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 outline-none text-xs dark:bg-slate-900 dark:text-white"></div>
                                     </div>
                                 </div>
                                 <div class="xl:col-span-7 flex flex-wrap justify-end gap-2">
@@ -52337,6 +52447,7 @@ storage: {
                             </div>
                         `;
                     }
+                    html += `<div id="fb-day-timeline-box">${this.renderFeedbackDayTimelineHtml(r.status === 'agendado' ? r.fbDate : null, u.matricula, r.status === 'agendado' ? (r.fbTime || '') : '')}</div>`;
                     html += `</div>`;
 
                     // ADICIONA O HISTÓRICO DE EDIÇÕES AUDITADAS
@@ -52365,6 +52476,202 @@ storage: {
                     editorArea.innerHTML = html;
                     editorArea.classList.remove('hidden');
                     this.updateLiveScorePreview();
+                },
+
+                selectFeedbackTimelineDate(dateIso) {
+                    this._timelineCustomDate = dateIso || '';
+                    const dtInput = document.getElementById('schedule-date');
+                    if (dtInput && dateIso) dtInput.value = dateIso;
+                    this.updateFeedbackDayTimeline();
+                },
+
+                updateFeedbackDayTimeline() {
+                    const box = document.getElementById('fb-day-timeline-box');
+                    if (!box) return;
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = selectEl ? selectEl.value : window.selectedAdminEditUser;
+                    const dtInput = document.getElementById('schedule-date');
+                    const hrInput = document.getElementById('schedule-time');
+                    const u = (app.users || []).find(x => x.matricula === mat);
+                    const r = (u && u.results && u.results[app.currentMonth]) || {};
+                    const targetDate = (dtInput && dtInput.value) || this._timelineCustomDate || (r.status === 'agendado' ? r.fbDate : '') || '';
+                    const previewTime = (hrInput && hrInput.value) || '';
+                    box.innerHTML = this.renderFeedbackDayTimelineHtml(targetDate, mat, previewTime);
+                },
+
+                renderFeedbackDayTimelineHtml(explicitDate = null, currentMat = null, previewTime = '') {
+                    const esc = app.utils.escapeHtml;
+                    const mes = app.currentMonth;
+                    const nowDt = new Date();
+                    const todayIso = `${nowDt.getFullYear()}-${String(nowDt.getMonth() + 1).padStart(2, '0')}-${String(nowDt.getDate()).padStart(2, '0')}`;
+
+                    // Coleta todos os agendamentos/assinaturas com data neste mês para descobrir os dias disponíveis
+                    const scheduledAll = [];
+                    (app.users || []).forEach(u => {
+                        if (!u || !u.results || !u.results[mes]) return;
+                        const res = u.results[mes];
+                        if ((res.status === 'agendado' || res.status === 'validado') && res.fbDate) {
+                            scheduledAll.push({ user: u, res });
+                        }
+                    });
+
+                    const datesSet = new Set(scheduledAll.map(item => item.res.fbDate).filter(Boolean));
+                    const sortedDates = Array.from(datesSet).sort();
+
+                    let targetDate = explicitDate || this._timelineCustomDate || '';
+                    if (!targetDate) {
+                        targetDate = datesSet.has(todayIso) ? todayIso : (sortedDates.find(d => d >= todayIso) || sortedDates[0] || todayIso);
+                    }
+                    const dtBr = targetDate ? targetDate.split('-').reverse().join('/') : '--/--/----';
+
+                    // Itens salvos nesse dia
+                    const normCur = String(currentMat || '').trim().toUpperCase();
+                    const itemsForDay = scheduledAll
+                        .filter(item => item.res.fbDate === targetDate)
+                        .map(item => ({
+                            matricula: item.user.matricula,
+                            nome: app.utils.fixEncoding(item.user.nome),
+                            foto: item.user.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(app.utils.fixEncoding(item.user.nome))}&background=cbd5e1&color=ffffff&size=128`,
+                            time: item.res.fbTime || '23:59',
+                            rawTime: item.res.fbTime || '--:--',
+                            status: item.res.status === 'validado' ? 'validado' : 'agendado',
+                            isCurrent: String(item.user.matricula || '').trim().toUpperCase() === normCur,
+                            isPreview: false
+                        }));
+
+                    // Se o gestor selecionou data + horário no formulário para este monitor, injeta prévia ao vivo na ordem
+                    const dtInputEl = typeof document !== 'undefined' ? document.getElementById('schedule-date') : null;
+                    const activeFormDate = dtInputEl ? dtInputEl.value : explicitDate;
+                    const cleanPreviewTime = String(previewTime || '').trim();
+                    if (currentMat && cleanPreviewTime && (!activeFormDate || activeFormDate === targetDate)) {
+                        const curUser = (app.users || []).find(u => String(u.matricula || '').trim().toUpperCase() === normCur);
+                        const existingIdx = itemsForDay.findIndex(x => x.isCurrent);
+                        if (curUser && existingIdx === -1) {
+                            const cNome = app.utils.fixEncoding(curUser.nome);
+                            itemsForDay.push({
+                                matricula: curUser.matricula,
+                                nome: cNome,
+                                foto: curUser.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(cNome)}&background=6366f1&color=ffffff&size=128`,
+                                time: cleanPreviewTime,
+                                rawTime: cleanPreviewTime,
+                                status: 'preview',
+                                isCurrent: true,
+                                isPreview: true
+                            });
+                        }
+                    }
+
+                    // Ordena cronologicamente por horário (e nome como desempate)
+                    itemsForDay.sort((a, b) => {
+                        const ta = String(a.time || '23:59');
+                        const tb = String(b.time || '23:59');
+                        if (ta !== tb) return ta.localeCompare(tb);
+                        return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+                    });
+
+                    // Detecta conflito exato de horário
+                    const timeCounts = {};
+                    itemsForDay.forEach(it => {
+                        if (it.rawTime && it.rawTime !== '--:--') {
+                            timeCounts[it.rawTime] = (timeCounts[it.rawTime] || 0) + 1;
+                        }
+                    });
+                    const conflictTimes = Object.keys(timeCounts).filter(t => timeCounts[t] > 1);
+
+                    // Pills rápidos de datas com agendamentos
+                    const quickDates = Array.from(new Set([targetDate, ...sortedDates])).sort();
+                    const dayPillsHtml = quickDates.length > 0 ? `
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            ${quickDates.slice(0, 8).map(d => {
+                                const active = d === targetDate;
+                                const qtd = scheduledAll.filter(x => x.res.fbDate === d).length;
+                                const labelD = d === todayIso ? 'Hoje' : d.split('-').slice(1).reverse().join('/');
+                                return `<button type="button" onclick="app.admin.selectFeedbackTimelineDate('${d}')" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition cursor-pointer tabular-nums flex items-center gap-1 ${active ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">${labelD}${qtd > 0 ? `<span class="px-1 rounded ${active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300'}">${qtd}</span>` : ''}</button>`;
+                            }).join('')}
+                        </div>
+                    ` : '';
+
+                    return `
+                        <div class="mt-2 rounded-2xl bg-slate-50/90 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 p-3.5 sm:p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-7 h-7 rounded-xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-xs shrink-0">
+                                        <i class="fa-solid fa-timeline"></i>
+                                    </span>
+                                    <div>
+                                        <div class="text-xs font-black text-slate-800 dark:text-white flex items-center gap-2 flex-wrap">
+                                            <span>Linha do Tempo do Dia • ${dtBr}</span>
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800 tabular-nums">${itemsForDay.length} monitor(es)</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-500 dark:text-slate-400">Ordem cronológica dos feedbacks de bonificação agendados para esta data</div>
+                                    </div>
+                                </div>
+                                ${dayPillsHtml}
+                            </div>
+
+                            ${conflictTimes.length > 0 ? `
+                                <div class="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-[11px] font-bold flex items-center gap-2">
+                                    <i class="fa-solid fa-triangle-exclamation text-amber-500 shrink-0"></i>
+                                    <span>Atenção: há mais de um monitor marcado às <strong>${conflictTimes.join(', ')}</strong> neste dia.</span>
+                                </div>
+                            ` : ''}
+
+                            ${itemsForDay.length === 0 ? `
+                                <div class="rounded-xl border border-dashed border-slate-200 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/30 p-4 text-center text-xs text-slate-400">
+                                    Nenhum monitor agendado para <strong>${dtBr}</strong> ainda. Defina a data e o horário acima para visualizar a ordem na linha do tempo.
+                                </div>
+                            ` : `
+                                <div class="relative overflow-x-auto pb-1 custom-scrollbar">
+                                    <div class="flex items-stretch gap-3 min-w-max relative pt-1">
+                                        ${itemsForDay.map((item, idx) => {
+                                            const isConf = item.rawTime !== '--:--' && timeCounts[item.rawTime] > 1;
+                                            const ringCls = item.isPreview
+                                                ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 border-dashed border-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40'
+                                                : (isConf
+                                                    ? 'border-amber-400 dark:border-amber-600 bg-amber-50/60 dark:bg-amber-950/25'
+                                                    : (item.status === 'validado'
+                                                        ? 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/20'
+                                                        : (item.isCurrent
+                                                            ? 'border-blue-400 dark:border-blue-600 bg-blue-50/70 dark:bg-blue-950/35 ring-2 ring-blue-500/20'
+                                                            : 'border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800/90 hover:border-indigo-300')));
+                                            const avatarRing = item.isPreview
+                                                ? 'ring-2 ring-indigo-500'
+                                                : (item.status === 'validado' ? 'ring-2 ring-emerald-500' : 'ring-2 ring-blue-500');
+                                            const parts = String(item.nome || '').trim().split(/\s+/);
+                                            const shortNome = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] || '-');
+                                            const statusTag = item.isPreview
+                                                ? '<span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase">Prévia</span>'
+                                                : (item.status === 'validado'
+                                                    ? '<span class="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-[9px] font-black uppercase">Validado</span>'
+                                                    : '<span class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-[9px] font-black uppercase">Agendado</span>');
+                                            const arrowHtml = idx < itemsForDay.length - 1
+                                                ? '<div class="flex items-center text-slate-300 dark:text-slate-600 shrink-0"><i class="fa-solid fa-chevron-right text-xs"></i></div>'
+                                                : '';
+                                            return `
+                                                <button type="button" ${!item.isPreview ? `onclick="app.ui?.selectUserForCadastros ? app.ui.selectUserForCadastros('${esc(item.matricula)}') : null"` : ''} class="w-40 shrink-0 text-left rounded-2xl border p-2.5 transition-all cursor-pointer flex flex-col gap-2 ${ringCls}" title="${esc(item.nome)} (#${esc(item.matricula)}) • ${esc(item.rawTime)}">
+                                                    <div class="flex items-center justify-between gap-1">
+                                                        <span class="px-1.5 py-0.5 rounded-md bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black tabular-nums">${idx + 1}º • ${esc(item.rawTime)}</span>
+                                                        ${statusTag}
+                                                    </div>
+                                                    <div class="flex items-center gap-2 min-w-0">
+                                                        <div class="relative shrink-0">
+                                                            <img src="${item.foto}" class="w-9 h-9 rounded-full object-cover ${avatarRing}" alt="${esc(shortNome)}">
+                                                            ${item.status === 'validado' ? '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] ring-2 ring-white dark:ring-slate-900"><i class="fa-solid fa-check"></i></span>' : ''}
+                                                        </div>
+                                                        <div class="min-w-0 flex-1">
+                                                            <div class="text-[11px] font-extrabold text-slate-800 dark:text-white leading-tight truncate">${esc(shortNome)}</div>
+                                                            <div class="text-[10px] text-slate-400 tabular-nums">#${esc(item.matricula)}</div>
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                                ${arrowHtml}
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `}
+                        </div>
+                    `;
                 },
 
                 updateLiveScorePreview() {
@@ -57711,18 +58018,37 @@ Object.assign(app.ui, {
                     initDismissListeners() {
                         if (this._dismissListenersInitialized) return;
                         this._dismissListenersInitialized = true;
+                        this._lastPasteOrShortcutTs = 0;
+                        this._backdropMouseDownTarget = null;
 
-                        // Fechamento instantâneo com tecla ESC
+                        // Registra atalhos de colar/teclado para blindar modais contra fechamento acidental (ex: Ctrl+Shift+V)
+                        document.addEventListener('paste', () => {
+                            this._lastPasteOrShortcutTs = Date.now();
+                        }, true);
+
+                        // Fechamento instantâneo apenas com tecla ESC isolada (sem Ctrl/Shift/Alt/Meta e fora de colagem)
                         document.addEventListener('keydown', (e) => {
-                            if (e.key === 'Escape') {
+                            if (e.ctrlKey || e.metaKey || e.altKey) {
+                                this._lastPasteOrShortcutTs = Date.now();
+                                return;
+                            }
+                            if (e.key === 'Escape' && !e.shiftKey) {
+                                if (Date.now() - (this._lastPasteOrShortcutTs || 0) < 400) return;
                                 this.closeTopModal();
                             }
                         });
 
-                        // Fechamento ao clicar fora (no backdrop escuro)
+                        document.addEventListener('mousedown', (e) => {
+                            this._backdropMouseDownTarget = e.target || null;
+                        }, true);
+
+                        // Fechamento ao clicar fora (apenas se mousedown e click ocorreram no mesmo backdrop e sem Ctrl/Shift/colagem)
                         document.addEventListener('click', (e) => {
+                            if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+                            if (Date.now() - (this._lastPasteOrShortcutTs || 0) < 400) return;
                             const target = e.target;
                             if (!target || !target.classList) return;
+                            if (this._backdropMouseDownTarget !== target) return;
 
                             // Se o elemento clicado é o backdrop escuro externo
                             const isBackdrop = target.classList.contains('fixed') &&
@@ -57734,7 +58060,7 @@ Object.assign(app.ui, {
 
                             if (isBackdrop) {
                                 // Não fecha telas vitais de login ou erro
-                                if (target.id === 'view-login' || target.id === 'view-app' || target.id === 'session-wait-screen' || target.id === 'error-boundary-screen') {
+                                if (target.id === 'view-login' || target.id === 'view-app' || target.id === 'session-wait-screen' || target.id === 'error-boundary-screen' || target.id === 'portal-global-theme-bg') {
                                     return;
                                 }
                                 this.closeModalElement(target);
@@ -57914,16 +58240,18 @@ Object.assign(app.ui, {
                     },
 
                     // =========================================================================
-                    // ABA INICIAL: PERSONALIZÁVEL COM HORÁRIO DE BRASÍLIA E TEMPO DE CURITIBA
+                    // TEMA GLOBAL POR USUÁRIO (APLICADO EM TODAS AS PÁGINAS DO PORTAL)
                     // =========================================================================
                     HOME_BG_THEMES: {
                         indigo: {
                             id: 'indigo',
                             name: 'Índigo Noturno',
+                            accentHex: '#4f46e5',
+                            modalHeaderGrad: 'linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%)',
                             swatch: 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900',
                             hero: 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-slate-800',
-                            canvas: 'bg-gradient-to-br from-indigo-50/70 via-slate-50/80 to-sky-50/60 dark:from-slate-950 dark:via-indigo-950/35 dark:to-slate-950',
-                            orb1: 'bg-indigo-500/15',
+                            canvas: 'bg-gradient-to-br from-indigo-50 via-slate-50 to-sky-50 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-950',
+                            orb1: 'bg-indigo-500/18',
                             orb2: 'bg-sky-500/15',
                             titleGrad: 'from-indigo-300 via-sky-200 to-emerald-300',
                             isLightHero: false
@@ -57931,20 +58259,24 @@ Object.assign(app.ui, {
                         ocean: {
                             id: 'ocean',
                             name: 'Oceano Atlântico',
+                            accentHex: '#0891b2',
+                            modalHeaderGrad: 'linear-gradient(135deg, #020617 0%, #155e75 55%, #075985 100%)',
                             swatch: 'bg-gradient-to-br from-slate-950 via-cyan-800 to-sky-900',
                             hero: 'bg-gradient-to-r from-slate-950 via-cyan-950 to-sky-900 text-white border-cyan-900/70',
-                            canvas: 'bg-gradient-to-br from-cyan-50/80 via-sky-50/70 to-slate-50 dark:from-slate-950 dark:via-cyan-950/35 dark:to-slate-950',
+                            canvas: 'bg-gradient-to-br from-cyan-50 via-sky-50 to-slate-50 dark:from-slate-950 dark:via-cyan-950/55 dark:to-slate-950',
                             orb1: 'bg-cyan-400/20',
-                            orb2: 'bg-sky-400/20',
+                            orb2: 'bg-sky-400/18',
                             titleGrad: 'from-cyan-300 via-sky-200 to-teal-200',
                             isLightHero: false
                         },
                         emerald: {
                             id: 'emerald',
                             name: 'Floresta Esmeralda',
+                            accentHex: '#059669',
+                            modalHeaderGrad: 'linear-gradient(135deg, #022c22 0%, #065f46 55%, #0f172a 100%)',
                             swatch: 'bg-gradient-to-br from-emerald-950 via-teal-800 to-slate-900',
                             hero: 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white border-emerald-900/70',
-                            canvas: 'bg-gradient-to-br from-emerald-50/80 via-teal-50/60 to-slate-50 dark:from-slate-950 dark:via-emerald-950/35 dark:to-slate-950',
+                            canvas: 'bg-gradient-to-br from-emerald-50 via-teal-50/80 to-slate-50 dark:from-slate-950 dark:via-emerald-950/55 dark:to-slate-950',
                             orb1: 'bg-emerald-400/20',
                             orb2: 'bg-teal-400/15',
                             titleGrad: 'from-emerald-300 via-teal-200 to-lime-200',
@@ -57953,42 +58285,50 @@ Object.assign(app.ui, {
                         aurora: {
                             id: 'aurora',
                             name: 'Aurora Violeta',
+                            accentHex: '#a21caf',
+                            modalHeaderGrad: 'linear-gradient(135deg, #3b0764 0%, #86198f 55%, #312e81 100%)',
                             swatch: 'bg-gradient-to-br from-purple-950 via-fuchsia-900 to-indigo-950',
                             hero: 'bg-gradient-to-r from-purple-950 via-fuchsia-950 to-indigo-950 text-white border-purple-900/70',
-                            canvas: 'bg-gradient-to-br from-purple-50/80 via-fuchsia-50/50 to-indigo-50/70 dark:from-slate-950 dark:via-purple-950/35 dark:to-slate-950',
-                            orb1: 'bg-fuchsia-500/20',
-                            orb2: 'bg-violet-400/20',
+                            canvas: 'bg-gradient-to-br from-purple-50 via-fuchsia-50/70 to-indigo-50 dark:from-slate-950 dark:via-purple-950/55 dark:to-slate-950',
+                            orb1: 'bg-fuchsia-500/18',
+                            orb2: 'bg-violet-400/18',
                             titleGrad: 'from-fuchsia-300 via-pink-200 to-indigo-200',
                             isLightHero: false
                         },
                         sunset: {
                             id: 'sunset',
                             name: 'Crepúsculo Âmbar',
+                            accentHex: '#e11d48',
+                            modalHeaderGrad: 'linear-gradient(135deg, #0f172a 0%, #9f1239 55%, #b45309 100%)',
                             swatch: 'bg-gradient-to-br from-slate-900 via-rose-900 to-amber-800',
                             hero: 'bg-gradient-to-r from-slate-900 via-rose-950 to-amber-950 text-white border-rose-900/60',
-                            canvas: 'bg-gradient-to-br from-amber-50/75 via-rose-50/60 to-slate-50 dark:from-slate-950 dark:via-rose-950/30 dark:to-slate-950',
-                            orb1: 'bg-rose-400/20',
-                            orb2: 'bg-amber-400/20',
+                            canvas: 'bg-gradient-to-br from-amber-50 via-rose-50/75 to-slate-50 dark:from-slate-950 dark:via-rose-950/50 dark:to-slate-950',
+                            orb1: 'bg-rose-400/18',
+                            orb2: 'bg-amber-400/18',
                             titleGrad: 'from-amber-300 via-orange-200 to-rose-200',
                             isLightHero: false
                         },
                         royal: {
                             id: 'royal',
                             name: 'Azul Royal',
+                            accentHex: '#2563eb',
+                            modalHeaderGrad: 'linear-gradient(135deg, #172554 0%, #1d4ed8 55%, #312e81 100%)',
                             swatch: 'bg-gradient-to-br from-blue-950 via-blue-800 to-indigo-950',
                             hero: 'bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white border-blue-800/70',
-                            canvas: 'bg-gradient-to-br from-blue-50/80 via-indigo-50/60 to-slate-50 dark:from-slate-950 dark:via-blue-950/35 dark:to-slate-950',
+                            canvas: 'bg-gradient-to-br from-blue-50 via-indigo-50/75 to-slate-50 dark:from-slate-950 dark:via-blue-950/55 dark:to-slate-950',
                             orb1: 'bg-blue-400/20',
-                            orb2: 'bg-indigo-400/20',
+                            orb2: 'bg-indigo-400/18',
                             titleGrad: 'from-blue-200 via-sky-200 to-cyan-200',
                             isLightHero: false
                         },
                         graphite: {
                             id: 'graphite',
                             name: 'Grafite Minimal',
+                            accentHex: '#52525b',
+                            modalHeaderGrad: 'linear-gradient(135deg, #18181b 0%, #3f3f46 55%, #1c1917 100%)',
                             swatch: 'bg-gradient-to-br from-zinc-900 via-neutral-800 to-stone-900',
                             hero: 'bg-gradient-to-r from-zinc-900 via-neutral-900 to-stone-900 text-white border-zinc-800',
-                            canvas: 'bg-gradient-to-br from-zinc-100/80 via-slate-50 to-stone-100/70 dark:from-zinc-950 dark:via-neutral-900 dark:to-zinc-950',
+                            canvas: 'bg-gradient-to-br from-zinc-100 via-slate-50 to-stone-100 dark:from-zinc-950 dark:via-neutral-900 dark:to-zinc-950',
                             orb1: 'bg-zinc-400/15',
                             orb2: 'bg-stone-400/15',
                             titleGrad: 'from-white via-zinc-200 to-slate-400',
@@ -57997,14 +58337,175 @@ Object.assign(app.ui, {
                         daylight: {
                             id: 'daylight',
                             name: 'Manhã Clara',
-                            swatch: 'bg-gradient-to-br from-sky-200 via-white to-emerald-100 border border-slate-300',
-                            hero: 'bg-gradient-to-r from-sky-100 via-white to-emerald-50 text-slate-900 border-sky-200/90',
-                            canvas: 'bg-gradient-to-br from-sky-50 via-white to-emerald-50/70 dark:from-slate-900 dark:via-slate-950 dark:to-sky-950/30',
-                            orb1: 'bg-sky-300/25',
-                            orb2: 'bg-emerald-300/20',
-                            titleGrad: 'from-blue-600 via-indigo-600 to-emerald-600',
+                            accentHex: '#0284c7',
+                            modalHeaderGrad: 'linear-gradient(135deg, #0369a1 0%, #0284c7 55%, #0d9488 100%)',
+                            swatch: 'bg-gradient-to-br from-sky-200 via-white to-emerald-100 border border-slate-300 dark:from-slate-800 dark:via-sky-900 dark:to-emerald-950 dark:border-sky-700/60',
+                            hero: 'bg-gradient-to-r from-sky-100 via-white to-emerald-50 text-slate-900 border-sky-200/90 dark:from-slate-900 dark:via-sky-950 dark:to-emerald-950/90 dark:text-white dark:border-sky-800/60',
+                            canvas: 'bg-gradient-to-br from-sky-50 via-white to-emerald-50/80 dark:from-slate-950 dark:via-[#071525] dark:to-[#041b1a]',
+                            orb1: 'bg-sky-300/25 dark:bg-sky-600/14',
+                            orb2: 'bg-emerald-300/20 dark:bg-emerald-600/12',
+                            titleGrad: 'from-blue-600 via-indigo-600 to-emerald-600 dark:from-sky-300 dark:via-cyan-200 dark:to-emerald-300',
                             isLightHero: true
                         }
+                    },
+
+                    _injectGlobalThemeStylesOnce() {
+                        if (document.getElementById('portal-global-theme-css')) return;
+                        const st = document.createElement('style');
+                        st.id = 'portal-global-theme-css';
+                        st.textContent = `
+                            body[data-portal-theme] {
+                                background-color: transparent !important;
+                            }
+                            body[data-portal-theme] #view-app > header {
+                                background: rgba(255, 255, 255, 0.78) !important;
+                                border-bottom-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.16) !important;
+                            }
+                            .dark body[data-portal-theme] #view-app > header,
+                            html.dark body[data-portal-theme] #view-app > header {
+                                background: rgba(15, 23, 42, 0.78) !important;
+                                border-bottom-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.22) !important;
+                            }
+                            html.dark body[data-portal-theme] #mz-global-icon-rail,
+                            body[data-portal-theme] #mz-global-icon-rail {
+                                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.18) !important;
+                            }
+                            body[data-portal-theme] #sl-active-subnav-bar {
+                                border-bottom-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14) !important;
+                            }
+                            #home-speed-dial-search,
+                            html.dark #home-speed-dial-search,
+                            .dark #home-speed-dial-search,
+                            #home-speed-dial-search:focus,
+                            html.dark #home-speed-dial-search:focus,
+                            .dark #home-speed-dial-search:focus,
+                            input.home-hero-search-input,
+                            html.dark input.home-hero-search-input,
+                            .dark input.home-hero-search-input,
+                            input.home-hero-search-input:focus,
+                            .dark input.home-hero-search-input:focus {
+                                background: transparent !important;
+                                background-color: transparent !important;
+                                border: 0 !important;
+                                box-shadow: none !important;
+                                outline: none !important;
+                            }
+
+                            /* Adaptação global de todos os modais ao tema selecionado */
+                            :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) {
+                                background: radial-gradient(circle at 50% 14%, rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.16), rgba(15, 23, 42, 0.62)) !important;
+                                backdrop-filter: blur(10px) !important;
+                            }
+                            html.dark :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) {
+                                background: radial-gradient(circle at 50% 14%, rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.24), rgba(2, 6, 23, 0.78)) !important;
+                            }
+
+                            :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) > :is(div, form):is([class*="rounded-2xl"], [class*="rounded-3xl"], [class*="rounded-["]),
+                            body[data-portal-theme] #command-palette-modal .relative > div.rounded-2xl {
+                                background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, color-mix(in srgb, var(--theme-color) 6%, #f8fafc) 100%) !important;
+                                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.24) !important;
+                                box-shadow: 0 28px 65px -16px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.24), 0 12px 28px -8px rgba(15, 23, 42, 0.14) !important;
+                            }
+                            html.dark :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) > :is(div, form):is([class*="rounded-2xl"], [class*="rounded-3xl"], [class*="rounded-["]),
+                            html.dark body[data-portal-theme] #command-palette-modal .relative > div.rounded-2xl {
+                                background: linear-gradient(180deg, color-mix(in srgb, var(--theme-color) 16%, #0b1120) 0%, color-mix(in srgb, var(--theme-color) 9%, #070b14) 100%) !important;
+                                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.36) !important;
+                                box-shadow: 0 28px 70px -12px rgba(0, 0, 0, 0.82), 0 0 0 1px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.18) !important;
+                            }
+
+                            /* Cabeçalhos com gradiente de modais assumem o gradiente do tema selecionado */
+                            :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) > :is(div, form):is([class*="rounded-2xl"], [class*="rounded-3xl"], [class*="rounded-["]) > div:first-child:is([class*="bg-gradient-to-"]) {
+                                background-image: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 100%)) !important;
+                                background-color: transparent !important;
+                                border-bottom: 1px solid rgba(255, 255, 255, 0.14) !important;
+                            }
+
+                            /* Área interna de corpo/rodapé e subcards neutros nos modais em Modo Escuro */
+                            html.dark :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) > :is(div, form):is([class*="rounded-2xl"], [class*="rounded-3xl"], [class*="rounded-["]) > :is(div.overflow-y-auto, div.border-t) {
+                                background-color: color-mix(in srgb, var(--theme-color) 7%, #090e1a) !important;
+                                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.22) !important;
+                            }
+
+                            html.dark :is(
+                                body[data-portal-theme] div[id$="-modal"].fixed.inset-0,
+                                body[data-portal-theme] div[id^="modal-"].fixed.inset-0,
+                                body[data-portal-theme] #pdca-modal-layer > div.fixed.inset-0,
+                                body[data-portal-theme] > div.fixed.inset-0:not(#portal-global-theme-bg):not(#error-boundary-screen):not(#sync-loader-screen):not(#session-wait-screen):not(#toast-container):not(#global-toast-container):not(#sl-splash-overlay):not(#mz-splash-overlay):not(#splash-screen):not([class*="bg-red-950"])
+                            ) div:is([class*="dark:bg-slate-800"], [class*="dark:bg-slate-900"], [class*="dark:bg-dark-surface"]):not([class*="bg-amber-"]):not([class*="bg-yellow-"]):not([class*="bg-red-"]):not([class*="bg-emerald-"]):not([class*="bg-green-"]):not([class*="bg-blue-"]):not([class*="bg-indigo-"]):not([class*="bg-orange-"]):not([class*="bg-purple-"]):not([class*="bg-rose-"]):not([class*="bg-teal-"]) {
+                                background-color: color-mix(in srgb, var(--theme-color) 11%, #111827) !important;
+                                border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.22) !important;
+                            }
+                        `;
+                        document.head.appendChild(st);
+                    },
+
+                    clearGlobalHomeTheme() {
+                        try { delete document.body.dataset.portalTheme; } catch (e) {}
+                        const bg = document.getElementById('portal-global-theme-bg');
+                        if (bg) bg.remove();
+                    },
+
+                    applyGlobalHomeTheme(themeIdOverride = null) {
+                        const viewApp = document.getElementById('view-app');
+                        const isOpUser = !app.isAdmin && app.currentUser && typeof app.isUserOperador === 'function' && app.isUserOperador(app.currentUser);
+                        if (!viewApp || viewApp.classList.contains('hidden') || app.isGuest || isOpUser) {
+                            this.clearGlobalHomeTheme();
+                            return;
+                        }
+                        const themeId = (themeIdOverride && this.HOME_BG_THEMES[themeIdOverride]) ? themeIdOverride : this._getUserHomeThemeId();
+                        const theme = this.HOME_BG_THEMES[themeId] || this.HOME_BG_THEMES.indigo;
+
+                        this._injectGlobalThemeStylesOnce();
+                        if (theme.accentHex && typeof this.changeThemeColor === 'function') {
+                            this.changeThemeColor(theme.accentHex);
+                        }
+                        if (theme.modalHeaderGrad) {
+                            document.documentElement.style.setProperty('--portal-modal-header', theme.modalHeaderGrad);
+                        }
+                        document.body.dataset.portalTheme = theme.id;
+
+                        let bgEl = document.getElementById('portal-global-theme-bg');
+                        if (!bgEl) {
+                            bgEl = document.createElement('div');
+                            bgEl.id = 'portal-global-theme-bg';
+                            document.body.insertBefore(bgEl, document.body.firstChild);
+                        }
+                        bgEl.className = `fixed inset-0 pointer-events-none z-0 overflow-hidden transition-all duration-500 ${theme.canvas}`;
+                        bgEl.innerHTML = `
+                            <div class="absolute -top-32 -left-32 w-[32rem] h-[32rem] rounded-full ${theme.orb1} blur-3xl"></div>
+                            <div class="absolute -bottom-32 -right-32 w-[32rem] h-[32rem] rounded-full ${theme.orb2} blur-3xl"></div>
+                            <div class="hidden lg:block absolute top-1/3 right-1/4 w-80 h-80 rounded-full ${theme.orb1} blur-3xl opacity-60"></div>
+                        `;
                     },
 
                     _getUserHomeThemeId() {
@@ -58026,9 +58527,10 @@ Object.assign(app.ui, {
                                 app.storage.saveUserByMatricula(mat, { homeTheme: themeId }).catch(() => {});
                             }
                         }
+                        this.applyGlobalHomeTheme(themeId);
                         const container = document.getElementById('view-container-home');
                         if (container) this.renderView_Home(container);
-                        this.showNotification(`Tema "${this.HOME_BG_THEMES[themeId].name}" aplicado à sua tela inicial!`, 'success', 1800);
+                        this.showNotification(`Tema "${this.HOME_BG_THEMES[themeId].name}" aplicado em todo o portal!`, 'success', 2000);
                     },
 
                     _mapWeatherCodePt(code) {
@@ -58087,13 +58589,80 @@ Object.assign(app.ui, {
                     },
 
                     async _loadHomeCuritibaWeather(force = false) {
-                        const cacheKey = 'soft_curitiba_weather_v1';
+                        const cacheKey = 'soft_curitiba_weather_v2';
+                        const isRainCode = (code) => [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(Number(code));
+                        const buildRainAlert = (w) => {
+                            const slots = Array.isArray(w.rainSlots) ? w.rainSlots : [];
+                            let curHourStr = '';
+                            try {
+                                const parts = new Intl.DateTimeFormat('pt-BR', {
+                                    timeZone: 'America/Sao_Paulo',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: false
+                                }).format(new Date()).split(':');
+                                curHourStr = `${String(parts[0] || '00').padStart(2, '0')}:00`;
+                            } catch (e) {
+                                const d = new Date();
+                                curHourStr = `${String(d.getHours()).padStart(2, '0')}:00`;
+                            }
+
+                            const upcoming = slots.filter(s => s && s.hhmm >= curHourStr);
+                            const rainingNow = isRainCode(w.code);
+                            if (upcoming.length === 0 && !rainingNow) return null;
+
+                            if (rainingNow && upcoming.length <= 1) {
+                                return {
+                                    text: 'Chuva neste momento — cuidado ao sair!',
+                                    severe: [65, 81, 82, 95, 96, 99].includes(Number(w.code))
+                                };
+                            }
+
+                            const first = upcoming[0] || slots[0];
+                            if (!first) return null;
+                            // Agrupa janela contínua a partir do próximo horário de chuva
+                            let endSlot = first;
+                            const startH = parseInt(first.hhmm.slice(0, 2), 10);
+                            let expectedNext = startH + 1;
+                            for (let i = 1; i < upcoming.length; i++) {
+                                const h = parseInt(upcoming[i].hhmm.slice(0, 2), 10);
+                                if (h === expectedNext) {
+                                    endSlot = upcoming[i];
+                                    expectedNext++;
+                                } else {
+                                    break;
+                                }
+                            }
+                            const maxProb = Math.max(...upcoming.map(s => Number(s.prob || 0)), 0);
+                            const probTag = maxProb > 0 ? ` (${Math.round(maxProb)}%)` : '';
+                            const hasStorm = upcoming.some(s => [65, 81, 82, 95, 96, 99].includes(Number(s.code)));
+
+                            if (rainingNow) {
+                                return {
+                                    text: `Chuva agora — previsão até às ${endSlot.hhmm}${probTag}. Cuidado!`,
+                                    severe: hasStorm
+                                };
+                            }
+                            if (endSlot.hhmm !== first.hhmm) {
+                                return {
+                                    text: `Previsão de chuva das ${first.hhmm} às ${endSlot.hhmm}${probTag} — cuidado!`,
+                                    severe: hasStorm
+                                };
+                            }
+                            return {
+                                text: `Chuva prevista às ${first.hhmm}${probTag} — cuidado!`,
+                                severe: hasStorm
+                            };
+                        };
+
                         const renderWeather = (w) => {
                             const tempEl = document.getElementById('home-cwb-temp');
                             const descEl = document.getElementById('home-cwb-desc');
                             const iconEl = document.getElementById('home-cwb-icon');
                             const metaEl = document.getElementById('home-cwb-meta');
                             const rangeEl = document.getElementById('home-cwb-range');
+                            const rainBox = document.getElementById('home-cwb-rain-alert');
+                            const rainTxt = document.getElementById('home-cwb-rain-text');
                             if (!tempEl || !w) return;
                             const info = this._mapWeatherCodePt(w.code);
                             tempEl.textContent = `${Math.round(w.temp)}°C`;
@@ -58102,6 +58671,18 @@ Object.assign(app.ui, {
                             if (metaEl) metaEl.textContent = `Sensação ${Math.round(w.feels)}° • Umidade ${Math.round(w.humidity)}% • Vento ${Math.round(w.wind)} km/h`;
                             if (rangeEl && Number.isFinite(w.min) && Number.isFinite(w.max)) {
                                 rangeEl.textContent = `Mín ${Math.round(w.min)}° / Máx ${Math.round(w.max)}°`;
+                            }
+                            if (rainBox && rainTxt) {
+                                const rainInfo = buildRainAlert(w);
+                                if (rainInfo) {
+                                    rainTxt.textContent = rainInfo.text;
+                                    rainBox.className = `mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-extrabold ${rainInfo.severe
+                                        ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                                        : 'bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-200'}`;
+                                    rainBox.classList.remove('hidden');
+                                } else {
+                                    rainBox.classList.add('hidden');
+                                }
                             }
                         };
 
@@ -58119,12 +58700,29 @@ Object.assign(app.ui, {
                         }
 
                         try {
-                            const url = 'https://api.open-meteo.com/v1/forecast?latitude=-25.4284&longitude=-49.2733&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=America%2FSao_Paulo&forecast_days=1';
+                            const url = 'https://api.open-meteo.com/v1/forecast?latitude=-25.4284&longitude=-49.2733&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&hourly=precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=America%2FSao_Paulo&forecast_days=1';
                             const resp = await fetch(url);
                             if (!resp.ok) throw new Error('HTTP ' + resp.status);
                             const json = await resp.json();
                             const cur = json.current || {};
                             const daily = json.daily || {};
+                            const hourly = json.hourly || {};
+                            const hTimes = Array.isArray(hourly.time) ? hourly.time : [];
+                            const hProbs = Array.isArray(hourly.precipitation_probability) ? hourly.precipitation_probability : [];
+                            const hPrecs = Array.isArray(hourly.precipitation) ? hourly.precipitation : [];
+                            const hCodes = Array.isArray(hourly.weather_code) ? hourly.weather_code : [];
+
+                            const rainSlots = [];
+                            hTimes.forEach((isoT, i) => {
+                                const hhmm = String(isoT || '').slice(11, 16);
+                                const prob = Number(hProbs[i] ?? 0);
+                                const prec = Number(hPrecs[i] ?? 0);
+                                const code = Number(hCodes[i] ?? 0);
+                                if (isRainCode(code) || prec >= 0.2 || prob >= 45) {
+                                    rainSlots.push({ hhmm, prob, prec, code });
+                                }
+                            });
+
                             const payload = {
                                 temp: Number(cur.temperature_2m ?? 0),
                                 feels: Number(cur.apparent_temperature ?? cur.temperature_2m ?? 0),
@@ -58132,7 +58730,8 @@ Object.assign(app.ui, {
                                 wind: Number(cur.wind_speed_10m ?? 0),
                                 code: Number(cur.weather_code ?? 1),
                                 max: Array.isArray(daily.temperature_2m_max) ? Number(daily.temperature_2m_max[0]) : null,
-                                min: Array.isArray(daily.temperature_2m_min) ? Number(daily.temperature_2m_min[0]) : null
+                                min: Array.isArray(daily.temperature_2m_min) ? Number(daily.temperature_2m_min[0]) : null,
+                                rainSlots
                             };
                             try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: payload })); } catch (e) {}
                             renderWeather(payload);
@@ -58144,13 +58743,307 @@ Object.assign(app.ui, {
                         }
                     },
 
+                    _getBrazilianHolidays(year) {
+                        const y = Number(year) || new Date().getFullYear();
+                        const pad = (n) => String(n).padStart(2, '0');
+                        const toIso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        const addDays = (base, delta) => {
+                            const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + delta);
+                            return d;
+                        };
+                        // Algoritmo Meeus/Jones/Butcher para Domingo de Páscoa
+                        const a = y % 19;
+                        const b = Math.floor(y / 100);
+                        const c = y % 100;
+                        const d = Math.floor(b / 4);
+                        const e = b % 4;
+                        const f = Math.floor((b + 8) / 25);
+                        const g = Math.floor((b - f + 1) / 3);
+                        const h = (19 * a + b - d - g + 15) % 30;
+                        const i = Math.floor(c / 4);
+                        const k = c % 4;
+                        const l = (32 + 2 * e + 2 * i - h - k) % 7;
+                        const m = Math.floor((a + 11 * h + 22 * l) / 451);
+                        const month = Math.floor((h + l - 7 * m + 114) / 31);
+                        const day = ((h + l - 7 * m + 114) % 31) + 1;
+                        const pascoa = new Date(y, month - 1, day);
+
+                        const list = [
+                            { date: `${y}-01-01`, name: 'Confraternização Universal', scope: 'Nacional', kind: 'feriado' },
+                            { date: toIso(addDays(pascoa, -47)), name: 'Carnaval', scope: 'Ponto Facultativo', kind: 'facultativo' },
+                            { date: toIso(addDays(pascoa, -2)), name: 'Sexta-feira Santa', scope: 'Nacional', kind: 'feriado' },
+                            { date: toIso(pascoa), name: 'Páscoa', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-04-21`, name: 'Tiradentes', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-05-01`, name: 'Dia do Trabalhador', scope: 'Nacional', kind: 'feriado' },
+                            { date: toIso(addDays(pascoa, 60)), name: 'Corpus Christi', scope: 'Curitiba • PR', kind: 'feriado' },
+                            { date: `${y}-09-07`, name: 'Independência do Brasil', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-09-08`, name: 'N. Sra. da Luz dos Pinhais', scope: 'Curitiba • PR', kind: 'municipal' },
+                            { date: `${y}-10-12`, name: 'Nossa Senhora Aparecida', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-11-02`, name: 'Finados', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-11-15`, name: 'Proclamação da República', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-11-20`, name: 'Dia da Consciência Negra', scope: 'Nacional', kind: 'feriado' },
+                            { date: `${y}-12-19`, name: 'Emancipação do Paraná', scope: 'Estadual • PR', kind: 'estadual' },
+                            { date: `${y}-12-25`, name: 'Natal', scope: 'Nacional', kind: 'feriado' }
+                        ];
+                        return list.sort((x, z) => x.date.localeCompare(z.date));
+                    },
+
+                    setHomeCalMonth(target) {
+                        const now = new Date();
+                        const todayYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                        if (target === 'today') {
+                            this._homeCalMonth = todayYm;
+                        } else if (target === -1 || target === 1) {
+                            const base = this._homeCalMonth || todayYm;
+                            const [y, m] = base.split('-').map(Number);
+                            const dt = new Date(y, (m - 1) + target, 1);
+                            this._homeCalMonth = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+                        } else if (typeof target === 'string' && /^\d{4}-\d{2}$/.test(target)) {
+                            this._homeCalMonth = target;
+                        }
+                        this._renderHomeCalendarWidget();
+                    },
+
+                    _renderHomeCalendarWidget() {
+                        const host = document.getElementById('home-calendar-slot');
+                        if (!host) return;
+                        const esc = app.utils.escapeHtml;
+                        const now = new Date();
+                        const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                        const todayYm = todayIso.slice(0, 7);
+                        const ym = (this._homeCalMonth && /^\d{4}-\d{2}$/.test(this._homeCalMonth)) ? this._homeCalMonth : todayYm;
+                        this._homeCalMonth = ym;
+
+                        const [yearStr, monthStr] = ym.split('-');
+                        const year = Number(yearStr);
+                        const month = Number(monthStr);
+                        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                        const monthTitle = `${monthNames[month - 1] || ''} ${year}`;
+
+                        // Feriados do ano exibido + próximos feriados a partir de hoje
+                        const holidaysYear = this._getBrazilianHolidays(year);
+                        const holidayByDate = new Map();
+                        holidaysYear.forEach(h => holidayByDate.set(h.date, h));
+
+                        const upcomingPool = [
+                            ...this._getBrazilianHolidays(now.getFullYear()),
+                            ...this._getBrazilianHolidays(now.getFullYear() + 1)
+                        ].filter(h => h.date >= todayIso);
+                        const upcomingHolidays = upcomingPool.slice(0, 6);
+
+                        // Eventos do usuário/equipe neste mês (mesma lógica do Calendário)
+                        const isGestorGerenteDev = typeof this.isGestorGerenteDev === 'function' ? this.isGestorGerenteDev() : false;
+                        const curUser = app.currentUser || {};
+                        const curMat = String(curUser.matricula || '').trim();
+                        const curNome = String(curUser.nome || '').toLowerCase().trim();
+                        const allMonthEvts = Object.values(app.eventsList || {}).filter(e => e && e.data && e.data.startsWith(ym));
+                        const visibleEvts = allMonthEvts.filter(e => {
+                            if (isGestorGerenteDev) return true;
+                            if (e.matricula === 'TODOS') return true;
+                            if (app.isAdmin) return e.matricula === 'ADM' || e.autor === 'ADM';
+                            return (curMat && e.matricula === curMat) || (curNome && (e.autor || '').toLowerCase().trim() === curNome);
+                        });
+
+                        const coresEvt = {
+                            'Diário de Bordo': 'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-200 dark:border-emerald-700/60',
+                            'Quality Day': 'bg-purple-100/90 text-purple-800 border-purple-300 dark:bg-purple-900/50 dark:text-purple-200 dark:border-purple-700/60',
+                            'Aplicação de Ação': 'bg-blue-100/90 text-blue-800 border-blue-300 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/60',
+                            'Reunião': 'bg-orange-100/90 text-orange-800 border-orange-300 dark:bg-orange-900/50 dark:text-orange-200 dark:border-orange-700/60',
+                            'Calibração': 'bg-teal-100/90 text-teal-800 border-teal-300 dark:bg-teal-900/50 dark:text-teal-200 dark:border-teal-700/60',
+                            'Outros': 'bg-slate-200/80 text-slate-800 border-slate-300 dark:bg-slate-700/70 dark:text-slate-200 dark:border-slate-600',
+                            'Cancelado': 'bg-red-100/80 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60 line-through opacity-75'
+                        };
+
+                        const daysInMonth = new Date(year, month, 0).getDate();
+                        const firstDayIdx = new Date(year, month - 1, 1).getDay();
+                        let cellsHtml = '';
+                        for (let i = 0; i < firstDayIdx; i++) {
+                            cellsHtml += `<div class="min-h-[82px] sm:min-h-[96px] rounded-2xl bg-slate-100/40 dark:bg-slate-800/20 border border-transparent"></div>`;
+                        }
+
+                        for (let day = 1; day <= daysInMonth; day++) {
+                            const dStr = `${ym}-${String(day).padStart(2, '0')}`;
+                            const isToday = dStr === todayIso;
+                            const hol = holidayByDate.get(dStr);
+                            const dayEvts = visibleEvts
+                                .filter(e => e.data === dStr)
+                                .sort((a, b) => String(a.hora || '00:00').localeCompare(String(b.hora || '00:00')));
+
+                            const cellCls = isToday
+                                ? 'bg-indigo-50/85 dark:bg-indigo-950/45 border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm'
+                                : (hol
+                                    ? 'bg-rose-50/75 dark:bg-rose-950/30 border-rose-200/90 dark:border-rose-800/60 hover:border-rose-300'
+                                    : 'bg-white/75 dark:bg-slate-800/65 border-slate-200/80 dark:border-slate-700/70 hover:border-indigo-300 dark:hover:border-indigo-600');
+
+                            const evtsHtml = dayEvts.slice(0, 3).map(evt => {
+                                const cCls = evt.status === 'Cancelado'
+                                    ? coresEvt['Cancelado']
+                                    : (evt.tipo === 'pessoal'
+                                        ? 'bg-green-100/90 text-green-800 border-green-300 dark:bg-green-900/45 dark:text-green-200 dark:border-green-700/60'
+                                        : (coresEvt[evt.tema] || coresEvt['Outros']));
+                                const lbl = evt.tipo === 'pessoal'
+                                    ? 'Controle Dia'
+                                    : `${evt.hora ? evt.hora + ' ' : ''}${evt.tema || evt.op || 'Evento'}`;
+                                return `
+                                    <div onclick="event.stopPropagation(); app.calendar && app.calendar.viewEvent('${esc(evt.id)}')" class="px-1.5 py-0.5 rounded-lg border text-[10px] font-bold truncate cursor-pointer hover:brightness-95 transition ${cCls}" title="${esc(lbl)}${evt.op ? ' • ' + esc(evt.op) : ''}">
+                                        ${esc(lbl)}
+                                    </div>
+                                `;
+                            }).join('');
+                            const moreHtml = dayEvts.length > 3 ? `<div class="text-[9px] font-black text-slate-400 px-1">+${dayEvts.length - 3}</div>` : '';
+
+                            cellsHtml += `
+                                <div onclick="app.calendar && app.calendar.openModal('${dStr}')" class="min-h-[82px] sm:min-h-[96px] rounded-2xl border p-1.5 sm:p-2 flex flex-col gap-1 transition-all cursor-pointer ${cellCls}" title="${hol ? esc(hol.name + ' (' + hol.scope + ')') : 'Clique para agendar em ' + dStr.split('-').reverse().join('/')}">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="text-xs font-black tabular-nums ${isToday ? 'w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]' : (hol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200')}">${day}</span>
+                                        ${hol ? `<span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" title="${esc(hol.name)}"></span>` : ''}
+                                    </div>
+                                    ${hol ? `<div class="px-1.5 py-0.5 rounded-md bg-rose-100/90 dark:bg-rose-900/50 text-rose-700 dark:text-rose-200 text-[9px] font-extrabold truncate leading-tight" title="${esc(hol.name)}">${esc(hol.name)}</div>` : ''}
+                                    <div class="flex-1 space-y-0.5 overflow-hidden">
+                                        ${evtsHtml}
+                                        ${moreHtml}
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        const canOpenCalTab = app.isAdmin || (this.getEffectiveUserTabs(curUser).includes('calendario'));
+                        const upcomingEvents = visibleEvts
+                            .filter(e => e.data >= todayIso && e.status !== 'Cancelado')
+                            .sort((a, b) => (a.data + ' ' + (a.hora || '00:00')).localeCompare(b.data + ' ' + (b.hora || '00:00')))
+                            .slice(0, 4);
+
+                        const todayMidMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const weekdayShort = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+                        host.innerHTML = `
+                            <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+                                <!-- Calendário Mensal Interativo -->
+                                <div class="xl:col-span-8 rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-4 sm:p-6 flex flex-col">
+                                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="w-9 h-9 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-sm shrink-0">
+                                                <i class="fa-solid fa-calendar-days"></i>
+                                            </span>
+                                            <div>
+                                                <h3 class="text-base font-black text-slate-800 dark:text-white leading-tight capitalize">${esc(monthTitle)}</h3>
+                                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em qualquer dia para agendar ou ver detalhes</p>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex flex-wrap items-center gap-1.5">
+                                            <div class="inline-flex items-center bg-slate-100/90 dark:bg-slate-800/80 rounded-xl p-1 border border-slate-200/70 dark:border-slate-700/70">
+                                                <button type="button" onclick="app.ui.setHomeCalMonth(-1)" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer" title="Mês anterior"><i class="fa-solid fa-chevron-left"></i></button>
+                                                <button type="button" onclick="app.ui.setHomeCalMonth('today')" class="px-2.5 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 transition cursor-pointer">Hoje</button>
+                                                <button type="button" onclick="app.ui.setHomeCalMonth(1)" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer" title="Próximo mês"><i class="fa-solid fa-chevron-right"></i></button>
+                                            </div>
+                                            <button type="button" onclick="app.calendar && app.calendar.openModal('${todayIso}')" class="px-3 py-1.5 rounded-xl text-white text-xs font-extrabold shadow-xs hover:brightness-110 transition flex items-center gap-1.5 cursor-pointer" style="background-color: var(--theme-color);">
+                                                <i class="fa-solid fa-plus text-[10px]"></i> Evento
+                                            </button>
+                                            ${canOpenCalTab ? `
+                                                <button type="button" onclick="app.ui.renderTab('calendario', true)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">
+                                                    Abrir Completo
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-7 gap-1.5 sm:gap-2 mb-1.5">
+                                        ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d, idx) => `<div class="text-center text-[10px] font-black uppercase tracking-wider py-1 ${idx === 0 || idx === 6 ? 'text-rose-400 dark:text-rose-400/80' : 'text-slate-400'}">${d}</div>`).join('')}
+                                    </div>
+                                    <div class="grid grid-cols-7 gap-1.5 sm:gap-2 flex-1">
+                                        ${cellsHtml}
+                                    </div>
+                                </div>
+
+                                <!-- Próximos Feriados & Agenda -->
+                                <div class="xl:col-span-4 flex flex-col gap-4">
+                                    <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 flex-1">
+                                        <div class="flex items-center justify-between gap-2 mb-3.5">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/70 dark:border-rose-800/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-sm shrink-0">
+                                                    <i class="fa-solid fa-umbrella-beach"></i>
+                                                </span>
+                                                <div>
+                                                    <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Próximos Feriados</h3>
+                                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Nacionais, Paraná e Curitiba</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            ${upcomingHolidays.map(h => {
+                                                const [hy, hm, hd] = h.date.split('-').map(Number);
+                                                const hDt = new Date(hy, hm - 1, hd);
+                                                const diffDays = Math.round((hDt.getTime() - todayMidMs) / 86400000);
+                                                const countLabel = diffDays === 0 ? 'Hoje!' : (diffDays === 1 ? 'Amanhã' : `Em ${diffDays}d`);
+                                                const countCls = diffDays <= 7
+                                                    ? 'bg-rose-600 text-white'
+                                                    : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50';
+                                                const hYm = h.date.slice(0, 7);
+                                                return `
+                                                    <button type="button" onclick="app.ui.setHomeCalMonth('${hYm}')" class="w-full text-left p-2.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-slate-200/70 dark:border-slate-700/70 transition flex items-center justify-between gap-3 cursor-pointer group">
+                                                        <div class="flex items-center gap-3 min-w-0">
+                                                            <div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex flex-col items-center justify-center shrink-0 shadow-2xs">
+                                                                <span class="text-[9px] font-black uppercase text-rose-500 leading-none">${monthNames[hm - 1].slice(0, 3)}</span>
+                                                                <span class="text-sm font-black text-slate-800 dark:text-white leading-tight tabular-nums">${String(hd).padStart(2, '0')}</span>
+                                                            </div>
+                                                            <div class="min-w-0">
+                                                                <div class="text-xs font-extrabold text-slate-800 dark:text-white truncate group-hover:text-rose-600 dark:group-hover:text-rose-300 transition-colors">${esc(h.name)}</div>
+                                                                <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                                                    <span>${weekdayShort[hDt.getDay()]}</span>
+                                                                    <span>•</span>
+                                                                    <span>${esc(h.scope)}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums shrink-0 ${countCls}">${countLabel}</span>
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+
+                                    <!-- Próximos Compromissos do Mês -->
+                                    <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5">
+                                        <div class="flex items-center justify-between gap-2 mb-3">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs shrink-0">
+                                                    <i class="fa-solid fa-calendar-check"></i>
+                                                </span>
+                                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Agenda Próxima</h4>
+                                            </div>
+                                            <span class="text-[10px] font-bold text-slate-400 tabular-nums">${visibleEvts.length} no mês</span>
+                                        </div>
+                                        ${upcomingEvents.length === 0 ? `
+                                            <p class="text-xs text-slate-400 italic py-2">Nenhum compromisso futuro marcado para ${esc(monthTitle)}.</p>
+                                        ` : `
+                                            <div class="space-y-1.5">
+                                                ${upcomingEvents.map(ev => `
+                                                    <button type="button" onclick="app.calendar && app.calendar.viewEvent('${esc(ev.id)}')" class="w-full text-left px-3 py-2 rounded-xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 border border-slate-200/70 dark:border-slate-700/70 transition flex items-center justify-between gap-2 cursor-pointer">
+                                                        <div class="min-w-0">
+                                                            <div class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">${esc(ev.tema || ev.op || 'Evento')}</div>
+                                                            <div class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${esc(ev.op || '')}</div>
+                                                        </div>
+                                                        <span class="text-[10px] font-black text-indigo-600 dark:text-indigo-300 tabular-nums shrink-0">${ev.data.split('-').slice(1).reverse().join('/')}${ev.hora ? ' · ' + ev.hora : ''}</span>
+                                                    </button>
+                                                `).join('')}
+                                            </div>
+                                        `}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    },
+
                     renderView_Home(container) {
                         const currentUser = app.currentUser || { matricula: 'admin', nome: 'Administrador', tipoAcesso: 'Dev' };
                         const userTabs = app.isAdmin ? null : this.getEffectiveUserTabs(currentUser);
                         const esc = app.utils.escapeHtml;
                         const themeId = this._getUserHomeThemeId();
                         const theme = this.HOME_BG_THEMES[themeId] || this.HOME_BG_THEMES.indigo;
-                        const isLight = Boolean(theme.isLightHero);
+                        const isDarkMode = document.documentElement.classList.contains('dark');
+                        const isLight = !isDarkMode && Boolean(theme.isLightHero);
 
                         const allSystemTabs = this.getAllSystemTabs();
                         const searchableTabs = allSystemTabs.filter(t => {
@@ -58163,37 +59056,54 @@ Object.assign(app.ui, {
                             ? app.notifications.buildIndicatorsAlertCardHtml()
                             : '';
 
+                        this.applyGlobalHomeTheme(themeId);
                         container.innerHTML = `
-                            <div class="w-full min-h-[calc(100vh-8.5rem)] rounded-3xl ${theme.canvas} p-3 sm:p-6 transition-all duration-300 animate-fade-in space-y-5 relative overflow-hidden">
-                                <!-- Orbes atmosféricos do tema escolhido -->
-                                <div class="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full ${theme.orb1} blur-3xl"></div>
-                                <div class="pointer-events-none absolute -bottom-24 -right-24 w-96 h-96 rounded-full ${theme.orb2} blur-3xl"></div>
-
+                            <div class="w-full space-y-5 relative">
                                 <div class="relative z-10 space-y-5">
-                                    ${indAlertHomeHtml}
+                                    <div id="home-ind-alert-slot">${indAlertHomeHtml}</div>
 
                                     <!-- Cabeçalho Hero Preservado + Busca ao Vivo -->
                                     <div class="relative rounded-3xl ${theme.hero} p-6 sm:p-8 shadow-xl border transition-all duration-300">
-                                        <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                                            <div class="max-w-3xl w-full">
+                                        <div class="relative z-10 flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+                                            <div class="max-w-3xl w-full flex-1 min-w-0">
                                                 <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
                                                     Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}">${esc(currentUser.nome || 'Colaborador')}</span>
                                                 </h1>
 
                                                 <!-- Campo de Busca em Tempo Real (abre primeira sugestão no Enter) -->
                                                 <div class="relative max-w-2xl">
-                                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none ${isLight ? 'text-slate-400' : 'text-slate-400'}">
-                                                        <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                                                    <div class="flex items-center gap-3 w-full px-4 rounded-2xl border transition-all shadow-inner backdrop-blur-md ${isLight ? 'bg-white/90 border-slate-200 focus-within:bg-white focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-400/25' : 'bg-white/10 border-white/20 focus-within:bg-white/15 focus-within:border-white/40 focus-within:ring-2 focus-within:ring-white/25'}">
+                                                        <i class="fa-solid fa-magnifying-glass text-base shrink-0 ${isLight ? 'text-slate-400' : 'text-slate-300'} pointer-events-none"></i>
+                                                        <input id="home-speed-dial-search" type="text" autocomplete="off" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
+                                                            style="background: transparent !important; background-color: transparent !important; border: 0 !important; box-shadow: none !important; outline: none !important;"
+                                                            class="home-hero-search-input flex-1 min-w-0 py-3 bg-transparent border-0 outline-none shadow-none text-sm ${isLight ? 'text-slate-800 placeholder-slate-400' : 'text-white placeholder-slate-300/80'}">
+                                                        <button id="home-search-clear-btn" type="button" class="hidden shrink-0 flex items-center ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-300 hover:text-white'} transition cursor-pointer" title="Limpar busca">
+                                                            <i class="fa-solid fa-circle-xmark"></i>
+                                                        </button>
                                                     </div>
-                                                    <input id="home-speed-dial-search" type="search" autocomplete="off" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
-                                                        class="w-full pl-12 pr-12 py-3 ${isLight ? 'bg-white/90 border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white' : 'bg-white/10 dark:bg-slate-950/40 border-white/20 dark:border-slate-700/60 text-white placeholder-slate-400 focus:bg-white/15'} border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all shadow-inner backdrop-blur-md">
-                                                    <button id="home-search-clear-btn" type="button" class="hidden absolute inset-y-0 right-0 pr-4 flex items-center ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-400 hover:text-white'} transition">
-                                                        <i class="fa-solid fa-circle-xmark"></i>
-                                                    </button>
 
                                                     <!-- Sugestões ao digitar -->
                                                     <div id="home-live-search-results" class="hidden absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 shadow-2xl p-2 z-50 max-h-72 overflow-y-auto custom-scrollbar"></div>
                                                 </div>
+                                            </div>
+
+                                            <!-- Toggle Modo Claro / Escuro no canto direito -->
+                                            <div class="shrink-0 self-end lg:self-start flex items-center">
+                                                ${(() => {
+                                                    const toggleScript = "if(!document.documentElement.classList.contains('dark'))return; const cb=document.getElementById('theme-checkbox'); if(cb) cb.checked=true; app.ui.toggleTheme(); if(app.mintZenTeste?.refreshRailUtilities) setTimeout(()=>app.mintZenTeste.refreshRailUtilities(),60);";
+                                                    const toggleDarkScript = "if(document.documentElement.classList.contains('dark'))return; const cb=document.getElementById('theme-checkbox'); if(cb) cb.checked=false; app.ui.toggleTheme(); if(app.mintZenTeste?.refreshRailUtilities) setTimeout(()=>app.mintZenTeste.refreshRailUtilities(),60);";
+                                                    return `
+                                                    <div class="inline-flex items-center p-1 rounded-2xl border backdrop-blur-md shadow-sm ${isLight ? 'bg-white/75 border-slate-200/90' : 'bg-white/10 border-white/15'}" role="group" aria-label="Alternar modo claro e escuro">
+                                                        <button type="button" onclick="${toggleScript}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${!isDarkMode ? (isLight ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-900 shadow-sm') : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-white/75 hover:text-white hover:bg-white/10')}" title="Ativar modo claro">
+                                                            <i class="fa-solid fa-sun text-[11px]"></i>
+                                                            <span>Claro</span>
+                                                        </button>
+                                                        <button type="button" onclick="${toggleDarkScript}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isDarkMode ? (isLight ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-900 shadow-sm') : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-white/75 hover:text-white hover:bg-white/10')}" title="Ativar modo escuro">
+                                                            <i class="fa-solid fa-moon text-[11px]"></i>
+                                                            <span>Escuro</span>
+                                                        </button>
+                                                    </div>`;
+                                                })()}
                                             </div>
                                         </div>
 
@@ -58237,6 +59147,10 @@ Object.assign(app.ui, {
                                                     <span id="home-cwb-range" class="font-bold text-sky-700 dark:text-sky-300"></span>
                                                     <span id="home-cwb-meta"></span>
                                                 </div>
+                                                <div id="home-cwb-rain-alert" class="hidden">
+                                                    <i class="fa-solid fa-umbrella shrink-0"></i>
+                                                    <span id="home-cwb-rain-text"></span>
+                                                </div>
                                             </div>
                                             <div class="w-14 h-14 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-100 dark:border-sky-800/50 flex items-center justify-center shrink-0">
                                                 <i id="home-cwb-icon" class="fa-solid fa-cloud-sun text-amber-400 text-3xl"></i>
@@ -58250,8 +59164,8 @@ Object.assign(app.ui, {
                                             <div class="flex items-center gap-2">
                                                 <span class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center text-sm"><i class="fa-solid fa-palette"></i></span>
                                                 <div>
-                                                    <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Personalizar Tema de Fundo</h3>
-                                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Escolha o visual da sua tela inicial (salvo no seu perfil)</p>
+                                                    <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Personalizar Tema do Portal</h3>
+                                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">O tema escolhido é aplicado em todas as telas do sistema (salvo no seu perfil)</p>
                                                 </div>
                                             </div>
                                             <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
@@ -58274,9 +59188,14 @@ Object.assign(app.ui, {
                                             }).join('')}
                                         </div>
                                     </div>
+
+                                    <!-- Calendário Interativo + Próximos Feriados -->
+                                    <div id="home-calendar-slot"></div>
                                 </div>
                             </div>
                         `;
+
+                        this._renderHomeCalendarWidget();
 
                         // Busca em tempo real no campo do cabeçalho Hero (Enter abre a 1ª sugestão)
                         const searchInput = container.querySelector('#home-speed-dial-search');
@@ -68460,7 +69379,7 @@ app.duolingo = {
                     e.preventDefault();
                     app.ui.openCommandPalette();
                 }
-                if (e.key === 'Escape') {
+                if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
                     app.ui.closeCommandPalette();
                 }
             });
@@ -68888,7 +69807,7 @@ app.faltasIntegracao = {
     canView() {
         if (app.isAdmin) return true;
         const tipo = String(app.currentUser?.tipoAcesso || '').trim();
-        return ['Gestor', 'Gerente', 'Dev'].includes(tipo);
+        return ['Gestor', 'Gerente', 'Dev', 'R&S'].includes(tipo);
     },
 
     getFaltasList() {
@@ -68951,7 +69870,7 @@ app.faltasIntegracao = {
         const faltas = colabs.filter(c => c && (c.presenca === 'Faltou' || c.statusGeral === 'Faltou na Integração'));
         if (faltas.length === 0) return [];
 
-        const gestoresUsers = (app.users || []).filter(u => u && ['Gestor', 'Gerente', 'Dev'].includes(String(u.tipoAcesso || '').trim()));
+        const gestoresUsers = (app.users || []).filter(u => u && ['Gestor', 'Gerente', 'Dev', 'R&S'].includes(String(u.tipoAcesso || '').trim()));
         if (!app.notificationsList) app.notificationsList = {};
         const dtBr = t.dataInicio ? t.dataInicio.split('-').reverse().join('/') : 'Sem data';
         const nomesResumo = faltas.slice(0, 4).map(c => c.nome || c.matricula).join(', ') + (faltas.length > 4 ? ` (+${faltas.length - 4})` : '');
@@ -69134,7 +70053,7 @@ app.faltasIntegracao = {
     renderView(container) {
         if (!container) return;
         if (!this.canView()) {
-            container.innerHTML = `<div class="max-w-xl mx-auto mt-16 p-8 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 text-center space-y-2"><i class="fa-solid fa-lock text-rose-500 text-3xl"></i><h2 class="text-lg font-black text-slate-800 dark:text-white">Acesso Exclusivo</h2><p class="text-xs text-slate-500">Esta aba é restrita a Gestores, Gerentes e Desenvolvedores (Dev).</p></div>`;
+            container.innerHTML = `<div class="max-w-xl mx-auto mt-16 p-8 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 text-center space-y-2"><i class="fa-solid fa-lock text-rose-500 text-3xl"></i><h2 class="text-lg font-black text-slate-800 dark:text-white">Acesso Exclusivo</h2><p class="text-xs text-slate-500">Esta aba é restrita a R&amp;S, Gestores, Gerentes e Desenvolvedores (Dev).</p></div>`;
             return;
         }
 
@@ -69191,10 +70110,12 @@ app.faltasIntegracao = {
                         </div>
 
                         <div class="flex flex-wrap items-center gap-2 shrink-0">
-                            <button type="button" onclick="app.ui.renderTab('diario_bordo', true)" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5">
-                                <i class="fa-solid fa-arrow-left text-[11px]"></i>
-                                <span>Integrações</span>
-                            </button>
+                            ${app.hasAdminAccess('diario_bordo') ? `
+                                <button type="button" onclick="app.ui.renderTab('diario_bordo', true)" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-700/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer flex items-center gap-1.5">
+                                    <i class="fa-solid fa-arrow-left text-[11px]"></i>
+                                    <span>Integrações</span>
+                                </button>
+                            ` : ''}
                             <button type="button" onclick="app.faltasIntegracao.abrirModalTextoRH()" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-amber-500 dark:hover:bg-amber-400 text-white dark:text-slate-950 font-black text-xs shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95 tabular-nums">
                                 <i class="fa-solid fa-paper-plane text-[11px]"></i>
                                 <span>Gerar Texto RH (${cntPendente > 0 ? cntPendente : filtrados.length})</span>
@@ -69907,7 +70828,7 @@ app.pdcaTeste = {
                 criterioTipo: 'critica',
                 criterioGap: `Falha Crítica #${idx + 1} (${qtd} ocorr.) • Impacto coletivo`,
                 areaSugerida: areaDona,
-                areaResponsavel: '',
+                areaResponsavel: areaDona,
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
@@ -69957,7 +70878,7 @@ app.pdcaTeste = {
                 criterioTipo: 'comum',
                 criterioGap: `Gap de Qualidade #${idx + 1} (${qtd} ocorr.) • Item ofensor`,
                 areaSugerida: areaDona,
-                areaResponsavel: '',
+                areaResponsavel: areaDona,
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
@@ -70006,7 +70927,7 @@ app.pdcaTeste = {
                 criterioTipo: 'nota',
                 criterioGap: `Nota ${this._formatNum(nota)} (< 92%) • Faltam ${gapPP.toFixed(1)} p.p. p/ meta`,
                 areaSugerida: areaDona,
-                areaResponsavel: emTratativa ? areaDona : '',
+                areaResponsavel: areaDona,
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
@@ -70304,7 +71225,7 @@ app.pdcaTeste = {
             titulo: existing?.titulo || '',
             alvo: existing?.alvo || '',
             criterioGap: existing?.criterioGap || '',
-            areaResponsavel: existing ? this._resolveArea(existing) : '',
+            areaResponsavel: existing ? this._resolveArea(existing) : 'Qualidade',
             operacao: existing ? this._resolveOperacaoCiclo(existing) : (this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : (srcAtual?.operacao || '')),
             acaoPlanejada: existing?.acaoPlanejada || '',
             qtLink: existing?.qtLink || 'Ação em Qualidade & Treinamento',
@@ -70322,18 +71243,8 @@ app.pdcaTeste = {
     },
 
     async alternarArea(id) {
-        const c = this.ciclos[id];
-        if (!c) return;
-        const ordem = ['Qualidade', 'Treinamento', 'Qualidade + Treinamento'];
-        const atual = this._resolveArea(c);
-        const prox = atual ? ordem[(ordem.indexOf(atual) + 1) % ordem.length] : 'Qualidade';
-        await this._persistCiclo({
-            ...c,
-            areaResponsavel: prox,
-            areaManual: true,
-            atualizadoEm: new Date().toISOString()
-        });
-        this.renderView();
+        // Tag de equipe responsável é bloqueada para alteração após definição
+        return;
     },
 
     _inferAreaSugerida(c) {
@@ -70345,11 +71256,8 @@ app.pdcaTeste = {
     },
 
     _resolveArea(c) {
-        const etapa = c?.etapa || 'P';
-        if (etapa === 'P' && !c?.executadoEm && !c?.areaManual) return '';
         const raw = String(c?.areaResponsavel || '').trim();
         if (raw === 'Qualidade' || raw === 'Treinamento' || raw === 'Qualidade + Treinamento') return raw;
-        if (etapa === 'P') return '';
         return this._inferAreaSugerida(c);
     },
 
@@ -70365,20 +71273,20 @@ app.pdcaTeste = {
             return {
                 label: 'Treinamento',
                 icon: 'fa-graduation-cap',
-                cls: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200/80 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 dark:text-amber-300 dark:border-amber-700/60'
+                cls: 'bg-amber-50 text-amber-800 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60'
             };
         }
         if (area === 'Qualidade + Treinamento') {
             return {
                 label: 'Qualidade + Trein.',
                 icon: 'fa-people-arrows',
-                cls: 'bg-violet-50 hover:bg-violet-100 text-violet-800 border-violet-200/80 dark:bg-violet-950/60 dark:hover:bg-violet-900/60 dark:text-violet-300 dark:border-violet-700/60'
+                cls: 'bg-violet-50 text-violet-800 border-violet-200/80 dark:bg-violet-950/60 dark:text-violet-300 dark:border-violet-700/60'
             };
         }
         return {
             label: 'Qualidade',
             icon: 'fa-magnifying-glass-chart',
-            cls: 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200/80 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-300 dark:border-sky-700/60'
+            cls: 'bg-sky-50 text-sky-800 border-sky-200/80 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-700/60'
         };
     },
 
@@ -70397,7 +71305,7 @@ app.pdcaTeste = {
         const depoisRaw = depoisStr !== '' ? parseFloat(depoisStr) : null;
         const etapaSel = getVal('pdca-m-etapa') || existing?.etapa || 'P';
         const areaSelRaw = getVal('pdca-m-area');
-        const areaSel = etapaSel === 'P' && !areaSelRaw ? '' : (areaSelRaw || (existing ? this._inferAreaSugerida(existing) : 'Qualidade'));
+        const areaSel = existing ? this._resolveArea(existing) : (areaSelRaw || 'Qualidade');
         const operacaoSel = getVal('pdca-m-operacao') || existing?.operacao || 'Geral';
         const antesNum = Number.isFinite(antesRaw) ? antesRaw : 0;
         const metaNum = Number.isFinite(metaRaw) ? metaRaw : 85;
@@ -70471,9 +71379,8 @@ app.pdcaTeste = {
             }
             next.depoisValor = null;
             next.responsavel = '';
-            next.areaResponsavel = '';
+            next.areaResponsavel = this._resolveArea(c);
             next.executadoEm = '';
-            next.areaManual = false;
             next.qtLink = `Ciclo #${next.cicloNumero} • Aguardando execução`;
         }
         await this._persistCiclo(next);
@@ -70577,29 +71484,26 @@ app.pdcaTeste = {
             `;
         })();
 
-        const temResponsavel = Boolean(areaDona) || (stageKey !== 'P' && Boolean(c.responsavel));
         const respNome = (stageKey !== 'P' || c.executadoEm) ? String(c.responsavel || '').trim() : '';
 
         return `
             <div class="group relative rounded-2xl bg-white/85 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.1)] hover:shadow-[0_12px_26px_-8px_rgba(15,23,42,0.16)] p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                        ${temResponsavel && areaDona ? `
-                            <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar área" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-all shrink-0 ${areaMeta.cls}">
-                                <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
-                                <span>${esc(areaMeta.label)}</span>
-                            </button>
+                        <span title="Equipe responsável bloqueada para alteração" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 select-none shrink-0 ${areaMeta.cls}">
+                            <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
+                            <span>${esc(areaMeta.label)}</span>
+                        </span>
+                        ${respNome ? `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 break-words" title="Responsável pela execução: ${esc(respNome)}">
+                                ${esc(respNome)}
+                            </span>
                         ` : `
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200/60 dark:border-white/10 flex items-center gap-1 shrink-0">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200/60 dark:border-white/10 flex items-center gap-1 shrink-0" title="Nenhuma pessoa assumiu ainda (clique em Executar)">
                                 <i class="fa-regular fa-user text-[9px]"></i>
                                 <span>Sem responsável</span>
                             </span>
                         `}
-                        ${respNome ? `
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 break-words" title="Responsável: ${esc(respNome)}">
-                                ${esc(respNome)}
-                            </span>
-                        ` : ''}
                         ${this.filtroOperacao === 'TODAS' ? `
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 break-words">
                                 ${esc(opCiclo)}
@@ -70653,7 +71557,7 @@ app.pdcaTeste = {
         const m = this.modalState;
         const opsList = this._getOperacoesExistentes();
         return `
-            <div class="fixed inset-0 z-[120] bg-slate-950/55 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto" onclick="if(event.target===this) app.pdcaTeste.closeModal()">
+            <div class="fixed inset-0 z-[120] bg-slate-950/55 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto" onmousedown="this._mdTarget=event.target" onclick="if(event.target===this && this._mdTarget===this && !event.ctrlKey && !event.shiftKey) app.pdcaTeste.closeModal()">
                 <form onsubmit="app.pdcaTeste.salvarModal(event)" class="w-full max-w-3xl rounded-[28px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/90 dark:border-white/15 shadow-2xl p-6 sm:p-8 space-y-5 my-auto">
                     <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
                         <div class="flex items-center gap-3.5">
@@ -70698,10 +71602,9 @@ app.pdcaTeste = {
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Quem cuida? *</label>
-                            <select id="pdca-m-area" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
-                                <option value="" ${!m.areaResponsavel ? 'selected' : ''}>Sem responsável</option>
-                                <option value="Qualidade" ${m.areaResponsavel === 'Qualidade' ? 'selected' : ''}>Qualidade</option>
+                            <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Equipe Responsável ${m.mode === 'edit' ? '<i class="fa-solid fa-lock text-[9px] ml-1 opacity-70" title="Bloqueada para alteração"></i>' : '*'}</label>
+                            <select id="pdca-m-area" ${m.mode === 'edit' ? 'disabled title="A tag de equipe não pode ser alterada após a criação"' : ''} class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none ${m.mode === 'edit' ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}">
+                                <option value="Qualidade" ${!m.areaResponsavel || m.areaResponsavel === 'Qualidade' ? 'selected' : ''}>Qualidade</option>
                                 <option value="Treinamento" ${m.areaResponsavel === 'Treinamento' ? 'selected' : ''}>Treinamento</option>
                                 <option value="Qualidade + Treinamento" ${m.areaResponsavel === 'Qualidade + Treinamento' ? 'selected' : ''}>Qualidade + Treinamento</option>
                             </select>
@@ -71564,14 +72467,105 @@ app.mintZenTeste = {
         `;
     },
 
+    _getMonthBadgeInfo() {
+        const cur = app.currentMonth || document.getElementById('global-month')?.value || new Date().toISOString().slice(0, 7);
+        const [yStr, mStr] = String(cur).split('-');
+        const y = parseInt(yStr, 10) || new Date().getFullYear();
+        const m = parseInt(mStr, 10) || (new Date().getMonth() + 1);
+        const mesesCurtos = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+        const mesesLongos = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        return {
+            ym: `${y}-${String(m).padStart(2, '0')}`,
+            year: y,
+            month: m,
+            short: mesesCurtos[m - 1] || 'MÊS',
+            long: mesesLongos[m - 1] || ''
+        };
+    },
+
+    _renderMonthFlyoutContent(yearOverride = null) {
+        const info = this._getMonthBadgeInfo();
+        const viewYear = Number(yearOverride || this._railMonthPickerYear || info.year);
+        this._railMonthPickerYear = viewYear;
+        const mesesCurtos = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        const now = new Date();
+        const currentCalYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        return `
+            <div class="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                <div>
+                    <div class="text-xs font-black text-slate-800 dark:text-white leading-tight">Mês de Competência</div>
+                    <div class="text-[10px] font-semibold text-slate-400">Ativo: <strong class="text-slate-700 dark:text-slate-200">${info.long} / ${info.year}</strong></div>
+                </div>
+                <button type="button" onclick="app.mintZenTeste.selectRailMonth('${currentCalYm}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 transition cursor-pointer" title="Voltar ao mês atual">Atual</button>
+            </div>
+            <div class="p-3 space-y-2.5">
+                <div class="flex items-center justify-between gap-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl p-1">
+                    <button type="button" onclick="app.mintZenTeste.setRailPickerYear(${viewYear - 1})" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+                    <span class="text-xs font-black text-slate-800 dark:text-white tabular-nums">${viewYear}</span>
+                    <button type="button" onclick="app.mintZenTeste.setRailPickerYear(${viewYear + 1})" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+                </div>
+                <div class="grid grid-cols-4 gap-1.5">
+                    ${mesesCurtos.map((lbl, idx) => {
+                        const targetYm = `${viewYear}-${String(idx + 1).padStart(2, '0')}`;
+                        const active = targetYm === info.ym;
+                        return `
+                            <button type="button" onclick="app.mintZenTeste.selectRailMonth('${targetYm}')"
+                                class="py-2 rounded-xl text-xs font-extrabold transition cursor-pointer ${active
+                                    ? 'text-white shadow-sm'
+                                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}"
+                                style="${active ? 'background-color: var(--theme-color);' : ''}">
+                                ${lbl}
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="pt-1 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+                    <input type="month" value="${info.ym}" onchange="app.mintZenTeste.selectRailMonth(this.value)" class="flex-1 h-8 px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                </div>
+            </div>
+        `;
+    },
+
+    setRailPickerYear(yr) {
+        this._railMonthPickerYear = yr;
+        const box = document.getElementById('sl-rail-month-flyout-body');
+        if (box) {
+            box.innerHTML = this._renderMonthFlyoutContent(yr);
+            this.refreshIcons();
+        }
+    },
+
+    selectRailMonth(ym) {
+        if (!ym) return;
+        this._railMonthPickerYear = parseInt(String(ym).split('-')[0], 10) || this._railMonthPickerYear;
+        const gm = document.getElementById('global-month');
+        if (gm) gm.value = ym;
+        app.changeMonth(ym);
+        this.refreshRailMonthDisplay();
+    },
+
+    refreshRailMonthDisplay() {
+        const info = this._getMonthBadgeInfo();
+        const shortEl = document.getElementById('sl-rail-month-short');
+        const yearEl = document.getElementById('sl-rail-month-year');
+        const btnEl = document.getElementById('sl-rail-month-btn');
+        if (shortEl) shortEl.textContent = info.short;
+        if (yearEl) yearEl.textContent = String(info.year);
+        if (btnEl) btnEl.title = `Competência ativa: ${info.long} de ${info.year} (clique ou passe o mouse para trocar)`;
+        const flyBody = document.getElementById('sl-rail-month-flyout-body');
+        if (flyBody) flyBody.innerHTML = this._renderMonthFlyoutContent(info.year);
+        const setBox = document.getElementById('sl-rail-settings-flyout-body');
+        if (setBox) setBox.innerHTML = this._renderSettingsFlyoutContent();
+        this.refreshIcons();
+    },
+
     _renderSettingsFlyoutContent() {
         const userName = app.isAdmin ? 'Administração' : (app.currentUser?.nome || 'USUÁRIO');
         const userRole = app.isAdmin ? 'ADM' : (app.currentUser?.tipoAcesso || 'Portal');
         const currentMonthVal = app.currentMonth || document.getElementById('global-month')?.value || new Date().toISOString().slice(0, 7);
         const isDark = document.documentElement.classList.contains('dark');
         const isDev = app.isAdmin || app.currentUser?.tipoAcesso === 'Dev';
-        const paletteColors = ['#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#f43f5e', '#10b981'];
-        const activeColor = (localStorage.getItem('theme_color') || '#22c55e').toLowerCase();
 
         return `
             <div class="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
@@ -71598,18 +72592,13 @@ app.mintZenTeste = {
             </div>
 
             <!-- Aparência & Tema -->
-            <div class="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
+            <div class="p-3 border-b border-slate-100 dark:border-slate-800">
                 <div class="flex items-center justify-between">
-                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Aparência &amp; Cor</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider text-slate-400">Aparência</span>
                     <button type="button" onclick="const cb = document.getElementById('theme-checkbox'); if(cb) cb.checked = !cb.checked; app.ui.toggleTheme(); setTimeout(() => app.mintZenTeste.refreshRailUtilities(), 60);" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer">
                         <i data-lucide="${isDark ? 'sun' : 'moon'}" class="w-3.5 h-3.5"></i>
                         <span>${isDark ? 'Modo Claro' : 'Modo Escuro'}</span>
                     </button>
-                </div>
-                <div class="flex items-center justify-between gap-1">
-                    ${paletteColors.map(hex => `
-                        <button type="button" onclick="app.ui.changeThemeColor('${hex}'); app.mintZenTeste.refreshRailUtilities();" class="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer ${activeColor === hex ? 'border-slate-900 dark:border-white scale-110' : 'border-white dark:border-slate-700 shadow-xs'}" style="background-color: ${hex};"></button>
-                    `).join('')}
                 </div>
             </div>
 
@@ -71795,13 +72784,29 @@ app.mintZenTeste = {
             `;
         }).join('');
 
+        const monthBadge = this._getMonthBadgeInfo();
         rail.innerHTML = `
-            <button type="button" onclick="app.ui.renderTab('home', true)" class="mz-rail-btn relative w-10 h-10 rounded-2xl text-white flex items-center justify-center shadow-md hover:scale-105 transition-transform cursor-pointer shrink-0" style="background-color: var(--theme-color);">
-                <i data-lucide="layers" class="w-5 h-5"></i>
-                <span class="mz-rail-tooltip absolute left-[56px] whitespace-nowrap px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg z-50">Softmarketing | Resultados</span>
-            </button>
+            <div class="flex flex-col items-center gap-2 w-full shrink-0">
+                <button type="button" onclick="app.ui.renderTab('home', true)" class="mz-rail-btn relative w-10 h-10 rounded-2xl text-white flex items-center justify-center shadow-md hover:scale-105 transition-transform cursor-pointer shrink-0" style="background-color: var(--theme-color);">
+                    <i data-lucide="layers" class="w-5 h-5"></i>
+                    <span class="mz-rail-tooltip absolute left-[56px] whitespace-nowrap px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg z-50">Softmarketing | Resultados</span>
+                </button>
 
-            <div class="flex flex-col items-center gap-3.5 py-2.5 w-full">
+                <!-- Bloco Nítido de Mês / Competência Ativa na Lateral -->
+                <div class="sl-rail-group relative w-full flex justify-center">
+                    <button type="button" id="sl-rail-month-btn" onclick="app.mintZenTeste.refreshRailMonthDisplay()" class="w-12 py-1.5 px-1 rounded-2xl border flex flex-col items-center justify-center leading-none transition-all cursor-pointer shadow-2xs hover:scale-[1.03]" style="background-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.10); border-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.30);" title="Competência ativa: ${monthBadge.long} de ${monthBadge.year}">
+                        <span id="sl-rail-month-short" class="text-[11px] font-black uppercase tracking-wider leading-none" style="color: var(--theme-color);">${monthBadge.short}</span>
+                        <span id="sl-rail-month-year" class="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 tabular-nums mt-0.5 leading-none">${monthBadge.year}</span>
+                    </button>
+                    <div class="sl-rail-flyout absolute left-full top-0 pl-3.5 z-[95]">
+                        <div id="sl-rail-month-flyout-body" class="w-72 rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-200/90 dark:border-slate-700 shadow-2xl overflow-hidden">
+                            ${this._renderMonthFlyoutContent(monthBadge.year)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center gap-3 py-2 w-full">
                 ${groupsHtml}
             </div>
 

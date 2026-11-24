@@ -72,7 +72,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
         <!-- Supabase Client JS (Autenticação e Envio de Código por E-mail) -->
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <link rel="stylesheet" href="style.css?v=20261118_v10">
+        <link rel="stylesheet" href="style.css?v=20261124_v11">
 </head>
     
 <body lang="pt-BR" spellcheck="true" class="bg-slate-50 text-slate-800 dark:bg-dark-bg dark:text-slate-100 min-h-screen flex flex-col relative overflow-x-hidden selection:bg-green-500 selection:text-white" onclick="window.app?.notifications?.closeDropdown(event)">
@@ -147,6 +147,7 @@
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Jovem Aprendiz">Jovem Aprendiz (Qualidade + Treinamento)</option>
+                        <option value="R&S">R&amp;S (Faltas na Integração)</option>
                         <option value="Dev">Dev</option>
                         <option value="Gestor">Gestor</option>
                         <option value="Gerente">Gerente</option>
@@ -218,6 +219,7 @@
                         <option value="Qualidade">Qualidade</option>
                         <option value="Treinamento">Treinamento</option>
                         <option value="Jovem Aprendiz">Jovem Aprendiz (Qualidade + Treinamento)</option>
+                        <option value="R&S">R&amp;S (Faltas na Integração)</option>
                         <option value="Dev">Dev</option>
                         <option value="Gestor">Gestor</option>
                         <option value="Gerente">Gerente</option>
@@ -264,7 +266,7 @@
     </div>
 
     <!-- Modal Command Palette (Busca Rápida 3D Premium) -->
-    <div id="command-palette-modal" class="fixed inset-0 z-[100] hidden flex items-start justify-center pt-[15vh] bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity" onclick="if(event.target === this) this.classList.add('hidden')">
+    <div id="command-palette-modal" class="fixed inset-0 z-[100] hidden flex items-start justify-center pt-[15vh] bg-slate-900/60 dark:bg-black/80 backdrop-blur-md transition-opacity" onmousedown="this._mdTarget=event.target" onclick="if(event.target === this && this._mdTarget === this && !event.ctrlKey && !event.shiftKey) this.classList.add('hidden')">
         <!-- Container Magnético 3D -->
         <div class="magnetic-search-container relative w-full max-w-2xl mx-4 group perspective-[1000px] transform transition-all duration-300">
             <!-- Glow animado interativo que usa a cor do tema -->
@@ -623,12 +625,12 @@
     <!-- Modal Visualização Legal Ata -->
     <div id="view-ata-legal-modal" class="fixed inset-0 z-[85] hidden flex items-center justify-center bg-slate-900/80 dark:bg-black/80 backdrop-blur-md transition-opacity p-4">
         <div class="bg-white dark:bg-dark-surface rounded-3xl shadow-2xl max-w-3xl w-full border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
-            <!-- MODIFICADO AQUI: bg-gradient para verde/esmeralda -->
+            <!-- Cabeçalho dinâmico adaptado ao tema selecionado -->
             <div class="bg-gradient-to-r from-green-700 via-emerald-600 to-green-800 p-6 relative shrink-0">
-                <button onclick="app.ata.closeAtaLegal()" class="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
-                <div class="text-[10px] font-black uppercase tracking-widest text-green-200 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i> Registro Oficial de Qualidade</div>
+                <button onclick="app.ata.closeAtaLegal()" class="absolute top-4 right-4 text-white/75 hover:text-white bg-white/10 hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <div class="text-[10px] font-black uppercase tracking-widest text-white/80 mb-1 flex items-center gap-2"><i class="fa-solid fa-shield-halved"></i> Registro Oficial de Qualidade</div>
                 <h3 class="font-extrabold text-2xl text-white leading-tight pr-8" id="val-tema">Tema da Ata</h3>
-                <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-green-100 font-semibold">
+                <div class="flex flex-wrap items-center gap-3 mt-4 text-sm text-white/90 font-semibold">
                     <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-regular fa-calendar mr-1"></i> <span id="val-data">00/00/0000 (00:00 - 00:00)</span></span>
                     <span class="bg-black/20 px-3 py-1.5 rounded-lg backdrop-blur-sm border border-white/10"><i class="fa-solid fa-network-wired mr-1"></i> Op: <span id="val-op">SAC</span></span>
                 </div>
@@ -640,19 +642,19 @@
                 <!-- Participantes -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-user-tie text-green-500"></i> Liderança Envolvida</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-user-tie" style="color: var(--theme-color);"></i> Liderança Envolvida</div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">Qualidade: <span class="font-normal" id="val-lideres"></span></div>
                         <div class="text-sm font-bold text-slate-700 dark:text-slate-200">Supervisão: <span class="font-normal" id="val-sup"></span></div>
                     </div>
                     <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-users text-emerald-500"></i> Outros Participantes</div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-2"><i class="fa-solid fa-users" style="color: var(--theme-color);"></i> Outros Participantes</div>
                         <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed" id="val-extras"></div>
                     </div>
                 </div>
 
                 <!-- Pontos Fortes -->
                 <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                    <h4 class="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2"><i class="fa-solid fa-comments text-green-500"></i> Pontos Discutidos</h4>
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2"><i class="fa-solid fa-comments" style="color: var(--theme-color);"></i> Pontos Discutidos</h4>
                     <div class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50" id="val-fortes"></div>
                 </div>
 
@@ -1213,7 +1215,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261124_v143"></script>
+    <script src="script.js?v=20261124_v164"></script>
 </body>
 </html>
 
