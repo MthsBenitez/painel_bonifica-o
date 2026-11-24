@@ -1997,7 +1997,7 @@ storage: {
                                 const cachedTs = await localforage.getItem('soft_actions_hd_ts');
                                 if (cached && typeof cached === 'object' && Object.keys(cached).length > 0) {
                                     app.actionsList = { ...cached, ...(app.actionsList || {}) };
-                                    // Se o cache local de fotos tem menos de 15 minutos, evita baixar os 34MB novamente
+                                    // Se o cache local de fotos tem menos de 15 minutos, evita baixar novamente
                                     if (cachedTs && (Date.now() - cachedTs < 900000)) {
                                         app._actionsLoadedFromCloud = true;
                                         return app.actionsList;
@@ -2006,8 +2006,11 @@ storage: {
                             }
                             if (typeof firebase !== 'undefined' && firebase.database) {
                                 console.log("Carregando galeria de ações sob demanda (.once)...");
-                                const snap = await firebase.database().ref('sistema_bonificacao/actions').once('value');
-                                const actVal = snap.val();
+                                const onceWithTimeout = Promise.race([
+                                    firebase.database().ref('sistema_bonificacao/actions').once('value').then(s => s.val()),
+                                    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout ações Firebase')), 18000))
+                                ]);
+                                const actVal = await onceWithTimeout;
                                 if (actVal && typeof actVal === 'object') {
                                     app.actionsList = { ...(app.actionsList || {}), ...actVal };
                                     if (typeof localforage !== 'undefined') {
@@ -25546,11 +25549,37 @@ storage: {
                     });
                 },
 
+                isCadastrosBoniHidden() {
+                    try {
+                        return localStorage.getItem('soft_cadastros_hide_boni') === 'true';
+                    } catch (e) {
+                        return false;
+                    }
+                },
+
+                toggleCadastrosHideBoni() {
+                    const next = !this.isCadastrosBoniHidden();
+                    try {
+                        localStorage.setItem('soft_cadastros_hide_boni', next ? 'true' : 'false');
+                    } catch (e) {}
+                    const btn = document.getElementById('btn-toggle-hide-boni');
+                    if (btn) {
+                        btn.className = next
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl border border-amber-400/80 shadow-md shadow-amber-500/20 flex items-center gap-2 text-xs transition-all cursor-pointer active:scale-[0.98]'
+                            : 'bg-white/80 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-2.5 px-4 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-sm flex items-center gap-2 text-xs transition-all cursor-pointer active:scale-[0.98]';
+                        btn.innerHTML = next
+                            ? '<i class="fa-regular fa-eye"></i> Mostrar Bônus (Privado Ativo)'
+                            : '<i class="fa-regular fa-eye-slash"></i> Ocultar Bônus de Outros';
+                    }
+                    this.renderCadastrosUserList();
+                },
+
                 renderCadastrosSummaryAndFilters() {
                     const summaryEl = document.getElementById('cadastros-kpi-summary');
                     const pillsEl = document.getElementById('cadastros-filter-pills');
                     if (!summaryEl && !pillsEl) return;
 
+                    const hideBoni = app.ui.isCadastrosBoniHidden();
                     const qualidadeUsers = app.getQualidadeUsers();
                     let countTotal = qualidadeUsers.length;
                     let countValidados = 0;
@@ -25579,12 +25608,17 @@ storage: {
                             { id: 'validado', label: 'Validados', n: countValidados }
                         ].map(c => `<button type="button" onclick="app.ui.setCadastrosFilter('${c.id}')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${f === c.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">${c.label} <span class="opacity-60 ml-0.5">${c.n}</span></button>`).join('');
                         summaryEl.innerHTML = `
-                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3">
+                            <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 rounded-2xl px-4 py-3 shadow-xs">
                                 <div class="flex flex-wrap items-center justify-between gap-3">
                                     <div class="flex flex-wrap gap-1">${chips}</div>
-                                    <div class="text-right pr-1">
-                                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2">Folha do mês</span>
-                                        <span class="text-base font-black text-emerald-600 dark:text-emerald-400">R$ ${somaFinanceira.toFixed(2)}</span>
+                                    <div class="text-right pr-1 flex items-center gap-2">
+                                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Folha do mês</span>
+                                        <span class="text-base font-black ${hideBoni ? 'text-slate-400 dark:text-slate-500 tracking-widest' : 'text-emerald-600 dark:text-emerald-400'} tabular-nums">
+                                            ${hideBoni ? 'R$ •••••' : `R$ ${somaFinanceira.toFixed(2)}`}
+                                        </span>
+                                        <button type="button" onclick="app.ui.toggleCadastrosHideBoni()" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer" title="${hideBoni ? 'Mostrar valores de bônus' : 'Ocultar bônus dos outros colaboradores'}">
+                                            <i class="fa-regular ${hideBoni ? 'fa-eye' : 'fa-eye-slash'} text-xs"></i>
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="mt-2.5 flex items-center gap-3">
@@ -25603,6 +25637,7 @@ storage: {
                     const listEl = document.getElementById('cadastros-user-list');
                     if (!listEl) return;
 
+                    const hideBoni = app.ui.isCadastrosBoniHidden();
                     const filtered = app.ui.getFilteredCadastrosUsers();
                     if (filtered.length === 0) {
                         listEl.innerHTML = `
@@ -25617,6 +25652,7 @@ storage: {
                     listEl.innerHTML = filtered.map(u => {
                         const info = app.ui.getUserMonthValidationInfo(u);
                         const isSelected = window.selectedAdminEditUser === u.matricula;
+                        const maskRow = hideBoni && !isSelected;
                         const pct = (info.total.pct * 100).toFixed(0);
                         const cleanNome = app.utils.fixEncoding(u.nome);
                         const avatar = u.foto || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanNome)}&background=cbd5e1&color=ffffff`;
@@ -25634,8 +25670,13 @@ storage: {
                                     <div class="text-[11px] text-slate-500 dark:text-slate-400">${statusTxt}</div>
                                 </div>
                                 <div class="text-right shrink-0">
-                                    <div class="text-sm font-black ${info.total.received > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">R$ ${info.total.received.toFixed(2)}</div>
-                                    <div class="text-[10px] text-slate-400">${pct}%</div>
+                                    ${maskRow ? `
+                                        <div class="text-xs font-black text-slate-400 dark:text-slate-500 tracking-wider select-none" title="Bônus oculto pelo modo privado">R$ ••••</div>
+                                        <div class="text-[10px] text-slate-400 dark:text-slate-500 select-none">••%</div>
+                                    ` : `
+                                        <div class="text-sm font-black ${info.total.received > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">R$ ${info.total.received.toFixed(2)}</div>
+                                        <div class="text-[10px] text-slate-400">${pct}%</div>
+                                    `}
                                 </div>
                             </div>
                         `;
@@ -25648,6 +25689,7 @@ storage: {
                     if ((!window.selectedAdminEditUser || !qualidadeUsers.some(u => u.matricula === window.selectedAdminEditUser)) && qualidadeUsers.length > 0) {
                         window.selectedAdminEditUser = qualidadeUsers[0].matricula;
                     }
+                    const hideBoni = app.ui.isCadastrosBoniHidden();
 
                     let html = `
                         <div class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -25656,6 +25698,9 @@ storage: {
                                 <p class="text-slate-600 dark:text-slate-200 text-sm mt-1">Acompanhe quem já validou, veja o valor final em tempo real e colete a assinatura com senha do colaborador em <strong class="text-emerald-700 dark:text-emerald-300 font-black">${app.ui.formatMonthLabel(app.currentMonth)}</strong>.</p>
                             </div>
                             <div class="flex flex-wrap gap-2">
+                                <button type="button" id="btn-toggle-hide-boni" onclick="app.ui.toggleCadastrosHideBoni()" class="${hideBoni ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-400/80 shadow-md shadow-amber-500/20' : 'bg-white/80 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 shadow-sm'} font-bold py-2.5 px-4 rounded-xl border flex items-center gap-2 text-xs transition-all cursor-pointer active:scale-[0.98]">
+                                    <i class="fa-regular ${hideBoni ? 'fa-eye' : 'fa-eye-slash'}"></i> ${hideBoni ? 'Mostrar Bônus (Privado Ativo)' : 'Ocultar Bônus de Outros'}
+                                </button>
                                 <button type="button" onclick="app.admin.exportBonusReport()" class="bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold py-2.5 px-4 rounded-xl border border-emerald-500/80 shadow-md shadow-emerald-600/20 flex items-center gap-2 text-xs transition-all cursor-pointer">
                                     <i class="fa-solid fa-file-excel"></i> Exportar Folha (.xlsx)
                                 </button>
@@ -42750,7 +42795,7 @@ storage: {
                                     <i class="fa-solid fa-camera-retro text-4xl text-blue-400 mb-3"></i>
                                     <h3 class="font-black text-slate-700 dark:text-slate-200 mb-1">Galeria de Ações Validadas</h3>
                                     <p class="text-xs text-slate-500 mb-4 max-w-lg">Vincule as ações presenciais aprovadas no mês a esta apresentação para exibir as evidências fotográficas à diretoria e aos operadores durante a reunião.</p>
-                                    <button onclick="app.admin.openAcoesSelectorModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md text-sm transition-transform hover:-translate-y-1"><i class="fa-solid fa-plus mr-2"></i> Inserir Ações Presenciais</button>
+                                    <button type="button" onclick="app.admin.openAcoesSelectorModal()" style="background-color: var(--theme-color);" class="hover:brightness-110 text-white font-bold py-3 px-8 rounded-xl shadow-md text-sm transition-transform hover:-translate-y-1 cursor-pointer"><i class="fa-solid fa-plus mr-2"></i> Inserir Ações Presenciais</button>
                                 </div>
                             </div>
 
@@ -51072,24 +51117,50 @@ storage: {
                     });
                 },
 
-                openAcoesSelectorModal() {
-                    if(!app.analiseCSVDinamicoData) return;
-                    if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
-                        app.storage.ensureActionsLoaded(() => this.openAcoesSelectorModal());
+                openAcoesSelectorModal(forceFromRetry = false) {
+                    if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) {
+                        if (app.ui && typeof app.ui.showToast === 'function') {
+                            app.ui.showToast("Importe ou abra uma apresentação primeiro.", "warning");
+                        }
                         return;
                     }
-                    if(!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
+                    const esc = (app.utils && typeof app.utils.escapeHtml === 'function')
+                        ? app.utils.escapeHtml
+                        : (v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+
+                    if (!app._actionsLoadedFromCloud && !forceFromRetry && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                        const modalEl = document.getElementById('global-modal');
+                        const modalBox = document.querySelector('#global-modal > div');
+                        if (modalEl && modalBox) {
+                            modalBox.classList.remove('max-w-lg', 'max-w-5xl');
+                            modalBox.classList.add('max-w-4xl');
+                            const tEl = document.getElementById('modal-title');
+                            const cEl = document.getElementById('modal-content');
+                            const aEl = document.getElementById('modal-actions');
+                            if (tEl) tEl.innerHTML = `<i class="fa-solid fa-camera-retro text-teal-500"></i> Galeria de Ações de Qualidade`;
+                            if (cEl) cEl.innerHTML = `<div class="py-12 text-center space-y-3"><i class="fa-solid fa-spinner fa-spin text-3xl text-teal-500"></i><div class="text-sm font-bold text-slate-700 dark:text-slate-200">Carregando ações aprovadas da nuvem...</div><p class="text-xs text-slate-400">Aguarde alguns instantes enquanto sincronizamos a galeria.</p></div>`;
+                            if (aEl) aEl.innerHTML = `<button type="button" onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs cursor-pointer">Fechar</button>`;
+                            modalEl.classList.remove('hidden');
+                        }
+                        app.storage.ensureActionsLoaded(() => {
+                            try { this.openAcoesSelectorModal(true); } catch (err) { console.error(err); }
+                        });
+                        return;
+                    }
+                    if (!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
                     
-                    const acoesAprovadas = Object.values(app.actionsList || {}).filter(a => a.status === 'aprovado').sort((a,b) => b.timestamp - a.timestamp);
+                    const acoesAprovadas = Object.values(app.actionsList || {})
+                        .filter(a => a && a.status === 'aprovado')
+                        .sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
                     const getActMonth = (a) => (app.calc && typeof app.calc.getActionMonthKey === 'function')
                         ? app.calc.getActionMonthKey(a)
                         : (a.dataAcao ? String(a.dataAcao).substring(0, 7) : (a.month || ''));
                     
                     const mesesDisponiveis = [...new Set(acoesAprovadas.map(a => getActMonth(a)).filter(Boolean))].sort().reverse();
-                    const comboMeses = mesesDisponiveis.map(m => `<option value="${m}">${app.ui.formatMonthLabel(m)}</option>`).join('');
+                    const comboMeses = mesesDisponiveis.map(m => `<option value="${esc(m)}">${esc(app.ui.formatMonthLabel(m))}</option>`).join('');
 
                     let htmlList = '';
-                    if(acoesAprovadas.length === 0) {
+                    if (acoesAprovadas.length === 0) {
                         htmlList = '<div class="text-center text-sm text-slate-400 py-8 border-dashed border-2 rounded-2xl">Não há ações presenciais aprovadas no sistema.</div>';
                     } else {
                         htmlList = `
@@ -51106,25 +51177,27 @@ storage: {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto custom-scrollbar p-2">
                         `;
                         acoesAprovadas.forEach(act => {
-                            const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(act.id);
-                            const photoThumb = act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '');
+                            const actId = String(act.id || '');
+                            const isSelected = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas.includes(actId);
+                            const photoThumb = (act.photos && act.photos.length > 0 ? act.photos[0] : (act.photo || '')) || '';
                             const actMonthVal = getActMonth(act);
+                            const dtLabel = act.dataAcao ? String(act.dataAcao).split('-').reverse().join('/') : (actMonthVal || '-');
                             htmlList += `
-                                <div data-month="${actMonthVal}" class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
-                                    <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${act.id}', this.parentElement)">
+                                <div data-month="${esc(actMonthVal)}" class="card-acao-galeria relative bg-white dark:bg-slate-800 p-3 rounded-2xl border-2 ${isSelected ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20' : 'border-slate-200 dark:border-slate-700'} shadow-sm transition-all flex flex-col group">
+                                    <div class="flex gap-3 cursor-pointer" onclick="app.admin.toggleAcaoApresentacao('${esc(actId)}', this.parentElement)">
                                         <div class="check-indicator absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white transition-all ${isSelected ? 'bg-teal-500 scale-100 shadow-md' : 'bg-slate-300 scale-0 group-hover:scale-100'}"><i class="fa-solid fa-check"></i></div>
                                         <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden border border-slate-200 dark:border-slate-700">
-                                            ${photoThumb ? `<img src="${photoThumb}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
+                                            ${photoThumb ? `<img src="${photoThumb}" loading="lazy" decoding="async" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}
                                         </div>
                                         <div class="flex-1 min-w-0 flex flex-col justify-center">
-                                            <div class="text-[9px] font-black uppercase text-teal-600 mb-0.5">${act.dataAcao.split('-').reverse().join('/')} | ${act.codigoOpe}</div>
-                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-tight mb-1" title="${act.objetivo}">${act.objetivo}</div>
-                                            <div class="text-[10px] text-slate-500 truncate"><i class="fa-solid fa-user text-slate-400"></i> ${act.nome}</div>
+                                            <div class="text-[9px] font-black uppercase text-teal-600 mb-0.5">${esc(dtLabel)} | ${esc(act.codigoOpe || '-')}</div>
+                                            <div class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-tight mb-1" title="${esc(act.objetivo || '')}">${esc(act.objetivo || 'Ação Presencial')}</div>
+                                            <div class="text-[10px] text-slate-500 truncate"><i class="fa-solid fa-user text-slate-400"></i> ${esc(act.nome || '-')}</div>
                                         </div>
                                     </div>
                                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between gap-2">
-                                        <button onclick="app.actions.showImageFull('${act.id}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 py-1.5 rounded-lg text-[10px] font-bold transition-colors"><i class="fa-solid fa-images"></i> Ver Todas as Fotos</button>
-                                        <button onclick="app.ui.showConfirm('Excluir Ação?', 'Remover permanentemente esta ação do sistema?', 'app.actions.executeDelete(\\'${act.id}\\')', true)" class="flex-none bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/30 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-colors" title="Deletar Ação"><i class="fa-solid fa-trash"></i></button>
+                                        <button type="button" onclick="app.actions.showImageFull('${esc(actId)}')" class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"><i class="fa-solid fa-images"></i> Ver Todas as Fotos</button>
+                                        <button type="button" onclick="app.ui.showConfirm('Excluir Ação?', 'Remover permanentemente esta ação do sistema?', 'app.actions.executeDelete(\\'${esc(actId)}\\')', true)" class="flex-none bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/30 py-1.5 px-3 rounded-lg text-[10px] font-bold transition-colors cursor-pointer" title="Deletar Ação"><i class="fa-solid fa-trash"></i></button>
                                     </div>
                                 </div>
                             `;
@@ -51138,7 +51211,7 @@ storage: {
                         ${htmlList}
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all">Concluir Seleção</button>
+                        <button type="button" onclick="document.querySelector('#global-modal > div').classList.remove('max-w-4xl'); document.querySelector('#global-modal > div').classList.add('max-w-lg'); document.getElementById('global-modal').classList.add('hidden')" class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm shadow-md transition-all cursor-pointer">Concluir Seleção</button>
                     `;
                     
                     const modalBox = document.querySelector('#global-modal > div');
@@ -53403,7 +53476,12 @@ storage: {
                                     <i class="fa-solid fa-key mr-1"></i> Senha Pessoal do Colaborador (${u.nome})
                                 </label>
                                 <p class="text-[11px] text-emerald-700 dark:text-emerald-400 mb-3">Peça para o colaborador digitar a sua própria senha de login abaixo para confirmar ciência e assinar o fechamento do mês:</p>
-                                <input type="password" id="user-signature-pwd-input" onkeydown="if(event.key==='Enter') app.admin.execConfirmFeedback('${u.matricula}')" placeholder="Digite a senha do colaborador..." class="w-full p-3 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                                <div class="relative">
+                                    <input type="password" id="user-signature-pwd-input" autocomplete="new-password" onkeydown="if(event.key==='Enter') app.admin.execConfirmFeedback('${u.matricula}')" placeholder="Digite a senha do colaborador..." class="w-full p-3 pr-11 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                                    <button type="button" onclick="app.ui.togglePasswordVisibility('user-signature-pwd-input', this)" class="pwd-toggle-btn absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors p-1 cursor-pointer" title="Mostrar/Ocultar Senha">
+                                        <i class="fa-solid fa-eye text-sm"></i>
+                                    </button>
+                                </div>
                                 <div id="user-signature-pwd-error" class="hidden mt-2 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1.5">
                                     <i class="fa-solid fa-circle-exclamation"></i> <span>Senha incorreta! A assinatura exige a senha pessoal do colaborador.</span>
                                 </div>
@@ -53422,7 +53500,11 @@ storage: {
                 },
 
                 execConfirmFeedback(mat) {
-                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    const matNorm = String(mat || '').trim().toUpperCase();
+                    let idx = app.users.findIndex(u => String(u?.matricula || '').trim() === String(mat || '').trim());
+                    if (idx === -1) {
+                        idx = app.users.findIndex(u => String(u?.matricula || '').trim().toUpperCase() === matNorm);
+                    }
                     if (idx === -1) return;
                     const u = app.users[idx];
 
@@ -53430,7 +53512,19 @@ storage: {
                     const errBox = document.getElementById('user-signature-pwd-error');
                     if (pwdInput) {
                         const typedPwd = pwdInput.value.trim();
-                        if (!typedPwd || String(typedPwd) !== String(u.senha)) {
+                        const hasSavedPwd = !!(u.senha && String(u.senha).trim() !== '');
+                        const cleanInputCpf = typedPwd.replace(/\D/g, '');
+                        const cleanUserCpf = u.cpf ? String(u.cpf).replace(/\D/g, '') : '';
+                        const matchedPwd = Boolean(
+                            typedPwd && (
+                                (app.utils && typeof app.utils.verifyPassword === 'function'
+                                    ? app.utils.verifyPassword(typedPwd, u.senha)
+                                    : String(typedPwd) === String(u.senha)) ||
+                                (u.cpf && ((cleanInputCpf && cleanUserCpf && cleanInputCpf === cleanUserCpf) || typedPwd === String(u.cpf).trim())) ||
+                                (typedPwd === '12345' && (!hasSavedPwd || (app.utils && typeof app.utils.isDefaultPassword === 'function' && app.utils.isDefaultPassword(u.senha))))
+                            )
+                        );
+                        if (!matchedPwd) {
                             if (errBox) errBox.classList.remove('hidden');
                             pwdInput.classList.add('border-red-500', 'ring-2', 'ring-red-500');
                             pwdInput.focus();
@@ -72146,6 +72240,178 @@ app.pdcaTeste = {
         `;
     },
 
+    _resolveAprContextForCard(c) {
+        const opCiclo = this._resolveOperacaoCiclo(c);
+        const aprMap = app.apresentacoesList || {};
+        if (c?.aprId && aprMap[c.aprId]) {
+            const apr = aprMap[c.aprId];
+            return {
+                aprId: c.aprId,
+                label: apr.nome || c.origemApres || opCiclo || 'Apresentação',
+                consolidado: this._readConsolidadoFromApr(c.aprId, apr),
+                isAtual: false
+            };
+        }
+        const activeId = app.analiseCSVDinamicoData?._savedAprId || '';
+        if (app.analiseCSVDinamicoData?.consolidado && (!c?.aprId || activeId === c.aprId)) {
+            return {
+                aprId: activeId || '__atual__',
+                label: c?.origemApres || app.analiseCSVDinamicoData.consolidado.customTitle || app.analiseCSVDinamicoData.consolidado.infoOperacao || 'Sessão Ativa',
+                consolidado: app.analiseCSVDinamicoData.consolidado,
+                isAtual: !activeId
+            };
+        }
+        const latest = this._findLatestSourcesForSync(opCiclo);
+        if (latest.length > 0) {
+            const pick = latest[0];
+            return {
+                aprId: pick.id,
+                label: c?.origemApres || pick.label || pick.nome || 'Apresentação',
+                consolidado: pick.isAtual ? app.analiseCSVDinamicoData?.consolidado : this._readConsolidadoFromApr(pick.id),
+                isAtual: Boolean(pick.isAtual)
+            };
+        }
+        return {
+            aprId: c?.aprId || '',
+            label: c?.origemApres || opCiclo || 'Apresentação de Resultados',
+            consolidado: null,
+            isAtual: false
+        };
+    },
+
+    _getImpactoGeralApresentacao(c, ctx) {
+        const cons = ctx?.consolidado || null;
+        const antes = Number(c?.antesValor || 0);
+        const meta = Number(c?.metaValor || 92);
+        const tituloNorm = this._normTxt(c?.titulo || '');
+        const mediaOp = Number(cons?.mediaTotal || 0);
+        const confPct = Number(cons?.conformidadePct || 0);
+        const fCritArr = Array.isArray(cons?.falhasCriticasArray) ? cons.falhasCriticasArray : [];
+        const fComArr = Array.isArray(cons?.falhasComunsArray) ? cons.falhasComunsArray : [];
+        const totCrit = fCritArr.reduce((s, f) => s + Number(f?.count || 0), 0);
+        const totCom = fComArr.reduce((s, f) => s + Number(f?.count || 0), 0);
+
+        const derrubaPills = [];
+        let motivoRuim = '';
+        let badgeLabel = 'Ruim na Apresentação';
+
+        if (c?.criterioTipo === 'critica') {
+            badgeLabel = 'Falha Crítica';
+            const matchDict = cons?.falhasCriticas && Object.entries(cons.falhasCriticas).find(([k]) => this._normTxt(k) === tituloNorm);
+            const matchArr = fCritArr.find(f => this._normTxt(f?.nome || '') === tituloNorm);
+            const ocorrMatch = String(c?.criterioGap || c?.alvo || '').match(/(\d+)\s*ocorr/i);
+            const qtd = Number(matchDict?.[1]?.count ?? matchDict?.[1]?.qtd ?? matchArr?.count ?? ocorrMatch?.[1] ?? 0);
+            const shareCrit = (totCrit > 0 && qtd > 0) ? Math.round((qtd / totCrit) * 100) : 0;
+
+            motivoRuim = qtd > 0
+                ? `${qtd} zeramento(s)${shareCrit > 0 ? ` (${shareCrit}% das críticas)` : ''}`
+                : (c?.alvo || 'Falha crítica zerando notas');
+
+            derrubaPills.push(shareCrit > 0 ? `Falhas Críticas (${shareCrit}%)` : 'Falhas Críticas');
+            if (mediaOp > 0) derrubaPills.push(`Média Geral (${this._formatNum(mediaOp)})`);
+            else derrubaPills.push('Média Geral');
+            if (confPct > 0 && confPct < 100) derrubaPills.push(`Conformidade (${confPct.toFixed(1)}%)`);
+            else derrubaPills.push('Conformidade Absoluta');
+        } else if (c?.criterioTipo === 'comum') {
+            badgeLabel = 'Ofensor de Qualidade';
+            const matchDict = cons?.falhasComuns && Object.entries(cons.falhasComuns).find(([k]) => this._normTxt(k) === tituloNorm);
+            const matchArr = fComArr.find(f => this._normTxt(f?.nome || '') === tituloNorm);
+            const ocorrMatch = String(c?.criterioGap || c?.alvo || '').match(/(\d+)\s*ocorr/i);
+            const qtd = Number(matchDict?.[1]?.count ?? matchDict?.[1]?.qtd ?? matchArr?.count ?? ocorrMatch?.[1] ?? 0);
+            const shareCom = (totCom > 0 && qtd > 0) ? Math.round((qtd / totCom) * 100) : 0;
+
+            motivoRuim = qtd > 0
+                ? `${qtd} desvio(s)${shareCom > 0 ? ` (${shareCom}% do total)` : ''}`
+                : (c?.alvo || 'Item recorrente de desconto');
+
+            derrubaPills.push(shareCom > 0 ? `Desvios Totais (${shareCom}%)` : 'Desvios Totais');
+            if (mediaOp > 0) derrubaPills.push(`Média Geral (${this._formatNum(mediaOp)})`);
+            else derrubaPills.push('Média Geral');
+            if (confPct > 0 && confPct < 100) derrubaPills.push(`Conformidade (${confPct.toFixed(1)}%)`);
+        } else if (c?.criterioTipo === 'nota') {
+            badgeLabel = 'Abaixo da Meta';
+            const opsArr = Array.isArray(cons?.rankOperadores) && cons.rankOperadores.length > 0
+                ? cons.rankOperadores
+                : Object.values(cons?.operadores || {});
+            const opMatch = opsArr.find(o => this._normTxt(o?.nome || o?.operador || '') === tituloNorm);
+            const notaReal = opMatch ? Number(opMatch.media ?? opMatch.notaMedia ?? antes) : antes;
+            const deficit = Number(Math.max(0, 92 - notaReal).toFixed(1));
+            const critCountOp = Number(opMatch?.criticas || opMatch?.falhasCriticas || 0);
+
+            motivoRuim = `Nota ${this._formatNum(notaReal)} (${deficit > 0 ? `-${deficit} pts da meta 92%` : 'ofensor na média'})`;
+            if (mediaOp > 0) derrubaPills.push(`Média Geral (${this._formatNum(mediaOp)})`);
+            else derrubaPills.push('Média Geral');
+            derrubaPills.push('Conformidade Absoluta');
+            if (critCountOp > 0) derrubaPills.push(`Falhas Críticas (${critCountOp})`);
+
+            try {
+                const tmaSnap = cons?.tmaSnapshot || app.config?.tmaData;
+                const tmaObj = (tmaSnap && app.utils?.getTMADoOperador) ? app.utils.getTMADoOperador(c.titulo, tmaSnap) : null;
+                if (tmaObj && Number(tmaObj.tma || 0) > Number(cons?.tmaIdeal || tmaObj.meta || 99999)) {
+                    derrubaPills.push('TMA Operação');
+                }
+            } catch (e) {}
+        } else {
+            badgeLabel = antes < meta ? 'Abaixo da Meta' : 'Monitorado';
+            motivoRuim = antes > 0 && meta > 0 ? `${this._formatNum(antes)} vs meta ${this._formatNum(meta)}` : (c?.alvo || 'Acompanhamento de resultado');
+            if (mediaOp > 0) derrubaPills.push(`Média Geral (${this._formatNum(mediaOp)})`);
+            else derrubaPills.push('Qualidade Geral');
+        }
+
+        return {
+            badgeLabel,
+            motivoRuim,
+            derrubaPills: derrubaPills.slice(0, 3)
+        };
+    },
+
+    abrirApresentacaoDoCard(cicloId) {
+        const c = this.ciclos?.[cicloId];
+        if (!c) return;
+        const ctx = this._resolveAprContextForCard(c);
+        const impacto = this._getImpactoGeralApresentacao(c, ctx);
+        const aprId = ctx.aprId;
+
+        const notifyOpen = () => {
+            try {
+                const msg = `${ctx.label}: ${impacto.motivoRuim} • Derruba: ${impacto.derrubaPills.join(', ')}`;
+                app.ui?.showToast?.(msg, 'info', 4200);
+            } catch (e) {}
+        };
+
+        if (!aprId || aprId === '__atual__') {
+            if (!app.analiseCSVDinamicoData || !app.analiseCSVDinamicoData.consolidado) {
+                app.ui?.showToast?.('Nenhuma apresentação salva vinculada ou ativa encontrada para este item.', 'warning', 3200);
+                app.ui?.renderTab?.('analise_csv_dinamico', true);
+                return;
+            }
+            if (app.ui) app.ui.analiseFiltroMonitor = '';
+            app.ui?.renderTab?.('analise_csv_dinamico', true);
+            notifyOpen();
+            return;
+        }
+
+        const goOpen = () => {
+            if (app.ui) app.ui.analiseFiltroMonitor = '';
+            if (app.apresentacoesList?.[aprId] && app.admin && typeof app.admin.loadApresentacaoFromDB === 'function') {
+                app.admin.loadApresentacaoFromDB(aprId, true);
+                notifyOpen();
+            } else {
+                app.ui?.showToast?.(`Apresentação "${ctx.label}" não encontrada na nuvem.`, 'warning', 3000);
+                app.ui?.renderTab?.('analise_csv_dinamico', true);
+            }
+        };
+
+        if (app.apresentacoesList?.[aprId]) {
+            goOpen();
+        } else if (app.storage && typeof app.storage.refreshApresentacoesFromCloud === 'function') {
+            app.ui?.showToast?.('Carregando Apresentação de Resultados da nuvem...', 'info', 2000);
+            app.storage.refreshApresentacoesFromCloud(true).then(() => goOpen()).catch(() => goOpen());
+        } else {
+            goOpen();
+        }
+    },
+
     _renderCard(c, stageKey) {
         const esc = app.utils.escapeHtml;
         const antes = Number(c.antesValor || 0);
@@ -72221,6 +72487,9 @@ app.pdcaTeste = {
         })();
 
         const respNome = (stageKey !== 'P' || c.executadoEm) ? String(c.responsavel || '').trim() : '';
+        const aprCtx = this._resolveAprContextForCard(c);
+        const impacto = this._getImpactoGeralApresentacao(c, aprCtx);
+        const aprShortLabel = String(aprCtx.label || 'Apresentação de Resultados').replace(/^\[[^\]]+\]\s*/, '').trim() || 'Apresentação';
 
         return `
             <div class="group relative rounded-2xl bg-white/85 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.1)] hover:shadow-[0_12px_26px_-8px_rgba(15,23,42,0.16)] p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
@@ -72281,6 +72550,29 @@ app.pdcaTeste = {
                 </div>
 
                 ${mostrarAcaoCustom ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5 break-words whitespace-normal leading-snug">${esc(acaoCustom)}</p>` : ''}
+
+                <!-- Diagnóstico de Indicadores Derrubados + Atalho para Apresentação de Resultados -->
+                <div class="mb-2.5 rounded-xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/75 dark:border-rose-800/45 p-2.5 space-y-1.5">
+                    <div class="flex items-start justify-between gap-1.5 text-[10px] leading-snug">
+                        <span class="font-extrabold text-rose-700 dark:text-rose-300 flex items-center gap-1 min-w-0">
+                            <i class="fa-solid fa-arrow-trend-down text-[9px] shrink-0"></i>
+                            <span class="break-words whitespace-normal">${esc(impacto.motivoRuim)}</span>
+                        </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1">
+                        <span class="text-[9px] font-black uppercase tracking-wider text-rose-600/80 dark:text-rose-300/80 mr-0.5">Derruba:</span>
+                        ${impacto.derrubaPills.map(ind => `<span class="px-1.5 py-0.5 rounded-md bg-white/85 dark:bg-slate-900/75 border border-rose-200/70 dark:border-rose-800/50 text-[9px] font-bold text-slate-700 dark:text-slate-200 leading-none">${esc(ind)}</span>`).join('')}
+                    </div>
+                    <button type="button" onclick="event.stopPropagation(); app.pdcaTeste.abrirApresentacaoDoCard('${esc(c.id)}')"
+                        title="Abrir a Apresentação de Resultados (${esc(aprCtx.label)}) que aponta este desvio"
+                        class="w-full mt-0.5 py-1.5 px-2.5 rounded-lg bg-white/90 hover:bg-white dark:bg-slate-900/70 dark:hover:bg-slate-900 border border-rose-200/80 dark:border-rose-700/60 text-[10px] font-extrabold text-slate-800 dark:text-white flex items-center justify-between gap-1.5 transition-all shadow-2xs hover:shadow cursor-pointer">
+                        <span class="inline-flex items-center gap-1.5 truncate">
+                            <i class="fa-solid fa-chart-line text-[10px]" style="color: var(--theme-color);"></i>
+                            <span class="truncate">Ver na Apresentação • ${esc(aprShortLabel)}</span>
+                        </span>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-[9px] opacity-65 shrink-0"></i>
+                    </button>
+                </div>
 
                 ${ctaHtml}
             </div>
