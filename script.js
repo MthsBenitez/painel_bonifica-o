@@ -1163,10 +1163,12 @@ storage: {
                         'controle_estoque': ['estoque', 'estoqueLogs'],
                         'impressoes': ['impressoes', 'impressoesStats'],
                         'gestao_impressoes': ['impressoes', 'impressoesStats'],
-                        'analitico_visao_geral': ['visaoGeralData', 'monitorias'],
-                        'dashboard_adm': ['visaoGeralData', 'monitorias', 'anatel'],
                         'pesquisas_anatel': ['anatel'],
-                        'meu_painel': ['monitorias', 'visaoGeralData'],
+                        'meu_painel': ['monitorias', 'visaoGeralData', 'atas', 'actions', 'users'],
+                        'ranking_monitorias': ['monitorias', 'visaoGeralData'],
+                        'cadastros': ['monitorias', 'atas', 'actions', 'users'],
+                        'dashboard_adm': ['visaoGeralData', 'monitorias', 'anatel', 'atas', 'actions'],
+                        'analitico_visao_geral': ['visaoGeralData', 'monitorias'],
                         'analise_csv_dinamico': ['apresentacoes'],
                         'qualidade_treinamento': ['apresentacoes'],
                         'bi_banco_horas': ['biBancoHoras'],
@@ -1884,7 +1886,7 @@ storage: {
                     if (userIdx < 0 || !app.users || !app.users[userIdx] || !app.users[userIdx].matricula) return Promise.resolve();
                     return this.saveUserByMatricula(app.users[userIdx].matricula, fieldsObj);
                 },
-                commitMultiPathWithUsersResults(updates, touchedUsers) {
+                commitMultiPathWithUsersResults(updates, touchedUsers, opts = {}) {
                     const safeUpdates = Object.assign({}, updates || {});
                     this.invalidateCoreCache();
                     try {
@@ -1902,15 +1904,55 @@ storage: {
                         return this._writeFirebaseNodeFast('sistema_bonificacao', safeUpdates, 'PATCH', 20000);
                     }
 
+                    const resultsMode = opts && opts.resultsMode;
+                    const onlyGoals = Array.isArray(opts && opts.onlyGoals) ? opts.onlyGoals : null;
+                    const scopedMonth = opts && opts.monthKey;
+
                     return this._enqueueUserSave(() => {
                         return this._fetchFirebaseNodeFast('sistema_bonificacao/users', 350, 15000).then(res => {
-                            const { keyByMat } = this._extractUsersSnapshot(res && res.ok ? res.val : null);
+                            const { entries, keysByMat } = this._extractUsersSnapshot(res && res.ok ? res.val : null);
+                            const remoteByKey = new Map();
+                            entries.forEach(item => {
+                                if (item && item.key !== undefined) remoteByKey.set(String(item.key), item.user);
+                            });
+
                             targetList.forEach(u => {
                                 const mKey = this._normalizeMat(u.matricula);
-                                const remoteKey = keyByMat.get(mKey);
-                                if (remoteKey !== undefined) {
-                                    safeUpdates[`users/${remoteKey}/results`] = u.results || {};
-                                }
+                                const rkList = (keysByMat && keysByMat.get(mKey)) ? keysByMat.get(mKey) : [];
+                                rkList.forEach(rk => {
+                                    const remoteUser = remoteByKey.get(String(rk));
+                                    const remoteResults = (remoteUser && remoteUser.results && typeof remoteUser.results === 'object') ? remoteUser.results : {};
+                                    const localResults = (u.results && typeof u.results === 'object') ? u.results : {};
+
+                                    if (resultsMode === 'monitoriasOnly' && scopedMonth) {
+                                        const locM = localResults[scopedMonth];
+                                        if (!locM || typeof locM !== 'object') return;
+                                        if (locM.g1 !== undefined) safeUpdates[`users/${rk}/results/${scopedMonth}/g1`] = locM.g1;
+                                        if (locM.g2 !== undefined) safeUpdates[`users/${rk}/results/${scopedMonth}/g2`] = locM.g2;
+                                        if (!(remoteResults[scopedMonth] && remoteResults[scopedMonth].status)) {
+                                            safeUpdates[`users/${rk}/results/${scopedMonth}/status`] = locM.status || 'pendente';
+                                        }
+                                    } else if (onlyGoals && scopedMonth) {
+                                        const locM = localResults[scopedMonth];
+                                        if (!locM || typeof locM !== 'object') return;
+                                        onlyGoals.forEach(gId => {
+                                            if (locM[gId] !== undefined) {
+                                                safeUpdates[`users/${rk}/results/${scopedMonth}/${gId}`] = locM[gId];
+                                            }
+                                        });
+                                        if (!(remoteResults[scopedMonth] && remoteResults[scopedMonth].status)) {
+                                            safeUpdates[`users/${rk}/results/${scopedMonth}/status`] = locM.status || 'pendente';
+                                        }
+                                    } else {
+                                        const mergedRes = Object.assign({}, remoteResults);
+                                        Object.keys(localResults).forEach(mk => {
+                                            if (localResults[mk] && typeof localResults[mk] === 'object') {
+                                                mergedRes[mk] = Object.assign({}, remoteResults[mk] || {}, localResults[mk]);
+                                            }
+                                        });
+                                        safeUpdates[`users/${rk}/results`] = mergedRes;
+                                    }
+                                });
                             });
                             return this._writeFirebaseNodeFast('sistema_bonificacao', safeUpdates, 'PATCH', 25000);
                         });
@@ -3643,7 +3685,9 @@ storage: {
 
                     const monthKey = `${y}-${String(m).padStart(2, '0')}`;
                     const todayStr = `${monthKey}-${String(now.getDate()).padStart(2, '0')}`;
-                    const res = (user.results && user.results[monthKey]) || {};
+                    const res = (app.calc && typeof app.calc.getReconciledMonthResults === 'function')
+                        ? app.calc.getReconciledMonthResults(user, monthKey)
+                        : ((user.results && user.results[monthKey]) || {});
                     const goals = Array.isArray(app.config && app.config.goals) ? app.config.goals : [];
                     const pendencias = [];
 
@@ -4235,22 +4279,30 @@ storage: {
 
                     let updates = {};
                     
-                    // SEGURANÇA: Se a ação já estava aprovada, removemos o ponto do painel do usuário para não dar bônus indevido
+                    // SEGURANÇA: recalculamos o saldo exato de ações aprovadas no mês excluindo a ação removida
                     const touchedUsers = [];
-                    if (act.status === 'aprovado') {
+                    const actMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(act)
+                        : (act.month || (act.dataAcao ? String(act.dataAcao).substring(0, 7) : app.currentMonth));
+                    if (act.status === 'aprovado' && actMonth) {
                         const normActMat = app.storage._normalizeMat(act.matricula);
                         const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
-                        if (userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
-                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
-                            app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            touchedUsers.push(app.users[userIdx]);
+                        if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
+                            const u = app.users[userIdx];
+                            if (!u.results) u.results = {};
+                            if (!u.results[actMonth]) u.results[actMonth] = { status: 'pendente' };
+                            const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                                ? app.calc.countApprovedFromSources(u, actMonth, { ignoreActionId: id })
+                                : { g4Count: Math.max(0, (parseInt(u.results[actMonth]?.g4?.val) || 0) - 1) };
+                            u.results[actMonth]['g4'] = { val: String(counts.g4Count) };
+                            touchedUsers.push(u);
                         }
                     }
 
                     updates[`actions/${id}`] = null; // Apaga a ação inteira do Firebase
                     
-                    // Atualiza somente actions/${id} e results do usuário afetado (sem sobrescrever senhas de outros usuários)
-                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
+                    // Atualiza somente actions/${id} e results/${actMonth}/g4 do usuário afetado
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers, { onlyGoals: ['g4'], monthKey: actMonth }).then(() => {
                         delete app.actionsList[id]; // Limpa da memória local da tela
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         app.ui.renderTab(app.currentTab, true); // Mantém a pessoa na aba em que ela estava (seja ADM ou Usuário)
@@ -4363,25 +4415,33 @@ storage: {
                     
                     const act = app.actionsList[id];
                     let updates = {};
-                    
-                    // Se já estava aprovado, precisamos remover o ponto do usuário de forma atômica
-                    const touchedUsers = [];
-                    if (act.status === 'aprovado') {
-                        const normActMat = app.storage._normalizeMat(act.matricula);
-                        const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
-                        if(userIdx > -1 && app.users[userIdx].results && app.users[userIdx].results[act.month] && app.users[userIdx].results[act.month]['g4']) {
-                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
-                            app.users[userIdx].results[act.month]['g4'].val = Math.max(0, currentVal - 1).toString();
-                            touchedUsers.push(app.users[userIdx]);
-                        }
-                    }
+                    const wasApproved = act.status === 'aprovado';
+                    const actMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(act)
+                        : (act.month || (act.dataAcao ? String(act.dataAcao).substring(0, 7) : app.currentMonth));
 
                     act.status = 'reprovado';
                     act.comentario = reason;
                     updates[`actions/${id}`] = act;
+
+                    const touchedUsers = [];
+                    if (wasApproved && actMonth) {
+                        const normActMat = app.storage._normalizeMat(act.matricula);
+                        const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
+                        if (userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
+                            const u = app.users[userIdx];
+                            if (!u.results) u.results = {};
+                            if (!u.results[actMonth]) u.results[actMonth] = { status: 'pendente' };
+                            const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                                ? app.calc.countApprovedFromSources(u, actMonth)
+                                : { g4Count: Math.max(0, (parseInt(u.results[actMonth]?.g4?.val) || 0) - 1) };
+                            u.results[actMonth]['g4'] = { val: String(counts.g4Count) };
+                            touchedUsers.push(u);
+                        }
+                    }
                     
-                    // Envio blindado sem sobrescrever nó completo de usuários
-                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
+                    // Envio blindado atualizando apenas g4 sem sobrescrever outros indicadores
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers, { onlyGoals: ['g4'], monthKey: actMonth }).then(() => {
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
                         
@@ -4464,8 +4524,10 @@ storage: {
                     
                     const evtEditId = document.getElementById('act-edit-id').value;
                     const dataAcaoVal = document.getElementById('act-data').value;
-                    // Usa sempre o mês selecionado no portal (app.currentMonth) para que a ação nunca suma da visão atual do usuário nem do ADM
-                    const targetMonth = app.currentMonth || (dataAcaoVal ? dataAcaoVal.substring(0, 7) : '');
+                    // Usa a competência real da data da ação (fallback no mês selecionado no cabeçalho)
+                    const targetMonth = (dataAcaoVal && /^\d{4}-\d{2}/.test(dataAcaoVal))
+                        ? dataAcaoVal.substring(0, 7)
+                        : (app.currentMonth || '');
 
                     const payload = {
                         id: evtEditId || ('act_' + Date.now()),
@@ -4630,7 +4692,11 @@ storage: {
                     if(!app.actionsList[id] || app.actionsList[id].status === 'aprovado') return; // Trava mágica
                     
                     const act = app.actionsList[id];
+                    const actMonth = (app.calc && typeof app.calc.getActionMonthKey === 'function')
+                        ? app.calc.getActionMonthKey(act)
+                        : (act.month || (act.dataAcao ? String(act.dataAcao).substring(0, 7) : app.currentMonth));
                     act.status = 'aprovado';
+                    if (actMonth) act.month = actMonth;
                     let updates = {};
                     updates[`actions/${id}`] = act;
                     const touchedUsers = [];
@@ -4638,28 +4704,29 @@ storage: {
                     try {
                         const normActMat = app.storage._normalizeMat(act.matricula);
                         const userIdx = app.users.findIndex(x => app.storage._normalizeMat(x.matricula) === normActMat);
-                        if(userIdx > -1 && app.isUserQualidade(app.users[userIdx])) {
-                            if(!app.users[userIdx].results) app.users[userIdx].results = {};
-                            if(!app.users[userIdx].results[act.month]) app.users[userIdx].results[act.month] = { status: 'pendente' };
-                            if(!app.users[userIdx].results[act.month]['g4']) app.users[userIdx].results[act.month]['g4'] = { val: 0 };
-                            
-                            let currentVal = parseInt(app.users[userIdx].results[act.month]['g4'].val) || 0;
-                            app.users[userIdx].results[act.month]['g4'].val = (currentVal + 1).toString();
+                        if(userIdx > -1 && app.isUserQualidade(app.users[userIdx]) && actMonth) {
+                            const u = app.users[userIdx];
+                            if(!u.results) u.results = {};
+                            if(!u.results[actMonth]) u.results[actMonth] = { status: 'pendente' };
+                            const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                                ? app.calc.countApprovedFromSources(u, actMonth)
+                                : { g4Count: (parseInt(u.results[actMonth]?.g4?.val) || 0) + 1 };
+                            u.results[actMonth]['g4'] = { val: String(counts.g4Count) };
                             
                             if(app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normActMat) {
-                                app.currentUser = app.users[userIdx];
+                                app.currentUser = u;
                             }
                             
-                            touchedUsers.push(app.users[userIdx]);
+                            touchedUsers.push(u);
                         }
                     } catch (err) {
                         console.error("Erro ao creditar ação:", err);
                     }
                     
-                    // Envio blindado apenas do result do colaborador afetado
-                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
+                    // Envio atômico atualizando apenas g4 do mês sem sobrescrever outros indicadores
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers, { onlyGoals: ['g4'], monthKey: actMonth }).then(() => {
                         try { localStorage.setItem('soft_actions_backup', JSON.stringify(app.actionsList || {})); } catch (e) {}
-                        app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(act.month)} foi aprovada e somada nos seus indicadores.`, 'success');
+                        app.notifications.notify(act.matricula, 'Ação Aprovada!', `Sua ação enviada para ${app.ui.formatMonthLabel(actMonth)} foi aprovada e somada nos seus indicadores.`, 'success');
                         app.ui.showAlert("Feito", "Ação aprovada e somada aos resultados do colaborador.", "success");
                         app.ui.renderTab('validar_acoes', true);
                     });
@@ -5165,7 +5232,7 @@ storage: {
                     return (app.users || []).filter(u => {
                         if (!u) return false;
                         const uMat = norm(u.matricula);
-                        const isQualidadeUser = app.isUserQualidade(u) || (u.results && Object.values(u.results).some(r => r && r.g3));
+                        const isQualidadeUser = app.isUserQualidade(u);
                         
                         // 1. Match estrito por matrícula normalizada (criador ou responsável direto da qualidade)
                         if (uMat && (uMat === ataMat || uMat === ataMatQ1 || uMat === ataMatQ2) && isQualidadeUser) {
@@ -5889,37 +5956,34 @@ storage: {
                     let updates = {};
 
                     const st = String(ata.status || '').toLowerCase().trim();
-                    if (st === 'aprovado' || st === 'aprovada' || st === 'aprovados') {
-                        const mesRef = this.getAtaMonth(ata) || app.currentMonth;
-                        const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
-                        const gId = goalCalib ? goalCalib.id : 'g3';
-
-                        let usersEncontrados = this.findQualidadeUsersForAta(ata);
-
-                        const touchedUsers = [];
-                        usersEncontrados.forEach(userEncontrado => {
-                            if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
-                                let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
-                                userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
-                                
-                                if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
-                                    app.currentUser = userEncontrado;
-                                }
-                                touchedUsers.push(userEncontrado);
-                            }
-                        });
-                        
-                        updates._touchedAtaUsers = touchedUsers;
-                    }
-
-                    const ataTouchedUsers = updates._touchedAtaUsers || [];
-                    delete updates._touchedAtaUsers;
+                    const wasApproved = (st === 'aprovado' || st === 'aprovada' || st === 'aprovados');
+                    const mesRef = this.getAtaMonth(ata) || app.currentMonth;
+                    const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
+                    const gId = goalCalib ? goalCalib.id : 'g3';
 
                     ata.status = 'devolvido';
                     ata.comentario = reason;
                     updates[`atas/${id}`] = ata;
+
+                    const ataTouchedUsers = [];
+                    if (wasApproved && mesRef) {
+                        let usersEncontrados = this.findQualidadeUsersForAta(ata);
+                        usersEncontrados.forEach(userEncontrado => {
+                            if (!userEncontrado) return;
+                            if (!userEncontrado.results) userEncontrado.results = {};
+                            if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                            const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                                ? app.calc.countApprovedFromSources(userEncontrado, mesRef)
+                                : { g3Count: Math.max(0, (parseInt(userEncontrado.results[mesRef][gId]?.val) || 0) - 1) };
+                            userEncontrado.results[mesRef][gId] = { val: String(counts.g3Count) };
+                            if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
+                                app.currentUser = userEncontrado;
+                            }
+                            ataTouchedUsers.push(userEncontrado);
+                        });
+                    }
                     
-                    app.storage.commitMultiPathWithUsersResults(updates, ataTouchedUsers).then(() => {
+                    app.storage.commitMultiPathWithUsersResults(updates, ataTouchedUsers, { onlyGoals: [gId], monthKey: mesRef }).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
@@ -5969,23 +6033,25 @@ storage: {
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
 
-                    const touchedUsers = [];
-                    usersEncontrados.forEach(userEncontrado => {
-                        if (userEncontrado && userEncontrado.results && userEncontrado.results[mesRef] && userEncontrado.results[mesRef][gId]) {
-                            let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
-                            userEncontrado.results[mesRef][gId].val = Math.max(0, atual - 1).toString();
-                            
-                            if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
-                                app.currentUser = userEncontrado;
-                            }
-                            touchedUsers.push(userEncontrado);
-                        }
-                    });
-
                     ata.status = 'aprovado_sem_bonus';
                     updates[`atas/${id}`] = ata;
 
-                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
+                    const touchedUsers = [];
+                    usersEncontrados.forEach(userEncontrado => {
+                        if (!userEncontrado) return;
+                        if (!userEncontrado.results) userEncontrado.results = {};
+                        if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
+                        const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                            ? app.calc.countApprovedFromSources(userEncontrado, mesRef)
+                            : { g3Count: Math.max(0, (parseInt(userEncontrado.results[mesRef][gId]?.val) || 0) - 1) };
+                        userEncontrado.results[mesRef][gId] = { val: String(counts.g3Count) };
+                        if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
+                            app.currentUser = userEncontrado;
+                        }
+                        touchedUsers.push(userEncontrado);
+                    });
+
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers, { onlyGoals: [gId], monthKey: mesRef }).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         document.getElementById('global-modal').classList.add('hidden');
@@ -6163,29 +6229,29 @@ storage: {
                     const goalCalib = app.config.goals.find(g => g.type === 'calibracao');
                     const gId = goalCalib ? goalCalib.id : 'g3';
                     
+                    ata.status = 'aprovado';
+                    ata.month = mesRef;
+
                     let updates = {};
+                    updates[`atas/${id}`] = ata;
                     const touchedUsers = [];
                     
                     usersEncontrados.forEach(userEncontrado => {
                         if(!userEncontrado.results) userEncontrado.results = {};
                         if(!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
-                        if(!userEncontrado.results[mesRef][gId]) userEncontrado.results[mesRef][gId] = { val: 0 };
-                        
-                        let atual = parseInt(userEncontrado.results[mesRef][gId].val) || 0;
-                        userEncontrado.results[mesRef][gId].val = (atual + 1).toString();
+                        const counts = (app.calc && typeof app.calc.countApprovedFromSources === 'function')
+                            ? app.calc.countApprovedFromSources(userEncontrado, mesRef)
+                            : { g3Count: (parseInt(userEncontrado.results[mesRef][gId]?.val) || 0) + 1 };
+                        userEncontrado.results[mesRef][gId] = { val: String(counts.g3Count) };
                         
                         if(app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === app.storage._normalizeMat(userEncontrado.matricula)) {
                             app.currentUser = userEncontrado;
                         }
                         touchedUsers.push(userEncontrado);
                     });
-                    
-                    ata.status = 'aprovado';
-                    ata.month = mesRef;
-                    updates[`atas/${id}`] = ata;
 
-                    // Multi-path update seguro apenas dos results dos colaboradores
-                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers).then(() => {
+                    // Multi-path atômico atualizando apenas g3 sem sobrescrever outros indicadores
+                    app.storage.commitMultiPathWithUsersResults(updates, touchedUsers, { onlyGoals: [gId], monthKey: mesRef }).then(() => {
                         try { localStorage.setItem('soft_atas_backup', JSON.stringify(app.atasList)); } catch (e) {}
                         try { localStorage.setItem('soft_users_backup', JSON.stringify(app.users)); } catch (e) {}
                         const nomesGanhadores = usersEncontrados.map(u => u.nome.split(' ')[0]).join(', ');
@@ -14165,6 +14231,80 @@ storage: {
             
             // --- MOTOR MATEMÁTICO ---
             calc: {
+                getActionMonthKey(act) {
+                    if (!act) return '';
+                    return act.month || (act.dataAcao ? String(act.dataAcao).substring(0, 7) : '');
+                },
+                countApprovedFromSources(user, monthKey, opts = {}) {
+                    const normMat = (m) => (app.storage && typeof app.storage._normalizeMat === 'function')
+                        ? app.storage._normalizeMat(m)
+                        : String(m || '').trim().replace(/^0+/, '');
+                    const uMat = normMat(user && user.matricula);
+                    const hasAtas = Boolean(app._atasLoadedFromCloud || (app.atasList && Object.keys(app.atasList).length > 0));
+                    const hasActions = Boolean(app._actionsLoadedFromCloud || (app.actionsList && Object.keys(app.actionsList).length > 0));
+                    let g3Count = 0;
+                    let g4Count = 0;
+
+                    if (!uMat || !monthKey) {
+                        return { g3Count: 0, g4Count: 0, hasAtas, hasActions };
+                    }
+
+                    if (hasAtas && app.isUserQualidade(user)) {
+                        const ignoreAtaId = opts.ignoreAtaId || null;
+                        Object.values(app.atasList || {}).forEach(ata => {
+                            if (!ata || (ignoreAtaId && ata.id === ignoreAtaId)) return;
+                            const st = String(ata.status || '').toLowerCase().trim();
+                            const isAprov = (st === 'aprovado' || st === 'aprovada' || st === 'aprovados' || ata.validadoCalibragem === true) && !st.includes('sem_bonus');
+                            if (!isAprov) return;
+                            const mesAta = (app.ata && typeof app.ata.getAtaMonth === 'function')
+                                ? app.ata.getAtaMonth(ata)
+                                : (ata.month || String(ata.data || '').substring(0, 7));
+                            if (mesAta !== monthKey) return;
+                            if (app.ata && typeof app.ata.findQualidadeUsersForAta === 'function') {
+                                const matched = app.ata.findQualidadeUsersForAta(ata);
+                                if (matched.some(mu => mu && normMat(mu.matricula) === uMat)) {
+                                    g3Count++;
+                                }
+                            } else {
+                                const m1 = normMat(ata.matriculaQualidade || ata.matricula);
+                                const m2 = normMat(ata.matriculaQualidade2);
+                                if (m1 === uMat || (m2 && m2 === uMat)) g3Count++;
+                            }
+                        });
+                    }
+
+                    if (hasActions && app.isUserQualidade(user)) {
+                        const ignoreActionId = opts.ignoreActionId || null;
+                        Object.values(app.actionsList || {}).forEach(act => {
+                            if (!act || (ignoreActionId && act.id === ignoreActionId)) return;
+                            const st = String(act.status || '').toLowerCase().trim();
+                            if (st !== 'aprovado' && st !== 'aprovada') return;
+                            const mesAct = this.getActionMonthKey(act);
+                            if (mesAct !== monthKey) return;
+                            if (normMat(act.matricula) === uMat) {
+                                g4Count++;
+                            }
+                        });
+                    }
+
+                    return { g3Count, g4Count, hasAtas, hasActions };
+                },
+                getReconciledMonthResults(user, monthKey) {
+                    const base = (user && user.results && user.results[monthKey] && typeof user.results[monthKey] === 'object')
+                        ? { ...user.results[monthKey] }
+                        : {};
+                    if (!user || !monthKey || !app.isUserQualidade(user)) return base;
+                    if (base.status === 'validado') return base;
+
+                    const counts = this.countApprovedFromSources(user, monthKey);
+                    if (counts.hasAtas && !(base.g3 && base.g3.manualOverride)) {
+                        base.g3 = Object.assign({}, base.g3 || {}, { val: String(counts.g3Count) });
+                    }
+                    if (counts.hasActions && !(base.g4 && base.g4.manualOverride)) {
+                        base.g4 = Object.assign({}, base.g4 || {}, { val: String(counts.g4Count) });
+                    }
+                    return base;
+                },
                 getGoalResult(goalId, resultsData) {
                     const goal = app.config.goals.find(g => g.id === goalId);
                     if (!goal) return { raw: { meta: '-', real: '-' }, display: '-', mult: 0, received: 0 };
@@ -17737,7 +17877,7 @@ storage: {
                     const esc = (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml : (s) => String(s || '');
                     const prefixSafe = String(domPrefix || 'mon').replace(/[^a-zA-Z0-9_-]/g, '');
                     return `
-                        <div id="${prefixSafe}-motiv-banner" class="rounded-2xl border p-4 sm:p-5 mb-6 shadow-xs transition-all ${info.wrapCls}">
+                        <div id="${prefixSafe}-motiv-banner" class="rounded-3xl border backdrop-blur-xl p-4 sm:p-5 mb-6 shadow-sm transition-all ${info.wrapCls}">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div class="flex items-start sm:items-center gap-3.5 min-w-0">
                                     <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${info.iconBoxCls}">
@@ -22704,44 +22844,50 @@ storage: {
                     const qualidadeUsers = app.getQualidadeUsers();
                     
                     let html = `
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Desempenho Individual</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Resultados de bonificação (exclusivo perfil <strong>Qualidade</strong>) referentes a <strong class="text-green-600 dark:text-green-400">${monthLabel}</strong>.</p>
-                            </div>
-                            <div class="flex items-center gap-3">
+                        <div class="rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden mb-7" style="background-image: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));">
+                            <div class="absolute -right-12 -top-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+                            <div class="absolute -left-10 -bottom-14 w-44 h-44 rounded-full bg-white/5 blur-2xl pointer-events-none"></div>
+                            <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                                <div>
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 border border-white/20 backdrop-blur-md text-[11px] font-bold uppercase tracking-widest mb-3">
+                                        <i class="fa-solid fa-wallet text-emerald-300"></i> Painel Financeiro • ${monthLabel}
+                                    </div>
+                                    <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Desempenho Individual</h2>
+                                    <p class="text-white/80 text-xs sm:text-sm mt-1">Resultados de bonificação (exclusivo perfil <strong class="text-white">Qualidade</strong>) referentes a <strong class="text-emerald-300">${monthLabel}</strong>.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2.5">
                     `;
                     
                     if(app.isAdmin || app.hasAdminAccess()) {
-                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold shadow-sm focus:ring-2 focus:ring-green-500 outline-none text-slate-800 dark:text-slate-100">
-                            <option value="">${(app.currentUser && app.isUserQualidade(app.currentUser)) ? `Meu Painel (${app.currentUser.nome})` : 'Selecione o monitor de Qualidade...'}</option>`;
-                        qualidadeUsers.forEach(u => { html += `<option value="${u.matricula}" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
+                        html += `<select id="adm-view-user" onchange="app.ui.refreshMeuPainelAdm()" class="px-4 py-2.5 rounded-xl bg-white/15 hover:bg-white/20 backdrop-blur-md border border-white/25 text-xs sm:text-sm font-bold text-white shadow-sm outline-none focus:ring-2 focus:ring-white/50 transition-all cursor-pointer">
+                            <option value="" class="text-slate-900 bg-white">${(app.currentUser && app.isUserQualidade(app.currentUser)) ? `Meu Painel (${app.currentUser.nome})` : 'Selecione o monitor de Qualidade...'}</option>`;
+                        qualidadeUsers.forEach(u => { html += `<option value="${u.matricula}" class="text-slate-900 bg-white" ${window.selectedViewUser === u.matricula ? 'selected':''}>${u.nome}</option>`; });
                         html += `</select>`;
                         if(window.selectedViewUser) targetUser = qualidadeUsers.find(u => u.matricula === window.selectedViewUser) || (app.isUserQualidade(app.currentUser) ? app.currentUser : null);
                         if(!app.isAdmin) {
-                            html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
-                            <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
+                            html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 rounded-xl text-white shadow-sm transition-all" title="Mostrar ou ocultar valores"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-white/75' : 'fa-eye text-emerald-300'}"></i></button>
+                            <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 rounded-xl text-white font-bold text-xs sm:text-sm shadow-sm transition-all"><i class="fa-solid fa-key text-amber-300"></i> Segurança</button>`;
                         }
                     } else {
-                        html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md transition-all"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-slate-400' : 'fa-eye text-blue-500'}"></i></button>
-                        <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm hover:shadow-md transition-all"><i class="fa-solid fa-key text-blue-500"></i> Segurança</button>`;
+                        html += `<button onclick="app.ui.toggleFinanceVisibility()" class="w-10 h-10 flex items-center justify-center bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 rounded-xl text-white shadow-sm transition-all" title="Mostrar ou ocultar valores"><i class="fa-solid ${this.valuesHidden ? 'fa-eye-slash text-white/75' : 'fa-eye text-emerald-300'}"></i></button>
+                        <button onclick="app.ui.openPwdModal()" class="flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/25 rounded-xl text-white font-bold text-xs sm:text-sm shadow-sm transition-all"><i class="fa-solid fa-key text-amber-300"></i> Segurança</button>`;
                     }
-                    html += `</div></div>`;
+                    html += `</div></div></div>`;
 
                     if(targetUser && !app.isUserQualidade(targetUser)) {
                         container.innerHTML = html + `
-                            <div class="p-12 text-center glass-card rounded-3xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/20 max-w-2xl mx-auto">
-                                <div class="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-3xl mx-auto mb-4"><i class="fa-solid fa-user-shield"></i></div>
+                            <div class="p-12 text-center rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm max-w-2xl mx-auto">
+                                <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4" style="background-color: rgba(var(--theme-r, 99), var(--theme-g, 102), var(--theme-b, 241), 0.14); color: var(--theme-color, #6366f1);"><i class="fa-solid fa-user-shield"></i></div>
                                 <h3 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2">Perfil ${targetUser.tipoAcesso} — Isento de Bonificação</h3>
                                 <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">Apenas colaboradores com perfil de acesso <strong>Qualidade</strong> possuem carteira de bonificação e entram nos indicadores financeiros. Para consultar a bonificação de um monitor de Qualidade, selecione o nome dele na lista acima.</p>
-                                <button onclick="app.ui.renderTab('dashboard_adm', true)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all"><i class="fa-solid fa-chart-pie mr-1.5"></i> Ir para Visão Executiva</button>
+                                <button onclick="app.ui.renderTab('dashboard_adm', true)" class="text-white font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all hover:opacity-90" style="background-color: var(--theme-color, #4f46e5);"><i class="fa-solid fa-chart-pie mr-1.5"></i> Ir para Visão Executiva</button>
                             </div>
                         `;
                         return;
                     }
 
                     if(!targetUser && (app.isAdmin || app.hasAdminAccess())) {
-                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 glass-card rounded-2xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um monitor de <strong>Qualidade</strong> acima para visualizar seus indicadores deste mês.</div>`;
+                        container.innerHTML = html + `<div class="p-12 text-center text-slate-500 dark:text-slate-400 rounded-3xl bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl border-dashed border-2 border-slate-300 dark:border-slate-700">Selecione um monitor de <strong>Qualidade</strong> acima para visualizar seus indicadores deste mês.</div>`;
                         return;
                     }
 
@@ -22754,12 +22900,27 @@ storage: {
                         }
                     }
 
-                    const resultsForMonth = (targetUser.results && targetUser.results[app.currentMonth]) || {};
+                    if (!app._atasLoadedFromCloud && !app._atasSyncTriggeredFromMeuPainel && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
+                        app._atasSyncTriggeredFromMeuPainel = true;
+                        app.storage.ensureAtasLoaded(() => {
+                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true);
+                        });
+                    }
+                    if (!app._actionsLoadedFromCloud && !app._actionsSyncTriggeredFromMeuPainel && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
+                        app._actionsSyncTriggeredFromMeuPainel = true;
+                        app.storage.ensureActionsLoaded(() => {
+                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true);
+                        });
+                    }
+
+                    const resultsForMonth = (app.calc && typeof app.calc.getReconciledMonthResults === 'function')
+                        ? app.calc.getReconciledMonthResults(targetUser, app.currentMonth)
+                        : ((targetUser.results && targetUser.results[app.currentMonth]) || {});
                     const total = app.calc.getTotal(resultsForMonth);
                     const isEmpty = Object.keys(resultsForMonth).length === 0;
 
                     if (isEmpty) {
-                        html += `<div class="p-8 mb-8 text-center glass-card rounded-2xl bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                        html += `<div class="p-10 mb-8 text-center rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm text-slate-600 dark:text-slate-300">
                             <i class="fa-regular fa-folder-open text-4xl text-slate-300 dark:text-slate-600 mb-3"></i>
                             <p class="text-slate-500 dark:text-slate-400 font-medium">Não há dados lançados para ${targetUser.nome} no mês de ${monthLabel}.</p>
                         </div>`;
@@ -22770,8 +22931,8 @@ storage: {
                         
                         if(fbStatus === 'pendente') {
                             bannerHtml = `
-                                <div class="mb-6 p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-center gap-4">
-                                    <div class="text-3xl text-amber-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div class="mb-6 p-5 rounded-3xl bg-amber-50/90 dark:bg-amber-950/45 backdrop-blur-md border border-amber-200/80 dark:border-amber-800/60 flex items-center gap-4 shadow-sm">
+                                    <div class="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-300 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-triangle-exclamation"></i></div>
                                     <div>
                                         <h4 class="font-extrabold text-amber-800 dark:text-amber-300 text-sm">Pendente de Validação</h4>
                                         <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Sua bonificação foi lançada, porém requer assinatura conjunta. <strong>Fale com seu gestor</strong> para ele agendar o seu feedback.</p>
@@ -22781,8 +22942,8 @@ storage: {
                         } else if(fbStatus === 'agendado') {
                             let dtFormatada = resultsForMonth.fbDate ? new Date(resultsForMonth.fbDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'Data Indefinida';
                             bannerHtml = `
-                                <div class="mb-6 p-5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 flex items-center gap-4">
-                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-calendar-check"></i></div>
+                                <div class="mb-6 p-5 rounded-3xl bg-blue-50/90 dark:bg-blue-950/45 backdrop-blur-md border border-blue-200/80 dark:border-blue-800/60 flex items-center gap-4 shadow-sm">
+                                    <div class="w-11 h-11 rounded-2xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-calendar-check"></i></div>
                                     <div>
                                         <h4 class="font-extrabold text-blue-800 dark:text-blue-300 text-sm">Feedback Agendado</h4>
                                         <p class="text-blue-700 dark:text-blue-400 text-xs mt-1">Seu alinhamento está marcado para <strong>${dtFormatada} às ${resultsForMonth.fbTime || '--:--'}</strong>. Aguarde a validação presencial com seu gestor.</p>
@@ -22791,8 +22952,8 @@ storage: {
                             `;
                         } else if(fbStatus === 'validado') {
                             bannerHtml = `
-                                <div class="mb-6 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center gap-3">
-                                    <div class="text-xl text-emerald-500"><i class="fa-solid fa-circle-check"></i></div>
+                                <div class="mb-6 p-4 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/45 backdrop-blur-md border border-emerald-200/80 dark:border-emerald-800/60 flex items-center gap-3 shadow-sm">
+                                    <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-300 flex items-center justify-center text-lg shrink-0"><i class="fa-solid fa-circle-check"></i></div>
                                     <div>
                                         <h4 class="font-bold text-emerald-800 dark:text-emerald-300 text-xs uppercase tracking-wider">Resultados Validados e Assinados Digitalmente</h4>
                                         ${resultsForMonth.signedAt ? `<p class="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">Assinado com sua senha em <strong>${resultsForMonth.signedAt}</strong></p>` : ''}
@@ -22806,23 +22967,23 @@ storage: {
                     // Aviso de Notificação
                     if ("Notification" in window && Notification.permission !== "granted") {
                         html += `
-                            <div class="mb-6 p-5 rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-700 shadow-xl shadow-blue-500/20 text-white flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden group">
+                            <div class="mb-6 p-5 sm:p-6 rounded-3xl shadow-xl text-white flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden group" style="background-image: var(--portal-modal-header, linear-gradient(135deg, #2563eb 0%, #312e81 100%));">
                                 <div class="absolute -right-4 -top-4 text-white/10 text-8xl transition-transform duration-700 group-hover:scale-110 group-hover:rotate-12 pointer-events-none"><i class="fa-solid fa-bell"></i></div>
                                 <div class="relative z-10 flex items-center gap-4 w-full md:w-auto">
-                                    <div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl shrink-0 shadow-inner border border-white/20"><i class="fa-solid fa-bell-slash animate-pulse"></i></div>
+                                    <div class="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-2xl shrink-0 shadow-inner border border-white/25"><i class="fa-solid fa-bell-slash animate-pulse"></i></div>
                                     <div>
                                         <h4 class="font-extrabold text-lg tracking-tight mb-1">Permita as Notificações</h4>
-                                        <p class="text-blue-100 text-xs leading-relaxed max-w-xl">O seu navegador está bloqueando os alertas do sistema. Ative agora para não perder os agendamentos de calibração, feedbacks do gestor e compromissos do seu calendário.</p>
+                                        <p class="text-white/80 text-xs leading-relaxed max-w-xl">O seu navegador está bloqueando os alertas do sistema. Ative agora para não perder os agendamentos de calibração, feedbacks do gestor e compromissos do seu calendário.</p>
                                     </div>
                                 </div>
-                                <button onclick="Notification.requestPermission().then(() => app.ui.renderTab(app.currentTab, true))" class="relative z-10 bg-white text-blue-700 hover:bg-blue-50 font-black py-3 px-8 rounded-xl shadow-md transition-all transform hover:-translate-y-1 hover:shadow-xl whitespace-nowrap text-sm w-full md:w-auto">
+                                <button onclick="Notification.requestPermission().then(() => app.ui.renderTab(app.currentTab, true))" class="relative z-10 bg-white text-slate-900 hover:bg-white/90 font-black py-3 px-8 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 hover:shadow-xl whitespace-nowrap text-sm w-full md:w-auto">
                                     Ativar Alertas
                                 </button>
                             </div>
                         `;
                     }
 
-                    html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">`;
+                    html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">`;
                     
                     app.config.goals.forEach(g => {
                         const r = app.calc.getGoalResult(g.id, resultsForMonth);
@@ -22832,33 +22993,35 @@ storage: {
                         // Gamificação de teto
                         const isMaxedOut = r.mult >= 1 && !isEmpty;
                         
-                        // Cores de texto e fundo ajustadas para alto contraste no dark mode
+                        // Cores de texto e fundo ajustadas para o visual vidro + tema ativo
                         const titleColor = isMaxedOut ? 'text-white' : 'text-slate-800 dark:text-slate-100';
                         const badgeColor = isMaxedOut ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-md border-b border-l border-white/20' : '';
-                        const iconContainerColor = isMaxedOut ? 'bg-white/10 text-cyan-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300';
+                        const iconContainerClass = isMaxedOut ? 'bg-white/10 text-cyan-300' : '';
+                        const iconContainerStyle = isMaxedOut ? '' : 'style="background-color: rgba(var(--theme-r, 99), var(--theme-g, 102), var(--theme-b, 241), 0.14); color: var(--theme-color, #6366f1);"';
                         const labelColor = isMaxedOut ? 'text-purple-300' : 'text-slate-400 dark:text-slate-500';
-                        const metaBgColor = isMaxedOut ? 'bg-black/40 border-purple-500/40 text-white' : 'bg-slate-100/80 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200';
-                        const realBgColor = isMaxedOut ? 'bg-blue-500/30 border-cyan-400/50 text-cyan-300 font-black' : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300 font-bold';
-                        const displayBgColor = isMaxedOut ? 'bg-white/10 border-white/20 text-white font-bold' : 'bg-slate-100/70 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200';
-                        const multColor = isMaxedOut ? 'text-cyan-300' : (r.mult > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-500');
+                        const metaBgColor = isMaxedOut ? 'bg-black/40 border-purple-500/40 text-white' : 'bg-slate-100/80 dark:bg-slate-800/70 border-slate-200/80 dark:border-slate-700/80 text-slate-800 dark:text-slate-200';
+                        const realBgColor = isMaxedOut ? 'bg-blue-500/30 border-cyan-400/50 text-cyan-300 font-black' : 'bg-emerald-50/90 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300 font-bold';
+                        const displayBgColor = isMaxedOut ? 'bg-white/10 border-white/20 text-white font-bold' : 'bg-slate-100/70 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-200';
+                        const multColor = isMaxedOut ? 'text-cyan-300' : (r.mult > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500');
                         const priceColor = isMaxedOut ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'text-slate-800 dark:text-slate-100';
 
                         const cardClass = isMaxedOut 
-                            ? 'glass-card card-legendary shine-effect-legendary rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between group transition-shadow' 
-                            : 'glass-card rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between group hover:shadow-md transition-shadow';
+                            ? 'glass-card card-legendary shine-effect-legendary rounded-3xl p-5 sm:p-6 relative overflow-hidden flex flex-col justify-between group transition-all' 
+                            : 'rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 sm:p-6 relative overflow-hidden flex flex-col justify-between group hover:-translate-y-0.5 hover:shadow-lg transition-all';
+                        const cardStyle = isMaxedOut ? '' : 'style="border-top: 3px solid var(--theme-color, #6366f1);"';
 
                         html += `
-                        <div class="${cardClass}">
+                        <div class="${cardClass}" ${cardStyle}>
                             ${isMaxedOut ? `<div class="absolute top-0 right-0 text-[9px] font-black px-3 py-1.5 rounded-bl-xl z-20 flex items-center gap-1 ${badgeColor}"><i class="fa-solid fa-bolt"></i> MÁXIMA</div>` : ''}
                             
                             <div class="flex justify-between items-start mb-5">
                                 <div class="flex items-center gap-3 flex-1 min-w-0 pr-2">
-                                    <div class="w-10 h-10 rounded-xl ${iconContainerColor} flex items-center justify-center shrink-0">
+                                    <div class="w-10 h-10 rounded-2xl ${iconContainerClass} flex items-center justify-center shrink-0" ${iconContainerStyle}>
                                         <i class="fa-solid ${g.icon}"></i>
                                     </div>
                                     <h3 class="font-bold text-sm ${titleColor} leading-tight truncate" title="${g.title}">${g.title}</h3>
                                 </div>
-                                ${!isMaxedOut ? `<span class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-700 text-[10px] font-bold px-2 py-1 rounded-md shrink-0">PESO ${wPct}%</span>` : ''}
+                                ${!isMaxedOut ? `<span class="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 tabular-nums">PESO ${wPct}%</span>` : ''}
                             </div>
                             
                             <div class="flex-1 flex flex-col justify-center mb-5 relative z-10">
@@ -22869,36 +23032,36 @@ storage: {
                                 <div class="grid grid-cols-2 gap-3 mb-3">
                                     <div class="text-center">
                                         <div class="text-[10px] font-bold ${labelColor} uppercase tracking-wide mb-1">Meta</div>
-                                        <div class="rounded-lg py-2 font-semibold text-sm border ${metaBgColor}">${r.raw.meta || '-'}</div>
+                                        <div class="rounded-xl py-2 font-semibold text-sm border tabular-nums ${metaBgColor}">${r.raw.meta || '-'}</div>
                                     </div>
                                     <div class="text-center">
                                         <div class="text-[10px] font-bold ${isMaxedOut ? 'text-cyan-300' : 'text-slate-400 dark:text-slate-500'} uppercase tracking-wide mb-1">Realizado</div>
-                                        <div class="rounded-lg py-2 font-bold text-sm border ${realBgColor}">${r.raw.real || '-'}</div>
+                                        <div class="rounded-xl py-2 font-bold text-sm border tabular-nums ${realBgColor}">${r.raw.real || '-'}</div>
                                     </div>
                                 </div>
-                                <div class="text-center rounded-lg py-1.5 text-xs border ${displayBgColor}"><strong>${r.display}</strong></div>
+                                <div class="text-center rounded-xl py-1.5 text-xs border tabular-nums ${displayBgColor}"><strong>${r.display}</strong></div>
                             `;
                         } else {
                             const badgeColorNonPct = isMaxedOut ? 'bg-white/10 text-white border-white/30 font-black' : 
-                                               (r.mult > 0 ? 'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-800/60' : 
-                                               'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700');
+                                               (r.mult > 0 ? 'bg-amber-50/90 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60' : 
+                                               'bg-slate-100/80 text-slate-600 border-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:border-slate-700');
                             html += `
                                 <div class="flex items-center justify-center h-full">
-                                    <div class="w-full text-center py-4 rounded-xl border font-bold text-sm ${badgeColorNonPct}">${r.display || 'Pendente'}</div>
+                                    <div class="w-full text-center py-4 rounded-2xl border font-bold text-sm ${badgeColorNonPct}">${r.display || 'Pendente'}</div>
                                 </div>
                             `;
                         }
 
                         html += `
                             </div>
-                            <div class="flex justify-between items-end border-t ${isMaxedOut ? 'border-purple-500/50' : 'border-slate-100 dark:border-slate-800'} pt-4 mt-auto relative z-10">
+                            <div class="flex justify-between items-end border-t ${isMaxedOut ? 'border-purple-500/50' : 'border-slate-200/70 dark:border-slate-800'} pt-4 mt-auto relative z-10">
                                 <div>
                                     <div class="text-[10px] font-bold ${labelColor} uppercase tracking-wide mb-0.5">Quadrante</div>
-                                    <div class="text-sm font-black ${multColor}">${(r.mult * 100).toFixed(0)}% <span class="${isMaxedOut ? 'text-purple-300' : 'text-slate-400 dark:text-slate-500'} text-xs font-normal">ating.</span></div>
+                                    <div class="text-sm font-black tabular-nums ${multColor}">${(r.mult * 100).toFixed(0)}% <span class="${isMaxedOut ? 'text-purple-300' : 'text-slate-400 dark:text-slate-500'} text-xs font-normal">ating.</span></div>
                                 </div>
                                 <div class="text-right">
                                     <div class="text-[10px] font-bold ${labelColor} uppercase tracking-wide mb-0.5">Fatia Calculada</div>
-                                    <div class="text-lg font-black ${priceColor}">${this.valuesHidden ? 'R$ ----' : 'R$ ' + r.received.toFixed(2)}</div>
+                                    <div class="text-lg font-black tabular-nums ${priceColor}">${this.valuesHidden ? 'R$ ----' : 'R$ ' + r.received.toFixed(2)}</div>
                                 </div>
                             </div>
                         </div>`;
@@ -22916,27 +23079,28 @@ storage: {
 
                     const bannerClass = isTotalMaxed 
                         ? 'banner-legendary rounded-3xl p-6 md:p-8 shadow-2xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden shine-effect-legendary' 
-                        : 'bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 border border-slate-700/60 rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden';
+                        : 'rounded-3xl p-6 md:p-8 shadow-xl flex flex-col md:flex-row justify-between items-center mt-4 relative overflow-hidden text-white';
+                    const bannerStyle = isTotalMaxed ? '' : 'style="background-image: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));"';
                     
-                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-200' : 'text-white/90 dark:text-green-300';
-                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-100' : 'text-white dark:text-green-100';
-                    const bannerValueColor = isTotalMaxed ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-white dark:text-green-400 drop-shadow-md';
-                    const bannerBadgeBg = isTotalMaxed ? 'bg-black/40 border-purple-400/50 backdrop-blur-xl' : 'bg-slate-900/60 dark:bg-white/10 border-white/20 shadow-inner';
+                    const bannerTitleColor = isTotalMaxed ? 'text-cyan-200' : 'text-white/75';
+                    const bannerHighlightColor = isTotalMaxed ? 'text-purple-100' : 'text-white/80';
+                    const bannerValueColor = isTotalMaxed ? 'text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : 'text-emerald-300 drop-shadow-md';
+                    const bannerBadgeBg = isTotalMaxed ? 'bg-black/40 border-purple-400/50 backdrop-blur-xl' : 'bg-white/15 border-white/25 backdrop-blur-xl shadow-inner';
 
                     html += `
-                        <div class="${bannerClass}">
-                            <div class="absolute right-0 top-0 w-64 h-64 ${isTotalMaxed ? 'bg-cyan-500/20' : 'bg-green-500/10'} rounded-full blur-3xl"></div>
+                        <div class="${bannerClass}" ${bannerStyle}>
+                            <div class="absolute right-0 top-0 w-64 h-64 ${isTotalMaxed ? 'bg-cyan-500/20' : 'bg-white/10'} rounded-full blur-3xl pointer-events-none"></div>
                             
                             <div class="z-10 relative">
                                 <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-2">Resumo Financeiro • ${monthLabel}</div>
                                 <div class="flex items-baseline gap-3">
-                                    <span class="text-4xl md:text-5xl font-black text-white ${isTotalMaxed ? 'drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : ''}">${finalPct}%</span>
+                                    <span class="text-4xl md:text-5xl font-black text-white tabular-nums ${isTotalMaxed ? 'drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]' : ''}">${finalPct}%</span>
                                     <span class="${bannerHighlightColor} text-sm font-medium">Aproveitamento Total</span>
                                 </div>
                             </div>
-                            <div class="mt-6 md:mt-0 text-right ${bannerBadgeBg} backdrop-blur-md px-8 py-5 rounded-2xl border z-10 relative w-full md:w-auto">
+                            <div class="mt-6 md:mt-0 text-right ${bannerBadgeBg} px-8 py-5 rounded-2xl border z-10 relative w-full md:w-auto">
                                 <div class="text-xs font-bold ${bannerTitleColor} uppercase tracking-widest mb-1">Bonificação Projetada</div>
-                                <div class="text-4xl font-black ${bannerValueColor}">${this.valuesHidden ? 'R$ ----' : 'R$ ' + total.received.toFixed(2)}</div>
+                                <div class="text-4xl font-black tabular-nums ${bannerValueColor}">${this.valuesHidden ? 'R$ ----' : 'R$ ' + total.received.toFixed(2)}</div>
                             </div>
                         </div>
                     `;
@@ -22966,7 +23130,9 @@ storage: {
                     let monitoresAbaixoMeta = 0;
 
                     qualidadeUsers.forEach(u => {
-                        const resultsForMonth = (u.results && u.results[app.currentMonth]);
+                        const resultsForMonth = (app.calc && typeof app.calc.getReconciledMonthResults === 'function')
+                            ? app.calc.getReconciledMonthResults(u, app.currentMonth)
+                            : (u.results && u.results[app.currentMonth]);
                         
                         // Cálculo de monitorias/feedbacks para a meta operacional
                         const metaMon = (resultsForMonth?.g1?.meta !== undefined && resultsForMonth?.g1?.meta !== '-') ? parseFloat(resultsForMonth.g1.meta) : 400;
@@ -25166,7 +25332,9 @@ storage: {
                 cadastrosSearchTerm: '',
 
                 getUserMonthValidationInfo(u, month = app.currentMonth) {
-                    const r = (u.results && u.results[month]) || {};
+                    const r = (app.calc && typeof app.calc.getReconciledMonthResults === 'function')
+                        ? app.calc.getReconciledMonthResults(u, month)
+                        : ((u.results && u.results[month]) || {});
                     const keys = Object.keys(r).filter(k => !['status', 'editHistory', 'fbDate', 'fbTime', 'signedAt', 'signedByMat'].includes(k));
                     const hasLaunchedValues = keys.some(k => {
                         const item = r[k];
@@ -30318,18 +30486,19 @@ storage: {
                     const foto = u.foto ? u.foto : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(u.nome) + '&background=cbd5e1&color=ffffff&size=150';
                     const opsAtribuidas = u.operacoes ? u.operacoes.join(', ') : 'Nenhuma operação atribuída específica.';
                     
+                    const isDark = document.documentElement.classList.contains('dark');
                     let html = `
                         <div class="max-w-4xl mx-auto">
-                            <div class="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-t-3xl h-48 relative shadow-lg">
-                                <div class="absolute -bottom-16 left-8 group">
-                                    <img src="${foto}" class="w-32 h-32 rounded-full border-4 border-white dark:border-slate-900 object-cover shadow-xl bg-white">
-                                    <label class="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white border-2 border-white dark:border-slate-900 shadow-lg flex items-center justify-center cursor-pointer transition hover:scale-105" title="Atualizar foto de perfil">
+                            <div class="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-t-3xl h-44 sm:h-48 relative z-20 shadow-lg" style="background-image: var(--portal-modal-header, linear-gradient(135deg, #1d4ed8 0%, #312e81 100%));">
+                                <div class="absolute -bottom-14 left-8 z-30 group">
+                                    <img src="${foto}" class="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-white dark:border-slate-900 object-cover shadow-xl bg-white">
+                                    <label class="absolute bottom-1 right-1 w-9 h-9 rounded-full text-white border-2 border-white dark:border-slate-900 shadow-lg flex items-center justify-center cursor-pointer transition hover:scale-105" style="background-color: var(--theme-color, #4f46e5);" title="Atualizar foto de perfil">
                                         <i class="fa-solid fa-camera text-xs"></i>
                                         <input type="file" accept="image/*" onchange="app.admin.atualizarFotoPerfilHierarquia(event, '${u.matricula}')" class="hidden">
                                     </label>
                                 </div>
                             </div>
-                            <div class="bg-white dark:bg-slate-900 rounded-b-3xl p-8 pt-20 shadow-lg border border-t-0 border-slate-200 dark:border-slate-800 mb-8">
+                            <div class="relative z-10 bg-white dark:bg-slate-900 rounded-b-3xl p-8 pt-20 shadow-lg border border-t-0 border-slate-200 dark:border-slate-800 mb-8">
                                 <div class="flex flex-wrap justify-between items-start gap-3">
                                     <div>
                                         <h2 class="text-3xl font-black text-slate-800 dark:text-white">${u.nome}</h2>
@@ -30343,13 +30512,13 @@ storage: {
                                 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                        <h3 class="text-[11px] font-bold text-slate-400 uppercase mb-2"><i class="fa-solid fa-network-wired text-blue-500"></i> Operações de Atuação</h3>
+                                        <h3 class="text-[11px] font-bold text-slate-400 uppercase mb-2"><i class="fa-solid fa-network-wired" style="color: var(--theme-color, #3b82f6);"></i> Operações de Atuação</h3>
                                         <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">${opsAtribuidas}</p>
                                     </div>
                                     <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                                        <h3 class="text-[11px] font-bold text-slate-400 uppercase mb-2"><i class="fa-solid fa-palette text-purple-500"></i> Personalização</h3>
-                                        <button onclick="app.ui.toggleTheme()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition">
-                                            <span>Alternar Modo Escuro</span> <i class="fa-solid fa-moon"></i>
+                                        <h3 class="text-[11px] font-bold text-slate-400 uppercase mb-2"><i class="fa-solid fa-palette" style="color: var(--theme-color, #a855f7);"></i> Personalização</h3>
+                                        <button onclick="app.ui.toggleTheme()" class="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm shadow-sm hover:shadow-md transition cursor-pointer">
+                                            <span>${isDark ? 'Alternar para Modo Claro' : 'Alternar para Modo Escuro'}</span> <i class="fa-solid ${isDark ? 'fa-sun text-amber-400' : 'fa-moon text-indigo-500'}"></i>
                                         </button>
                                         
                                     </div>
@@ -35058,14 +35227,26 @@ storage: {
                     const rankingArray = state.ranking || []; 
                     const wd = app.utils.getWorkingDays(app.currentMonth);
                     
+                    const monthLabel = this.formatMonthLabel ? this.formatMonthLabel(app.currentMonth) : app.currentMonth;
                     const tsAtt = state.ultimaAtualizacao;
                     const ultimaAttFmt = tsAtt ? (new Date(tsAtt).toLocaleDateString('pt-BR') + ' às ' + new Date(tsAtt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) : 'Ainda não registrado';
 
                     let html = `
-                        <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-                            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-xs">
-                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i>
-                                <span>Última Atualização da Base: <strong class="text-slate-800 dark:text-white font-bold">${ultimaAttFmt}</strong></span>
+                        <div class="rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden mb-6" style="background-image: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));">
+                            <div class="absolute -right-12 -top-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+                            <div class="absolute -left-10 -bottom-14 w-44 h-44 rounded-full bg-white/5 blur-2xl pointer-events-none"></div>
+                            <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                                <div>
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 border border-white/20 backdrop-blur-md text-[11px] font-bold uppercase tracking-widest mb-3">
+                                        <i class="fa-solid fa-headphones text-cyan-300"></i> Qualidade • ${monthLabel}
+                                    </div>
+                                    <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Controle de Monitorias</h2>
+                                    <p class="text-white/80 text-xs sm:text-sm mt-1">Gestão de produtividade, metas mensais e diárias da equipe, calibração e auditoria de feedbacks.</p>
+                                </div>
+                                <div class="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-medium bg-white/15 text-white border border-white/20 backdrop-blur-md shadow-sm self-start lg:self-center">
+                                    <i class="fa-solid fa-clock-rotate-left text-cyan-300"></i>
+                                    <span>Última Atualização: <strong class="text-white font-bold">${ultimaAttFmt}</strong></span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -35076,23 +35257,23 @@ storage: {
                         html += this.buildMonitoriaMotivationalBannerHtml(myMonRow.total, 400, 'impmon');
                     }
 
-                    // BARRA DE FERRAMENTAS PROFISSIONAL & ORGANIZADA
+                    // BARRA DE FERRAMENTAS FROSTED GLASS HARMONIZADA
                     if(canManageMon) {
                         html += `
-                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm mb-6 space-y-4">
+                        <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 shadow-sm mb-6 space-y-4">
                             <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
                                 <!-- Grupo 1: Ações de Importação & Carga -->
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 hidden sm:inline">Arquivos:</span>
-                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:shadow hover:-translate-y-0.5" title="Importar Relatório Padrão (CSV/XLSX)">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 hidden sm:inline">Arquivos:</span>
+                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:opacity-90 hover:-translate-y-0.5" style="background-color: var(--theme-color, #2563eb);" title="Importar Relatório Padrão (CSV/XLSX)">
                                         <i class="fa-solid fa-cloud-arrow-up"></i> Relatório Padrão
                                         <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.processarPlanilhaMonitoria(this)" onclick="this.value = null">
                                     </label>
-                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:shadow hover:-translate-y-0.5" title="Importar Relatório Amil (CSV/XLSX)">
+                                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-bold shadow-sm cursor-pointer transition-all hover:-translate-y-0.5" title="Importar Relatório Amil (CSV/XLSX)">
                                         <i class="fa-solid fa-file-medical"></i> Relatório Amil
                                         <input type="file" accept=".csv, .xlsx" class="hidden" onchange="app.admin.processarPlanilhaAmil(this)" onclick="this.value = null">
                                     </label>
-                                    <label class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 cursor-pointer transition-all" title="Inspecionar e diagnosticar erros no arquivo Padrão">
+                                    <label class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200/80 dark:border-slate-700 cursor-pointer transition-all" title="Inspecionar e diagnosticar erros no arquivo Padrão">
                                         <i class="fa-solid fa-bug text-amber-500"></i> Debug
                                         <input type="file" accept=".csv, .xlsx, .xls" class="hidden" onchange="app.admin.debugRelatorioPadrao(this)" onclick="this.value = null">
                                     </label>
@@ -35100,43 +35281,43 @@ storage: {
 
                                 <!-- Grupo 2: Gestão & Regras -->
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 hidden sm:inline">Ajustes:</span>
-                                    <button type="button" onclick="app.admin.abrirModalMonitoriaManual()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Cadastrar ou editar monitorias manuais fixas">
+                                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 hidden sm:inline">Ajustes:</span>
+                                    <button type="button" onclick="app.admin.abrirModalMonitoriaManual()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition-all hover:-translate-y-0.5" title="Cadastrar ou editar monitorias manuais fixas">
                                         <i class="fa-solid fa-plus-circle"></i> Adicionar Manual
                                     </button>
-                                    <button type="button" onclick="app.admin.openAliasModal()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Vincular nomes da planilha aos colaboradores cadastrados">
-                                        <i class="fa-solid fa-link"></i> Vincular Nomes
+                                    <button type="button" onclick="app.admin.openAliasModal()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 dark:bg-slate-800/90 dark:hover:bg-slate-700/90 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-bold shadow-sm transition-all hover:-translate-y-0.5" title="Vincular nomes da planilha aos colaboradores cadastrados">
+                                        <i class="fa-solid fa-link text-indigo-500 dark:text-indigo-400"></i> Vincular Nomes
                                     </button>
-                                    <button type="button" onclick="app.admin.abrirModalRegraFeedback()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition-all hover:shadow hover:-translate-y-0.5" title="Configurar nota de corte de feedback obrigatório">
+                                    <button type="button" onclick="app.admin.abrirModalRegraFeedback()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/60 text-xs font-bold shadow-sm transition-all hover:-translate-y-0.5" title="Configurar nota de corte de feedback obrigatório">
                                         <i class="fa-solid fa-sliders"></i> Regra FB (${app.getDescricaoRegraFeedback()})
                                     </button>
-                                    <button type="button" onclick="app.admin.resetarMonitorias()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs font-bold transition-all ml-auto" title="Apaga todas as monitorias deste mês">
+                                    <button type="button" onclick="app.admin.resetarMonitorias()" class="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50/80 dark:hover:bg-red-950/40 border border-red-200/80 dark:border-red-900/60 text-xs font-bold transition-all ml-auto" title="Apaga todas as monitorias deste mês">
                                         <i class="fa-solid fa-trash-can"></i> Resetar Mês
                                     </button>
                                 </div>
                             </div>
 
                             <!-- Barra de Filtro de Produtividade de UM DIA SÓ -->
-                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3.5 border-t border-slate-200/60 dark:border-slate-800/80">
                                 <div class="flex flex-wrap items-center gap-2.5">
-                                    <span class="text-xs font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                                        <i class="fa-regular fa-calendar-check text-indigo-500"></i> Filtrar Produtividade Diária (1 Dia):
+                                    <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                        <i class="fa-regular fa-calendar-check" style="color: var(--theme-color, #6366f1);"></i> Filtrar Produtividade Diária (1 Dia):
                                     </span>
-                                    <div class="inline-flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+                                    <div class="inline-flex items-center gap-2 bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 rounded-xl px-3 py-1.5">
                                         <input type="date" id="filtro-dia-monitorias" value="${this._monitoriasFiltroDia || ''}" onchange="app.ui.setFiltroDiaMonitorias(this.value)" class="bg-transparent text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
                                     </div>
                                     ${this._monitoriasFiltroDia ? `
-                                        <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5">
+                                        <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-3 py-1.5 rounded-xl bg-slate-200/80 hover:bg-slate-300/80 dark:bg-slate-700/80 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1.5">
                                             <i class="fa-solid fa-xmark"></i> Ver Mês Inteiro
                                         </button>
                                     ` : ''}
                                 </div>
                                 ${this._monitoriasFiltroDia ? `
-                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold">
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50/90 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold">
                                         <i class="fa-solid fa-filter"></i> Dia Selecionado: ${this.formatDateToBR(this._monitoriasFiltroDia)}
                                     </div>
                                 ` : `
-                                    <span class="text-xs text-slate-400 font-medium">Exibindo consolidado do mês (${this.formatMonthLabel ? this.formatMonthLabel(app.currentMonth) : app.currentMonth})</span>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Exibindo consolidado do mês (${monthLabel})</span>
                                 `}
                             </div>
                         </div>
@@ -35193,67 +35374,67 @@ storage: {
 
                         html += `
                             <!-- Banner do Filtro Diário -->
-                            <div class="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-wrap items-center justify-between gap-3 mb-6">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-lg shadow-sm">
+                            <div class="p-4 sm:p-5 rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 mb-6" style="border-left: 4px solid var(--theme-color, #6366f1);">
+                                <div class="flex items-center gap-3.5">
+                                    <div class="w-11 h-11 rounded-2xl text-white flex items-center justify-center text-lg shadow-sm" style="background-color: var(--theme-color, #4f46e5);">
                                         <i class="fa-regular fa-calendar-check"></i>
                                     </div>
                                     <div>
-                                        <h3 class="text-sm font-black text-indigo-950 dark:text-indigo-200">Produtividade do Dia: ${this.formatDateToBR(filtroDiaAtivo)}</h3>
-                                        <p class="text-xs text-indigo-700/80 dark:text-indigo-300/80">Exibindo exclusivamente as monitorias auditadas nesta data específica.</p>
+                                        <h3 class="text-sm font-black text-slate-800 dark:text-white">Produtividade do Dia: ${this.formatDateToBR(filtroDiaAtivo)}</h3>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Exibindo exclusivamente as monitorias auditadas nesta data específica.</p>
                                     </div>
                                 </div>
-                                <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 text-xs font-bold border border-indigo-200 dark:border-indigo-700 shadow-xs transition">
+                                <button type="button" onclick="app.ui.limparFiltroDiaMonitorias()" class="px-4 py-2 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-bold border border-slate-200/80 dark:border-slate-700 shadow-xs transition">
                                     <i class="fa-solid fa-arrow-left mr-1.5"></i>Voltar ao Mês Completo
                                 </button>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-blue-500/12 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-headphones"></i></div>
                                     <div>
-                                        <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado no Dia</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitoriasDia} <span class="text-xs font-semibold text-slate-400">monitorias</span></div>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Realizado no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalMonitoriasDia} <span class="text-xs font-semibold text-slate-400">monitorias</span></div>
                                     </div>
                                 </div>
-                                <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-emerald-500"><i class="fa-solid fa-users"></i></div>
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-users"></i></div>
                                     <div>
-                                        <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Monitores Ativos no Dia</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${monitoresAtivosDia} <span class="text-xs font-semibold text-slate-400">(${mediaPorMonitorDia} méd/monitor)</span></div>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Monitores Ativos no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${monitoresAtivosDia} <span class="text-xs font-semibold text-slate-400">(${mediaPorMonitorDia} méd/monitor)</span></div>
                                     </div>
                                 </div>
-                                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-red-500/12 text-red-600 dark:text-red-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-triangle-exclamation"></i></div>
                                     <div>
-                                        <div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Gerados no Dia</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalFbDia} <span class="text-xs font-semibold text-slate-400">pendentes</span></div>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Feedbacks Gerados no Dia</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalFbDia} <span class="text-xs font-semibold text-slate-400">pendentes</span></div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mb-8 shadow-sm">
                                 <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
                                     <div>
                                         <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
-                                            <i class="fa-solid fa-calendar-day text-indigo-500"></i> Desempenho Individual no Dia (${this.formatDateToBR(filtroDiaAtivo)})
+                                            <i class="fa-solid fa-calendar-day" style="color: var(--theme-color, #6366f1);"></i> Desempenho Individual no Dia (${this.formatDateToBR(filtroDiaAtivo)})
                                         </h3>
-                                        <p class="text-xs text-slate-400 mt-1">Produtividade de cada monitor registrada para a data selecionada.</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Produtividade de cada monitor registrada para a data selecionada.</p>
                                     </div>
-                                    <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-colors"><i class="fa-solid fa-link text-blue-500 mr-1"></i> Vincular Nomes</button>
+                                    <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold py-2 px-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-xs transition-colors"><i class="fa-solid fa-link mr-1" style="color: var(--theme-color, #3b82f6);"></i> Vincular Nomes</button>
                                 </div>
-                                <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                <div class="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/50 dark:bg-slate-950/30">
                                     <table class="w-full text-left border-collapse min-w-[700px]">
-                                        <thead class="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                        <thead class="bg-slate-100/70 dark:bg-slate-800/70 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                                             <tr>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700">Monitor</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Total no Dia</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-36">% do Volume do Dia</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Pend. FB Dia</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-36">Status no Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800">Monitor</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-28">Total no Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-36">% do Volume do Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-28">Pend. FB Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-36">Status no Dia</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                        <tbody class="divide-y divide-slate-200/50 dark:divide-slate-800/60">
                         `;
 
                         rankingDiaArray.forEach(r => {
@@ -35263,31 +35444,31 @@ storage: {
                             const ativoNoDia = r.totalDia > 0;
 
                             html += `
-                                <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                    <td class="py-3 px-4 flex items-center gap-3">
+                                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                                    <td class="py-3.5 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2 flex-wrap">
-                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:text-blue-700 transition-colors" title="Abrir Lançamento">${userObj.nome}</span>
+                                            <div class="font-bold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-2 flex-wrap">
+                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:underline transition-colors" style="color: var(--theme-color, #2563eb);" title="Abrir Lançamento">${userObj.nome}</span>
                                             </div>
                                             <span class="text-[10px] text-slate-400 font-semibold">${r.operacao || 'Geral'}</span>
                                         </div>
                                     </td>
-                                    <td class="py-3 px-4 text-center font-black text-slate-800 dark:text-white text-base">
-                                        <span class="px-2.5 py-1 rounded-lg ${ativoNoDia ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-black' : 'text-slate-400'}">${r.totalDia}</span>
+                                    <td class="py-3.5 px-4 text-center font-black text-slate-800 dark:text-white text-base tabular-nums">
+                                        <span class="px-2.5 py-1 rounded-lg ${ativoNoDia ? 'bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 font-black' : 'text-slate-400'}">${r.totalDia}</span>
                                     </td>
-                                    <td class="py-3 px-4 text-center">
+                                    <td class="py-3.5 px-4 text-center">
                                         <div class="flex flex-col items-center gap-1 w-full max-w-[120px] mx-auto">
-                                            <span class="text-[10px] font-bold text-slate-500">${pctDia}%</span>
-                                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                <div class="h-full bg-indigo-500 rounded-full" style="width: ${pctDia}%"></div>
+                                            <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${pctDia}%</span>
+                                            <div class="w-full h-1.5 bg-slate-200/80 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div class="h-full rounded-full" style="width: ${pctDia}%; background-color: var(--theme-color, #6366f1);"></div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="py-3 px-4 text-center font-bold text-red-500">${r.pendenteFbDia > 0 ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> ' + r.pendenteFbDia : '-'}</td>
-                                    <td class="py-3 px-4 text-center">
+                                    <td class="py-3.5 px-4 text-center font-bold text-red-500 tabular-nums">${r.pendenteFbDia > 0 ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> ' + r.pendenteFbDia : '-'}</td>
+                                    <td class="py-3.5 px-4 text-center">
                                         ${ativoNoDia ? `
-                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-800">
                                                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Ativo no Dia
                                             </span>
                                         ` : `
@@ -35324,78 +35505,78 @@ storage: {
                         let pctGlobal = metaGlobal > 0 ? Math.min(100, (totalMonitorias / metaGlobal) * 100).toFixed(1) : 0;
                         let diasPassadosGlobais = Math.max(1, wd.passed - 1); 
                         let projecaoGlobal = Math.round((totalMonitorias / diasPassadosGlobais) * wd.total);
-                        let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-green-500' : 'text-orange-500';
+                        let projColorGlobal = projecaoGlobal >= metaGlobal ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
                     
                         html += `
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-6">
-                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-blue-500"><i class="fa-solid fa-headphones"></i></div>
-                                    <div><div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Total Realizado</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalMonitorias}</div></div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-blue-500/12 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-headphones"></i></div>
+                                    <div><div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Realizado</div><div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalMonitorias}</div></div>
                                 </div>
-                                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-orange-500"><i class="fa-solid fa-bullseye"></i></div>
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-bullseye"></i></div>
                                     <div>
-                                        <div class="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-widest">Meta Global: ${metaGlobal}</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${totalFaltante} <span class="text-sm font-medium text-slate-500">faltam</span></div>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Meta Global: ${metaGlobal}</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalFaltante} <span class="text-sm font-medium text-slate-500 dark:text-slate-400">faltam</span></div>
                                     </div>
                                 </div>
-                                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
-                                    <div class="text-3xl text-red-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                    <div><div class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest">Feedbacks Pendentes</div><div class="text-2xl font-black text-slate-800 dark:text-white">${totalFeedbacks}</div></div>
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm">
+                                    <div class="w-12 h-12 rounded-2xl bg-red-500/12 text-red-600 dark:text-red-400 flex items-center justify-center text-xl shrink-0"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div><div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Feedbacks Pendentes</div><div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${totalFeedbacks}</div></div>
                                 </div>
                             </div>
 
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative overflow-hidden border-t-4 border-t-blue-500 shadow-md">
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mb-6 relative overflow-hidden shadow-sm" style="border-top: 3px solid var(--theme-color, #3b82f6);">
                                 <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-2">
-                                    <i class="fa-solid fa-globe text-blue-500"></i> Desempenho Global da Equipe
+                                    <i class="fa-solid fa-globe" style="color: var(--theme-color, #3b82f6);"></i> Desempenho Global da Equipe
                                 </h3>
                                 
                                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                                     <div>
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Volume Validado Total</div>
-                                        <div class="text-4xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-                                            ${totalMonitorias} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Volume Validado Total</div>
+                                        <div class="text-4xl font-black text-slate-800 dark:text-white flex items-center gap-2 tabular-nums">
+                                            ${totalMonitorias} <span class="text-lg text-slate-400 font-medium">/ ${metaGlobal}</span>
                                         </div>
                                     </div>
                                     <div class="text-left md:text-right">
-                                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Projeção Mês (Equipe)</div>
-                                        <div class="text-4xl font-black ${projColorGlobal}">${projecaoGlobal} <span class="text-lg text-slate-500 font-medium">/ ${metaGlobal}</span></div>
+                                        <div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Projeção Mês (Equipe)</div>
+                                        <div class="text-4xl font-black tabular-nums ${projColorGlobal}">${projecaoGlobal} <span class="text-lg text-slate-400 font-medium">/ ${metaGlobal}</span></div>
                                     </div>
                                 </div>
 
-                                <div class="relative pt-3">
+                                <div class="relative pt-2">
                                     <div class="flex mb-2 items-center justify-between">
                                         <div class="text-xs font-semibold text-slate-700 dark:text-slate-300">Progresso Geral</div>
-                                        <div class="text-xs font-black text-blue-600 dark:text-blue-400">${pctGlobal}%</div>
+                                        <div class="text-xs font-black tabular-nums" style="color: var(--theme-color, #2563eb);">${pctGlobal}%</div>
                                     </div>
-                                    <div class="spark-bar-container w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <div class="spark-bar-fill bg-blue-500 h-full rounded-full transition-all duration-1000" style="width: ${pctGlobal}%"></div>
+                                    <div class="spark-bar-container w-full h-3 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+                                        <div class="spark-bar-fill h-full rounded-full transition-all duration-1000" style="width: ${pctGlobal}%; background-color: var(--theme-color, #3b82f6);"></div>
                                     </div>
                                 </div>
                             </div>
                             
-                            <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 shadow-sm">
-                                <div class="flex justify-between items-center mb-6">
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mb-8 shadow-sm">
+                                <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
                                     <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
-                                        <i class="fa-solid fa-users text-green-500"></i> Performance Operacional (Individual)
+                                        <i class="fa-solid fa-users text-emerald-500"></i> Performance Operacional (Individual)
                                     </h3>
-                                    <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 font-bold py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-colors"><i class="fa-solid fa-link text-blue-500"></i> Vincular Nomes</button>
+                                    <button onclick="app.admin.openAliasModal()" class="text-xs bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-200/80 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 font-bold py-2 px-3.5 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-xs transition-colors"><i class="fa-solid fa-link mr-1" style="color: var(--theme-color, #3b82f6);"></i> Vincular Nomes</button>
                                 </div>
-                                <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                <div class="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/50 dark:bg-slate-950/30">
                                     <table class="w-full text-left border-collapse min-w-[800px]">
-                                        <thead class="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                        <thead class="bg-slate-100/70 dark:bg-slate-800/70 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                                             <tr>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700">Monitor</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Realizado</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Média/Dia</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Faltam</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Meta/Dia</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-32">Projeção Mês</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-24">Progresso</th>
-                                                <th class="py-4 px-4 border-b border-slate-200 dark:border-slate-700 text-center w-28">Pend. FB</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800">Monitor</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-24">Realizado</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-24">Média/Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-24">Faltam</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-24">Meta/Dia</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-32">Projeção Mês</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-24">Progresso</th>
+                                                <th class="py-4 px-4 border-b border-slate-200/70 dark:border-slate-800 text-center w-28">Pend. FB</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                        <tbody class="divide-y divide-slate-200/50 dark:divide-slate-800/60">
                         `;
                         
                         rankingArray.sort((a,b) => b.total - a.total).forEach(r => {
@@ -35409,7 +35590,7 @@ storage: {
                             let diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
                             
                             let proj = Math.round((r.total / diasPassadosEfetivos) * wd.total);
-                            let colorProj = isIsento ? 'text-teal-500' : (proj >= metaAtual ? 'text-green-500' : 'text-orange-500');
+                            let colorProj = isIsento ? 'text-teal-500' : (proj >= metaAtual ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400');
                             
                             let mediaDiaria = (r.total / diasPassadosEfetivos).toFixed(1);
                             let faltaReal = isIsento ? 0 : Math.max(0, metaAtual - r.total);
@@ -35417,37 +35598,37 @@ storage: {
                             let pct = metaAtual > 0 ? Math.min(100, (r.total / metaAtual) * 100).toFixed(1) : (r.total > 0 ? '100.0' : '0.0');
                             
                             html += `
-                                <tr class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                    <td class="py-3 px-4 flex items-center gap-3">
+                                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                                    <td class="py-3.5 px-4 flex items-center gap-3">
                                         <img src="${avatar}" class="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm object-cover">
                                         <div>
-                                            <div class="font-bold text-blue-600 dark:text-blue-400 text-sm flex items-center gap-2 flex-wrap">
-                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:text-blue-700 transition-colors" title="Abrir Calculadora / Editar Lançamento">${userObj.nome}</span> 
+                                            <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
+                                                <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer hover:underline transition-colors" style="color: var(--theme-color, #2563eb);" title="Abrir Calculadora / Editar Lançamento">${userObj.nome}</span> 
                                                 ${(r.totalManual > 0 || (app.monitoriasData?.lancamentosManuais?.[r.matricula]?.totalManual > 0)) ? `
-                                                    <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-black flex items-center gap-1" title="Lançamento manual fixado (não apaga ao atualizar relatórios)">
+                                                    <span onclick="app.admin.abrirModalMonitoriaManual('${r.matricula}')" class="cursor-pointer bg-emerald-100/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-800 px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider font-black flex items-center gap-1" title="Lançamento manual fixado (não apaga ao atualizar relatórios)">
                                                         <i class="fa-solid fa-lock text-[8px]"></i> Manual +${r.totalManual || app.monitoriasData?.lancamentosManuais?.[r.matricula]?.totalManual}
                                                     </span>
                                                 ` : ''}
-                                                <button onclick="app.admin.toggleIsentarMeta('${r.matricula}')" class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-teal-100 hover:text-teal-600 px-1.5 py-0.5 rounded shadow-sm text-[9px] uppercase tracking-widest font-black transition-colors" title="Isentar Colaborador da Meta de 400 Mensal">
+                                                <button onclick="app.admin.toggleIsentarMeta('${r.matricula}')" class="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 hover:text-teal-700 dark:hover:text-teal-300 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-700 text-[9px] uppercase tracking-widest font-black transition-colors" title="Isentar Colaborador da Meta de 400 Mensal">
                                                     <i class="fa-solid ${isIsento ? 'fa-star text-teal-500' : 'fa-star-half-stroke'}"></i> ${isIsento ? 'Isento' : 'Isentar'}
                                                 </button>
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="py-3 px-4 text-center font-black text-slate-700 dark:text-slate-200">${r.total}</td>
-                                    <td class="py-3 px-4 text-center font-bold text-blue-500 bg-blue-50/30 dark:bg-blue-900/10">${mediaDiaria}</td>
-                                    <td class="py-3 px-4 text-center font-bold ${isIsento ? 'text-teal-500' : 'text-orange-500'}">${faltaReal}</td>
-                                    <td class="py-3 px-4 text-center font-bold ${isIsento ? 'text-teal-500 bg-teal-50/30 dark:bg-teal-900/10' : 'text-red-500 bg-red-50/30 dark:bg-red-900/10'}">${metaDiariaRes}</td>
-                                    <td class="py-3 px-4 text-center font-black ${colorProj}">${proj}</td>
-                                    <td class="py-3 px-4 text-center">
+                                    <td class="py-3.5 px-4 text-center font-black text-slate-800 dark:text-slate-100 tabular-nums">${r.total}</td>
+                                    <td class="py-3.5 px-4 text-center font-bold text-blue-600 dark:text-blue-400 bg-blue-500/5 tabular-nums">${mediaDiaria}</td>
+                                    <td class="py-3.5 px-4 text-center font-bold tabular-nums ${isIsento ? 'text-teal-500' : 'text-amber-600 dark:text-amber-400'}">${faltaReal}</td>
+                                    <td class="py-3.5 px-4 text-center font-bold tabular-nums ${isIsento ? 'text-teal-500 bg-teal-500/5' : 'text-red-500 bg-red-500/5'}">${metaDiariaRes}</td>
+                                    <td class="py-3.5 px-4 text-center font-black tabular-nums ${colorProj}">${proj}</td>
+                                    <td class="py-3.5 px-4 text-center">
                                         <div class="flex flex-col items-center gap-1 w-full">
-                                            <span class="text-[10px] font-bold text-slate-500">${pct}%</span>
-                                            <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                <div class="h-full ${isIsento ? 'bg-teal-500' : 'bg-blue-500'} rounded-full" style="width: ${pct}%"></div>
+                                            <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 tabular-nums">${pct}%</span>
+                                            <div class="w-full h-1.5 bg-slate-200/80 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div class="h-full ${isIsento ? 'bg-teal-500' : ''} rounded-full" style="width: ${pct}%;${isIsento ? '' : ' background-color: var(--theme-color, #3b82f6);'}"></div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td class="py-3 px-4 text-center font-bold text-red-500">${r.pendenteFeedback > 0 ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> ' + r.pendenteFeedback : '-'}</td>
+                                    <td class="py-3.5 px-4 text-center font-bold text-red-500 tabular-nums">${r.pendenteFeedback > 0 ? '<i class="fa-solid fa-triangle-exclamation mr-1"></i> ' + r.pendenteFeedback : '-'}</td>
                                 </tr>
                             `;
                         });
@@ -35460,9 +35641,9 @@ storage: {
                         `;
                     } else if (canManageMon) {
                         html += `
-                            <div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2 mt-6">
+                            <div class="p-12 text-center text-slate-500 dark:text-slate-400 rounded-3xl bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl border-dashed border-2 border-slate-300 dark:border-slate-700 mt-6">
                                 <i class="fa-solid fa-file-csv text-5xl mb-4 opacity-50"></i>
-                                <p>Nenhum dado importado para o mês atual.</p>
+                                <p class="font-bold">Nenhum dado importado para o mês atual.</p>
                                 <p class="text-xs mt-2">Faça o upload do relatório da plataforma para visualizar os dados.</p>
                             </div>
                         `;
@@ -35473,10 +35654,10 @@ storage: {
 
                     if (hasDetalhes) {
                         html += `
-                            <div id="import-mon-detalhes-slot" class="glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 border-t-4 border-t-purple-500 shadow-lg">
+                            <div id="import-mon-detalhes-slot" class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mt-8 mb-8 shadow-lg" style="border-top: 3px solid var(--theme-color, #8b5cf6);">
                                 <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 flex items-center justify-center">
+                                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center" style="background-color: rgba(var(--theme-r, 139), var(--theme-g, 92), var(--theme-b, 246), 0.14); color: var(--theme-color, #8b5cf6);">
                                             <i class="fa-solid fa-spinner fa-spin"></i>
                                         </div>
                                         <div>
@@ -35484,7 +35665,7 @@ storage: {
                                             <p class="text-xs text-slate-500 dark:text-slate-400">Organizando ${totalLinhasDetalhes} avaliação(ões) importadas...</p>
                                         </div>
                                     </div>
-                                    <span class="px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 text-[11px] font-bold text-purple-700 dark:text-purple-300">Processando base</span>
+                                    <span class="px-3 py-1 rounded-full bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300">Processando base</span>
                                 </div>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5 animate-pulse">
                                     <div class="h-28 rounded-2xl bg-slate-200/70 dark:bg-slate-800/70"></div>
@@ -35567,68 +35748,69 @@ storage: {
                         const mediaMon = (agg && agg.monCnt > 0) ? (agg.monSum / agg.monCnt).toFixed(1) : '-';
                         const mediaOutros = (agg && agg.outCnt > 0) ? (agg.outSum / agg.outCnt).toFixed(1) : '-';
                         return `
-                            <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                            <div class="bg-slate-100/70 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+                                <div class="flex justify-between items-start mb-2.5 border-b border-slate-200/70 dark:border-slate-700/70 pb-2">
                                     <div class="flex flex-col">
                                         <span class="font-black text-slate-800 dark:text-white text-xs">${idx + 1}. ${esc(op.nome)}</span>
-                                        <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">${op.qtd} Avaliações Mapeadas</span>
+                                        <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">${op.qtd} Avaliações Mapeadas</span>
                                     </div>
-                                    <span class="font-black ${op.media < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Geral Absoluta">${op.media}</span>
+                                    <span class="font-black tabular-nums ${op.media < 85 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'} bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-700 px-2.5 py-1 rounded-xl shadow-xs text-sm" title="Média Geral Absoluta">${op.media}</span>
                                 </div>
                                 <div class="grid grid-cols-2 gap-2 text-center">
-                                    <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
-                                        <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Média Monitores</div>
-                                        <div class="font-black text-slate-700 dark:text-slate-300">${mediaMon}</div>
+                                    <div class="bg-white/85 dark:bg-slate-900/80 rounded-xl p-2 border border-blue-200/60 dark:border-blue-900/50">
+                                        <div class="text-[9px] uppercase font-bold text-blue-600 dark:text-blue-400 mb-0.5">Média Monitores</div>
+                                        <div class="font-black text-slate-800 dark:text-slate-200 tabular-nums">${mediaMon}</div>
                                     </div>
-                                    <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
-                                        <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Média Outros Sup.</div>
-                                        <div class="font-black text-slate-700 dark:text-slate-300">${mediaOutros}</div>
+                                    <div class="bg-white/85 dark:bg-slate-900/80 rounded-xl p-2 border border-amber-200/60 dark:border-amber-900/50">
+                                        <div class="text-[9px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-0.5">Média Outros Sup.</div>
+                                        <div class="font-black text-slate-800 dark:text-slate-200 tabular-nums">${mediaOutros}</div>
                                     </div>
                                 </div>
                             </div>
                         `;
                     }).join('');
 
-                    slot.className = 'glass-card p-6 md:p-8 rounded-3xl mt-8 mb-8 relative border-t-4 border-t-purple-500 shadow-lg animate-fade-in';
+                    slot.className = 'rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mt-8 mb-8 relative shadow-lg animate-fade-in';
+                    slot.style.borderTop = '3px solid var(--theme-color, #8b5cf6)';
                     slot.innerHTML = `
-                        <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
-                            <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico da Importação
+                        <h3 class="text-lg sm:text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                            <i class="fa-solid fa-microscope" style="color: var(--theme-color, #8b5cf6);"></i> Detalhamento Analítico da Importação
                         </h3>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
-                            <div class="bg-white/90 dark:bg-slate-900/90 rounded-2xl p-6 shadow-sm border border-slate-200/70 dark:border-slate-700/70">
-                                <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
-                                <div class="text-5xl font-black text-slate-800 dark:text-white mb-2">${state.detalhes.mediaTotal || 0}</div>
-                                <p class="text-xs text-slate-500">Média geral baseada em todas as notas computadas no arquivo importado.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8 relative z-10">
+                            <div class="bg-white/75 dark:bg-slate-950/40 backdrop-blur-md rounded-2xl p-6 shadow-xs border border-slate-200/70 dark:border-slate-800">
+                                <div class="text-[10px] font-bold uppercase tracking-widest mb-1" style="color: var(--theme-color, #8b5cf6);"><i class="fa-solid fa-chart-line mr-1"></i> Média Total do Mês</div>
+                                <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 tabular-nums">${state.detalhes.mediaTotal || 0}</div>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Média geral baseada em todas as notas computadas no arquivo importado.</p>
                             </div>
 
-                            <div class="bg-white/90 dark:bg-slate-900/90 rounded-2xl p-6 shadow-sm border border-slate-200/70 dark:border-slate-700/70 custom-scrollbar max-h-48 overflow-y-auto">
-                                <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
+                            <div class="bg-white/75 dark:bg-slate-950/40 backdrop-blur-md rounded-2xl p-6 shadow-xs border border-slate-200/70 dark:border-slate-800 custom-scrollbar max-h-52 overflow-y-auto">
+                                <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md py-1.5 border-b border-slate-200/70 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento Analítico (Monitor x Outros)</div>
                                 <div class="space-y-3">${colabCardsHtml}</div>
                             </div>
                         </div>
 
-                        <div class="bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 shadow-sm overflow-hidden relative z-10">
-                            <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/70 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="bg-white/60 dark:bg-slate-950/35 backdrop-blur-md rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-xs overflow-hidden relative z-10">
+                            <div class="p-4 border-b border-slate-200/60 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div>
-                                    <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-table-list text-blue-500 mr-2"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
-                                    <span id="fb-counter-linha-bruta" class="text-[10px] font-bold text-slate-400"></span>
+                                    <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider"><i class="fa-solid fa-table-list mr-2" style="color: var(--theme-color, #3b82f6);"></i> Visão Linha por Linha (Arquivo Bruto)</h4>
+                                    <span id="fb-counter-linha-bruta" class="text-[10px] font-bold text-slate-500 dark:text-slate-400"></span>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
                                     <div class="relative flex-1 md:flex-none">
                                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                                        <input type="text" oninput="app.ui.filterAuditoriaTable(this.value, 'linha-bruta')" placeholder="Buscar operador ou monitor..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-blue-500 shadow-sm dark:text-white transition-colors">
+                                        <input type="text" oninput="app.ui.filterAuditoriaTable(this.value, 'linha-bruta')" placeholder="Buscar operador ou monitor..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-xs outline-none focus:border-blue-500 shadow-xs dark:text-white transition-colors">
                                     </div>
-                                    <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
-                                    <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
-                                    <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
-                                    <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Elegíveis (${app.getDescricaoRegraFeedback()}) (${countBrutoEleg})</button>
+                                    <button id="fb-btn-linha-bruta-all" onclick="app.ui.filterPendingRows('linha-bruta', 'all')" class="text-xs px-3 py-1.5 rounded-xl shadow-xs border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${todasLinhasBrutas.length})</button>
+                                    <button id="fb-btn-linha-bruta-pendente" onclick="app.ui.filterPendingRows('linha-bruta', 'pendente')" class="text-xs bg-red-50/90 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-xl shadow-xs border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 dark:hover:bg-red-900/50 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countBrutoPend})</button>
+                                    <button id="fb-btn-linha-bruta-aplicado" onclick="app.ui.filterPendingRows('linha-bruta', 'aplicado')" class="text-xs bg-emerald-50/90 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-xl shadow-xs border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countBrutoAplic})</button>
+                                    <button id="fb-btn-linha-bruta-elegivel" onclick="app.ui.filterPendingRows('linha-bruta', 'elegivel')" class="text-xs bg-amber-50/90 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-xl shadow-xs border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all">Elegíveis (${app.getDescricaoRegraFeedback()}) (${countBrutoEleg})</button>
                                 </div>
                             </div>
                             <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
                                 <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
-                                    <thead class="bg-slate-100/90 dark:bg-slate-800/90 sticky top-0 z-20 shadow-sm">
-                                        <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    <thead class="bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-md sticky top-0 z-20 shadow-xs">
+                                        <tr class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                                             <th class="py-3 px-4">Monitor</th>
                                             <th class="py-3 px-4">Operador Avaliado</th>
                                             <th class="py-3 px-4 text-center">Nota</th>
@@ -35637,10 +35819,10 @@ storage: {
                                             <th class="py-3 px-4 text-right">Data</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="import-mon-linhas-tbody" class="divide-y divide-slate-100/50 dark:divide-slate-800/50"></tbody>
+                                    <tbody id="import-mon-linhas-tbody" class="divide-y divide-slate-200/40 dark:divide-slate-800/60"></tbody>
                                 </table>
                             </div>
-                            <div id="import-mon-linhas-footer" class="hidden px-4 py-3 border-t border-slate-200/60 dark:border-slate-700/60 bg-slate-50/70 dark:bg-slate-800/40 flex flex-wrap items-center justify-between gap-2 text-xs"></div>
+                            <div id="import-mon-linhas-footer" class="hidden px-4 py-3 border-t border-slate-200/60 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/60 flex flex-wrap items-center justify-between gap-2 text-xs"></div>
                         </div>
                     `;
                     this._renderImportMonLinhasRows(true);
@@ -35734,26 +35916,34 @@ storage: {
                     const rankingArray = state.ranking || []; 
                     const userMatricula = app.currentUser ? app.currentUser.matricula : '';
                     
+                    const monthLabel = this.formatMonthLabel ? this.formatMonthLabel(app.currentMonth) : app.currentMonth;
                     const tsAtt = state.ultimaAtualizacao;
                     const ultimaAttFmt = tsAtt ? (new Date(tsAtt).toLocaleDateString('pt-BR') + ' às ' + new Date(tsAtt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) : 'Ainda não registrado';
 
                     const myData = rankingArray.find(r => r.matricula === userMatricula);
 
                     let html = `
-                        <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
-                            <div>
-                                <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">Performance Operacional (Individual)</h2>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Acompanhe seus resultados, qualidade de monitorias e projeções para o mês atual.</p>
-                            </div>
-                            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-xs">
-                                <i class="fa-solid fa-clock-rotate-left text-indigo-500"></i>
-                                <span>Última Atualização: <strong class="text-slate-800 dark:text-white font-bold">${ultimaAttFmt}</strong></span>
+                        <div class="rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden mb-7" style="background-image: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));">
+                            <div class="absolute -right-12 -top-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+                            <div class="absolute -left-10 -bottom-14 w-44 h-44 rounded-full bg-white/5 blur-2xl pointer-events-none"></div>
+                            <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                                <div>
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 border border-white/20 backdrop-blur-md text-[11px] font-bold uppercase tracking-widest mb-3">
+                                        <i class="fa-solid fa-medal text-amber-300"></i> Minhas Monitorias • ${monthLabel}
+                                    </div>
+                                    <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Performance Operacional (Individual)</h2>
+                                    <p class="text-white/80 text-xs sm:text-sm mt-1">Acompanhe seus resultados, qualidade de monitorias, feedbacks e projeções para o mês atual.</p>
+                                </div>
+                                <div class="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-medium bg-white/15 text-white border border-white/20 backdrop-blur-md shadow-sm self-start lg:self-center">
+                                    <i class="fa-solid fa-clock-rotate-left text-cyan-300"></i>
+                                    <span>Última Atualização: <strong class="text-white font-bold">${ultimaAttFmt}</strong></span>
+                                </div>
                             </div>
                         </div>
                     `;
 
                     if (!myData) {
-                        html += `<div class="p-12 text-center text-slate-400 glass-card rounded-3xl border-dashed border-2">Você ainda não possui dados de monitoria registrados no sistema para este mês.</div>`;
+                        html += `<div class="p-12 text-center text-slate-500 dark:text-slate-400 rounded-3xl bg-white/75 dark:bg-slate-900/70 backdrop-blur-xl border-dashed border-2 border-slate-300 dark:border-slate-700">Você ainda não possui dados de monitoria registrados no sistema para este mês.</div>`;
                         container.innerHTML = html;
                         return;
                     }
@@ -35765,7 +35955,7 @@ storage: {
                     const diasRestantes = Math.max(1, wd.total - diasPassadosEfetivos);
                     
                     const projecao = Math.round((myData.total / diasPassadosEfetivos) * wd.total);
-                    const projColor = projecao >= meta ? 'text-green-500' : 'text-orange-500';
+                    const projColor = projecao >= meta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
                     
                     const mediaDia = (myData.total / diasPassadosEfetivos).toFixed(1);
                     const metaDiaRestante = myData.falta > 0 ? Math.ceil(myData.falta / diasRestantes) : 0;
@@ -35774,9 +35964,9 @@ storage: {
                     
                     let quadrante = "Q5 (Insuficiente)";
                     let quadColor = "text-red-500";
-                    if (pct >= 100) { quadrante = "Q1 (Excelente)"; quadColor = "text-green-500"; }
-                    else if (pct >= 90) { quadrante = "Q2 (Bom)"; quadColor = "text-blue-500"; }
-                    else if (pct >= 80) { quadrante = "Q3 (Regular)"; quadColor = "text-orange-500"; }
+                    if (pct >= 100) { quadrante = "Q1 (Excelente)"; quadColor = "text-emerald-600 dark:text-emerald-400"; }
+                    else if (pct >= 90) { quadrante = "Q2 (Bom)"; quadColor = "text-blue-600 dark:text-blue-400"; }
+                    else if (pct >= 80) { quadrante = "Q3 (Regular)"; quadColor = "text-amber-600 dark:text-amber-400"; }
                     else if (pct >= 70) { quadrante = "Q4 (Atenção)"; quadColor = "text-amber-500"; }
 
                     const myResults = app.currentUser.results && app.currentUser.results[app.currentMonth] ? app.currentUser.results[app.currentMonth] : {};
@@ -35785,47 +35975,47 @@ storage: {
 
                     html += `
                         <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
-                                <div class="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 mb-1">Total Realizado</div>
-                                <div class="text-2xl font-black text-slate-800 dark:text-white">${myData.total} <span class="text-sm text-slate-500 font-medium">/ ${meta}</span></div>
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 mb-1.5 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Total Realizado</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${myData.total} <span class="text-sm text-slate-400 font-medium">/ ${meta}</span></div>
                             </div>
-                            <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
-                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1">Projeção Mês</div>
-                                <div class="text-2xl font-black ${projColor}">${projecao}</div>
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span> Projeção Mês</div>
+                                <div class="text-2xl font-black tabular-nums ${projColor}">${projecao}</div>
                             </div>
-                            <div class="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
-                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1">Média Diária</div>
-                                <div class="text-2xl font-black text-slate-800 dark:text-white">${mediaDia}</div>
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Média Diária</div>
+                                <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${mediaDia}</div>
                             </div>
-                            <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 shadow-sm flex flex-col justify-center">
-                                <div class="text-[10px] uppercase font-bold text-orange-600 dark:text-orange-400 mb-1">Meta Dia (Restante)</div>
-                                <div class="text-2xl font-black text-orange-600 dark:text-orange-400">${metaDiaRestante}</div>
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm flex flex-col justify-center">
+                                <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1.5 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Meta Dia (Restante)</div>
+                                <div class="text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">${metaDiaRestante}</div>
                             </div>
-                            <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4 shadow-sm flex flex-col justify-center col-span-2 md:col-span-1">
-                                <div class="text-[10px] uppercase font-bold text-green-600 dark:text-green-400 mb-1"><i class="fa-solid fa-sack-dollar"></i> Faturamento Estimado</div>
-                                <div class="text-2xl font-black text-green-600 dark:text-green-400">R$ ${valorDinheiro}</div>
+                            <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm flex flex-col justify-center col-span-2 md:col-span-1">
+                                <div class="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-sack-dollar"></i> Faturamento Estimado</div>
+                                <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">R$ ${valorDinheiro}</div>
                             </div>
                         </div>
 
-                        <div class="glass-card p-6 md:p-8 rounded-3xl mb-8 relative shadow-sm border-t-4 border-t-blue-500">
+                        <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 mb-6 relative shadow-sm" style="border-top: 3px solid var(--theme-color, #3b82f6);">
                             <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-4 gap-4">
                                 <div>
-                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> Progresso da Meta</h3>
-                                    <p class="text-xs text-slate-500 mt-1">Quadrante Atual: <strong class="${quadColor} bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded shadow-sm border border-slate-200 dark:border-slate-700">${quadrante}</strong></p>
+                                    <h3 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-chart-pie" style="color: var(--theme-color, #3b82f6);"></i> Progresso da Meta</h3>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5">Quadrante Atual: <strong class="${quadColor} bg-slate-100/80 dark:bg-slate-800/80 px-2.5 py-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700">${quadrante}</strong></p>
                                 </div>
                                 <div class="text-left md:text-right">
                                     <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Aproveitamento</div>
-                                    <div class="text-xl font-black text-slate-700 dark:text-slate-300" id="anim-prog-text-${userMatricula}">${myData.total} / ${meta} <span class="text-sm text-blue-500">(${pct}%)</span></div>
+                                    <div class="text-xl font-black text-slate-800 dark:text-slate-100 tabular-nums" id="anim-prog-text-${userMatricula}">${myData.total} / ${meta} <span class="text-sm" style="color: var(--theme-color, #3b82f6);">(${pct}%)</span></div>
                                 </div>
                             </div>
-                            <div class="spark-bar-container w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
-                                <div id="anim-prog-bar-${userMatricula}" class="spark-bar-fill bg-blue-500 h-full rounded-full transition-all duration-1000 w-0"></div>
+                            <div class="spark-bar-container w-full h-3 bg-slate-200/80 dark:bg-slate-800 rounded-full overflow-hidden">
+                                <div id="anim-prog-bar-${userMatricula}" class="spark-bar-fill h-full rounded-full transition-all duration-1000 w-0" style="background-color: var(--theme-color, #3b82f6);"></div>
                             </div>
                         </div>
                         ${this.buildMonitoriaMotivationalBannerHtml(myData.total, meta, 'rankmon')}
                     `;
 
-                    // --- VISÃO DETALHADA GLASSMORPHISM 3D (USUÁRIO) ---
+                    // --- VISÃO DETALHADA GLASSMORPHISM HARMONIZADA (USUÁRIO) ---
                     if (state.detalhes && state.detalhes.linhas) {
                         const minhasLinhas = state.detalhes.linhas.filter(l => l.matriculaMonitor === userMatricula);
                         
@@ -35876,16 +36066,16 @@ storage: {
                             });
                             
                             html += `
-                                <div class="mb-4 mt-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
+                                <div class="mb-5 mt-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-5 sm:p-6 shadow-sm">
                                     <div>
-                                        <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
+                                        <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-white tracking-tight">O que a plataforma leu sobre você?</h2>
+                                        <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1">Este é o espelho exato do relatório de monitorias que foi validado neste mês.</p>
                                     </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('pendente')" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors">
+                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('pendente')" class="bg-red-600/90 hover:bg-red-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors">
                                             <i class="fa-solid fa-file-excel"></i> Baixar Feedbacks Pendentes (${countUserPend})
                                         </button>
-                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('todos')" class="bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-colors">
+                                        <button onclick="app.ui.exportarFeedbacksUserXLSX('todos')" class="text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-opacity hover:opacity-90" style="background-color: var(--theme-color, #334155);">
                                             <i class="fa-solid fa-download"></i> Exportar Tudo
                                         </button>
                                     </div>
@@ -35893,58 +36083,56 @@ storage: {
 
                                 <!-- Painel Funcional de Controle de Feedbacks do Monitor -->
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="cursor-pointer bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar todas as avaliações que exigem feedback (${app.getDescricaoRegraFeedback()})">
-                                        <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1"><i class="fa-solid fa-clipboard-check mr-1"></i> Exigem Feedback (${app.getDescricaoRegraFeedback()})</div>
-                                        <div class="text-2xl font-black text-slate-800 dark:text-white">${countUserEleg}</div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="cursor-pointer rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all" title="Clique para filtrar todas as avaliações que exigem feedback (${app.getDescricaoRegraFeedback()})">
+                                        <div class="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-1.5"><i class="fa-solid fa-clipboard-check mr-1"></i> Exigem Feedback (${app.getDescricaoRegraFeedback()})</div>
+                                        <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums">${countUserEleg}</div>
                                     </div>
-                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="cursor-pointer bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para ver apenas os feedbacks já aplicados">
-                                        <div class="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 mb-1"><i class="fa-solid fa-circle-check mr-1"></i> Feedbacks Aplicados</div>
-                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400">${countUserAplic}</div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="cursor-pointer rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all" title="Clique para ver apenas os feedbacks já aplicados">
+                                        <div class="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 mb-1.5"><i class="fa-solid fa-circle-check mr-1"></i> Feedbacks Aplicados</div>
+                                        <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">${countUserAplic}</div>
                                     </div>
-                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="cursor-pointer bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para filtrar somente os feedbacks pendentes">
-                                        <div class="text-[10px] uppercase font-bold text-red-600 dark:text-red-400 mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedbacks Pendentes</div>
-                                        <div class="text-2xl font-black text-red-600 dark:text-red-400">${countUserPend}</div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="cursor-pointer rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all" title="Clique para filtrar somente os feedbacks pendentes">
+                                        <div class="text-[10px] uppercase font-bold text-red-600 dark:text-red-400 mb-1.5"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedbacks Pendentes</div>
+                                        <div class="text-2xl font-black text-red-600 dark:text-red-400 tabular-nums">${countUserPend}</div>
                                     </div>
-                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="cursor-pointer bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-4 shadow-sm hover:scale-[1.01] transition-transform" title="Clique para exibir todas as avaliações">
-                                        <div class="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 mb-1"><i class="fa-solid fa-percent mr-1"></i> Taxa de Conclusão FB</div>
-                                        <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400">${taxaFeedbackUser}%</div>
+                                    <div onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="cursor-pointer rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-4 sm:p-5 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all" title="Clique para exibir todas as avaliações">
+                                        <div class="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 mb-1.5"><i class="fa-solid fa-percent mr-1"></i> Taxa de Conclusão FB</div>
+                                        <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums">${taxaFeedbackUser}%</div>
                                     </div>
                                 </div>
 
-                                <div class="glass-card p-6 md:p-8 rounded-3xl relative border-t-4 border-t-purple-500 shadow-lg mt-4" style="background: linear-gradient(145deg, rgba(255,255,255,0.8), rgba(243, 244, 246, 0.5)); backdrop-filter: blur(10px);">
-                                    <div class="absolute right-0 top-0 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                                    
-                                    <h3 class="text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
-                                        <i class="fa-solid fa-microscope text-purple-500"></i> Detalhamento Analítico (Meus Operadores)
+                                <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 p-6 md:p-8 relative shadow-lg mt-4" style="border-top: 3px solid var(--theme-color, #8b5cf6);">
+                                    <h3 class="text-lg sm:text-xl font-black text-slate-800 dark:text-white uppercase tracking-widest mb-6 flex items-center gap-3 relative z-10">
+                                        <i class="fa-solid fa-microscope" style="color: var(--theme-color, #8b5cf6);"></i> Detalhamento Analítico (Meus Operadores)
                                     </h3>
                                     
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative z-10">
-                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform">
-                                            <div class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
-                                            <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 drop-shadow-sm">${userMediaGeral}</div>
-                                            <p class="text-xs text-slate-500">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8 relative z-10">
+                                        <div class="bg-white/75 dark:bg-slate-950/40 backdrop-blur-md rounded-2xl p-6 shadow-xs border border-slate-200/70 dark:border-slate-800">
+                                            <div class="text-[10px] font-bold uppercase tracking-widest mb-1" style="color: var(--theme-color, #8b5cf6);"><i class="fa-solid fa-chart-line mr-1"></i> Minha Média Aplicada (Mês)</div>
+                                            <div class="text-5xl font-black text-slate-800 dark:text-white mb-2 tabular-nums">${userMediaGeral}</div>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Média geral das ${countMinhasNotas} notas aplicadas por você.</p>
                                         </div>
 
-                                        <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-6 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700/50 transform hover:-translate-y-1 transition-transform max-h-48 overflow-y-auto custom-scrollbar">
-                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/90 dark:bg-slate-900/90 py-1 border-b border-slate-100 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
-                                            <div class="space-y-4">
+                                        <div class="bg-white/75 dark:bg-slate-950/40 backdrop-blur-md rounded-2xl p-6 shadow-xs border border-slate-200/70 dark:border-slate-800 max-h-52 overflow-y-auto custom-scrollbar">
+                                            <div class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md py-1.5 border-b border-slate-200/70 dark:border-slate-800"><i class="fa-solid fa-users-gear mr-1"></i> Cruzamento (Você x Outros Monitores)</div>
+                                            <div class="space-y-3">
                                                 ${userColaboradoresData.map((op, idx) => `
-                                                    <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                        <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                                                    <div class="bg-slate-100/70 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
+                                                        <div class="flex justify-between items-start mb-2.5 border-b border-slate-200/70 dark:border-slate-700/70 pb-2">
                                                             <div class="flex flex-col">
                                                                 <span class="font-black text-slate-800 dark:text-white text-xs">${idx+1}. ${op.nome}</span>
-                                                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Média Geral Absoluta</span>
+                                                                <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Média Geral Absoluta</span>
                                                             </div>
-                                                            <span class="font-black ${op.mediaTotal !== '-' && parseFloat(op.mediaTotal) < 85 ? 'text-red-500' : 'text-green-500'} bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-2.5 py-1 rounded-lg shadow-sm text-sm" title="Média Total">${op.mediaTotal}</span>
+                                                            <span class="font-black tabular-nums ${op.mediaTotal !== '-' && parseFloat(op.mediaTotal) < 85 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'} bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-700 px-2.5 py-1 rounded-xl shadow-xs text-sm" title="Média Total">${op.mediaTotal}</span>
                                                         </div>
                                                         <div class="grid grid-cols-2 gap-2 text-center">
-                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-blue-100 dark:border-blue-900/50 shadow-inner">
-                                                                <div class="text-[9px] uppercase font-bold text-blue-500 mb-1">Sua Média</div>
-                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaMinha}</div>
+                                                            <div class="bg-white/85 dark:bg-slate-900/80 rounded-xl p-2 border border-blue-200/60 dark:border-blue-900/50">
+                                                                <div class="text-[9px] uppercase font-bold text-blue-600 dark:text-blue-400 mb-0.5">Sua Média</div>
+                                                                <div class="font-black text-slate-800 dark:text-slate-200 tabular-nums">${op.mediaMinha}</div>
                                                             </div>
-                                                            <div class="bg-white dark:bg-slate-900 rounded-lg p-2 border border-orange-100 dark:border-orange-900/50 shadow-inner">
-                                                                <div class="text-[9px] uppercase font-bold text-orange-500 mb-1">Outros Sup.</div>
-                                                                <div class="font-black text-slate-700 dark:text-slate-300">${op.mediaOutros}</div>
+                                                            <div class="bg-white/85 dark:bg-slate-900/80 rounded-xl p-2 border border-amber-200/60 dark:border-amber-900/50">
+                                                                <div class="text-[9px] uppercase font-bold text-amber-600 dark:text-amber-400 mb-0.5">Outros Sup.</div>
+                                                                <div class="font-black text-slate-800 dark:text-slate-200 tabular-nums">${op.mediaOutros}</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -35953,27 +36141,27 @@ storage: {
                                         </div>
                                     </div>
                                     
-                                    <div class="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/40 dark:border-slate-700/40 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
-                                        <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <div class="bg-white/60 dark:bg-slate-950/35 backdrop-blur-md rounded-2xl border border-slate-200/70 dark:border-slate-800 shadow-xs overflow-hidden relative z-10">
+                                        <div class="p-4 border-b border-slate-200/60 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                             <div>
-                                                <h4 class="font-bold text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-list-ul text-purple-500 mr-2"></i> Suas Avaliações Lidas</h4>
-                                                <span id="fb-counter-linha-bruta-user" class="text-[10px] font-bold text-slate-400">Exibindo ${minhasLinhas.length} de ${minhasLinhas.length} avaliações</span>
+                                                <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider"><i class="fa-solid fa-list-ul mr-2" style="color: var(--theme-color, #8b5cf6);"></i> Suas Avaliações Lidas</h4>
+                                                <span id="fb-counter-linha-bruta-user" class="text-[10px] font-bold text-slate-500 dark:text-slate-400">Exibindo ${minhasLinhas.length} de ${minhasLinhas.length} avaliações</span>
                                             </div>
                                             <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
                                                 <div class="relative flex-1 md:flex-none">
                                                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                                                    <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value, 'linha-bruta-user')" placeholder="Buscar operador ou operação..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:border-purple-500 shadow-sm dark:text-white transition-colors">
+                                                    <input type="text" onkeyup="app.ui.filterAuditoriaTable(this.value, 'linha-bruta-user')" placeholder="Buscar operador ou operação..." class="w-full md:w-48 pl-8 pr-3 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-xs outline-none focus:border-purple-500 shadow-xs dark:text-white transition-colors">
                                                 </div>
-                                                <button id="fb-btn-linha-bruta-user-all" onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="text-xs px-3 py-1.5 rounded-lg shadow-sm border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${minhasLinhas.length})</button>
-                                                <button id="fb-btn-linha-bruta-user-pendente" onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="text-xs bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-lg shadow-sm border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countUserPend})</button>
-                                                <button id="fb-btn-linha-bruta-user-aplicado" onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="text-xs bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-lg shadow-sm border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countUserAplic})</button>
-                                                <button id="fb-btn-linha-bruta-user-elegivel" onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="text-xs bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 transition-all">Só Elegíveis (${app.getDescricaoRegraFeedback()}) (${countUserEleg})</button>
+                                                <button id="fb-btn-linha-bruta-user-all" onclick="app.ui.filterPendingRows('linha-bruta-user', 'all')" class="text-xs px-3 py-1.5 rounded-xl shadow-xs border font-bold transition-all ring-2 ring-blue-500 bg-blue-600 text-white border-blue-600">Todos (${minhasLinhas.length})</button>
+                                                <button id="fb-btn-linha-bruta-user-pendente" onclick="app.ui.filterPendingRows('linha-bruta-user', 'pendente')" class="text-xs bg-red-50/90 text-red-600 dark:bg-red-900/30 dark:text-red-300 px-3 py-1.5 rounded-xl shadow-xs border border-red-200 dark:border-red-800 font-bold hover:bg-red-100 dark:hover:bg-red-900/50 transition-all"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Só Feedbacks Pendentes (${countUserPend})</button>
+                                                <button id="fb-btn-linha-bruta-user-aplicado" onclick="app.ui.filterPendingRows('linha-bruta-user', 'aplicado')" class="text-xs bg-emerald-50/90 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300 px-3 py-1.5 rounded-xl shadow-xs border border-emerald-200 dark:border-emerald-800 font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all"><i class="fa-solid fa-check mr-1"></i> Aplicados (${countUserAplic})</button>
+                                                <button id="fb-btn-linha-bruta-user-elegivel" onclick="app.ui.filterPendingRows('linha-bruta-user', 'elegivel')" class="text-xs bg-amber-50/90 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1.5 rounded-xl shadow-xs border border-amber-200 dark:border-amber-800 font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all">Só Elegíveis (${app.getDescricaoRegraFeedback()}) (${countUserEleg})</button>
                                             </div>
                                         </div>
                                         <div class="overflow-x-auto custom-scrollbar ${this.analiseEditMode ? '' : 'max-h-[450px]'}">
                                             <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
-                                                <thead class="bg-slate-100/50 dark:bg-slate-800/50 sticky top-0 z-20 backdrop-blur-md shadow-sm">
-                                                    <tr class="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                <thead class="bg-slate-100/90 dark:bg-slate-800/90 sticky top-0 z-20 backdrop-blur-md shadow-xs">
+                                                    <tr class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                                                         <th class="py-3 px-4">Operador Avaliado</th>
                                                         <th class="py-3 px-4 text-center">Nota</th>
                                                         <th class="py-3 px-4 text-center">Status Feedback</th>
@@ -35981,7 +36169,7 @@ storage: {
                                                         <th class="py-3 px-4 text-right">Data</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody class="divide-y divide-slate-100/50 dark:divide-slate-800/50">
+                                                <tbody class="divide-y divide-slate-200/40 dark:divide-slate-800/60">
                                                     ${minhasLinhas.map(linha => {
                                                         const statusStr = String(linha.status || '').toLowerCase();
                                                         const isAplicado = statusStr.includes('feedback_aplicado') || statusStr.includes('feedback aplicado') || statusStr.includes('realizado') || statusStr.includes('concluido') || statusStr.includes('concluído');
@@ -35999,11 +36187,11 @@ storage: {
                                                             statusBadge = `<span class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800 font-black animate-pulse"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Feedback Pendente</span>`;
                                                         }
                                                         return `
-                                                        <tr class="linha-bruta-user ${rowClasses} hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors">
-                                                            <td class="py-3 px-4 font-medium text-slate-600 dark:text-slate-400"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
-                                                            <td class="py-3 px-4 text-center font-black ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-green-500')}">${linha.nota}</td>
+                                                        <tr class="linha-bruta-user ${rowClasses} hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors">
+                                                            <td class="py-3 px-4 font-medium text-slate-700 dark:text-slate-300"><i class="fa-solid fa-headset text-slate-400 mr-1 text-[10px]"></i> ${linha.operador}</td>
+                                                            <td class="py-3 px-4 text-center font-black tabular-nums ${typeof linha.nota === 'string' ? 'text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 rounded shadow-inner' : (app.isNotaFeedback(linha.nota) ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}">${linha.nota}</td>
                                                             <td class="py-3 px-4 text-center">${statusBadge}</td>
-                                                            <td class="py-3 px-4 text-xs text-slate-500">${linha.operacao}</td>
+                                                            <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${linha.operacao}</td>
                                                             <td class="py-3 px-4 text-right text-xs text-slate-400 tabular-nums">${linha.data}</td>
                                                         </tr>
                                                         `;
@@ -36025,7 +36213,7 @@ storage: {
                         if(bar) {
                             const perc = Math.min(100, (myData.total / meta) * 100).toFixed(1);
                             bar.style.width = perc + '%';
-                            if(text) text.innerHTML = `${myData.total} / ${meta} <span class="text-sm text-blue-500">(${perc}%)</span>`;
+                            if(text) text.innerHTML = `${myData.total} / ${meta} <span class="text-sm" style="color: var(--theme-color, #3b82f6);">(${perc}%)</span>`;
                         }
                     }, 150);
                 },
@@ -46861,10 +47049,10 @@ storage: {
                     });
             
                     app.allMonitorias[app.currentMonth] = app.monitoriasData; // Salva na gaveta do mês
-                    // ATUALIZAÇÃO ATÔMICA: Salva monitorias e results sem sobrescrever senhas de outros usuários
+                    // ATUALIZAÇÃO ATÔMICA: Salva monitorias e apenas g1/g2 sem sobrescrever g3 (atas), g4 (ações) nem senhas
                     app.storage.commitMultiPathWithUsersResults({
                         monitorias: app.allMonitorias
-                    }, app.users).then(() => {
+                    }, app.users, { resultsMode: 'monitoriasOnly', monthKey: app.currentMonth }).then(() => {
                         app.ui.renderTab('import_monitorias', true);
                         if (customMsgSucesso) {
                             app.ui.showAlert("Sucesso", customMsgSucesso, "success");
@@ -46877,12 +47065,182 @@ storage: {
                 },
             
                 // ==========================================
-                // 3. IMPORTAÇÃO AMIL (Substitui só AMIL)
+                // 3. HELPERS UNIFICADOS EXCEL/CSV + IMPORTAÇÃO AMIL
                 // ==========================================
+                _parseCsvLine(line, delimiter = ',') {
+                    const out = [];
+                    let cur = '';
+                    let inQuotes = false;
+                    const s = String(line ?? '');
+                    for (let i = 0; i < s.length; i++) {
+                        const ch = s[i];
+                        if (ch === '"') {
+                            if (inQuotes && s[i + 1] === '"') {
+                                cur += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (ch === delimiter && !inQuotes) {
+                            out.push(cur.trim());
+                            cur = '';
+                        } else {
+                            cur += ch;
+                        }
+                    }
+                    out.push(cur.trim());
+                    return out;
+                },
+
+                _extractNormalizedWorkbookRows(workbook, opts = {}) {
+                    const normHeader = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                    const sheetNames = workbook.SheetNames || [];
+                    const orderedSheets = opts.preferAvaliadorSheet
+                        ? [
+                            ...sheetNames.filter(n => normHeader(n).includes('AVALIADOR')),
+                            ...sheetNames.filter(n => !normHeader(n).includes('AVALIADOR'))
+                        ]
+                        : [...sheetNames];
+
+                    const parseMatrixFromSheet = (sheet) => {
+                        let matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) || [];
+                        if (matrix.length === 0) return [];
+                        // Detecta arquivo XLSX cujo conteúdo inteiro veio em uma única coluna CSV (ex.: Amil InteractionsResults)
+                        const sampleRows = matrix.slice(0, 10).filter(r => Array.isArray(r) && r.some(c => String(c ?? '').trim() !== ''));
+                        const singleColCsv = sampleRows.length > 0 && sampleRows.every(r => {
+                            const nonEmpty = r.filter(c => String(c ?? '').trim() !== '');
+                            return nonEmpty.length <= 1;
+                        });
+                        if (singleColCsv) {
+                            const firstLine = String(sampleRows[0].find(c => String(c ?? '').trim() !== '') || '');
+                            const commaCount = (firstLine.match(/,/g) || []).length;
+                            const semiCount = (firstLine.match(/;/g) || []).length;
+                            const tabCount = (firstLine.match(/\t/g) || []).length;
+                            let delim = null;
+                            if (commaCount >= 3 || semiCount >= 3 || tabCount >= 3) {
+                                delim = (semiCount > commaCount && semiCount >= tabCount) ? ';' : (tabCount > commaCount ? '\t' : ',');
+                            }
+                            if (delim) {
+                                matrix = matrix.map(r => {
+                                    const rawCell = Array.isArray(r) ? (r.find(c => String(c ?? '').trim() !== '') ?? '') : String(r ?? '');
+                                    const txt = String(rawCell).trim();
+                                    if (!txt) return [];
+                                    return this._parseCsvLine(txt, delim);
+                                }).filter(r => r.length > 0);
+                            }
+                        }
+                        return matrix;
+                    };
+
+                    const findHeaderIdx = (matrix) => {
+                        for (let rIdx = 0; rIdx < Math.min(15, matrix.length); rIdx++) {
+                            const rowArr = Array.isArray(matrix[rIdx]) ? matrix[rIdx] : [];
+                            if (rowArr.some(cell => {
+                                const nc = normHeader(cell);
+                                return nc === 'AVALIADOR' || nc === 'MONITOR' || nc === 'AUDITOR' || nc === 'HORA DE INICIO' || nc === 'FUNCIONARIO' || nc === 'ORGANIZACOES/GRUPOS';
+                            })) {
+                                return rIdx;
+                            }
+                        }
+                        return -1;
+                    };
+
+                    const buildObjectsFromMatrix = (matrix, headerRowIdx) => {
+                        const rawHeaders = (matrix[headerRowIdx] || []).map((h, idx) => {
+                            const cleaned = app.utils.fixEncoding(String(h ?? '')).replace(/[\r\n\t]+/g, ' ').trim();
+                            return cleaned || `COL_${idx + 1}`;
+                        });
+                        const rows = [];
+                        for (let r = headerRowIdx + 1; r < matrix.length; r++) {
+                            const rowArr = matrix[r];
+                            if (!Array.isArray(rowArr) || rowArr.every(v => String(v ?? '').trim() === '')) continue;
+                            const obj = {};
+                            for (let c = 0; c < rawHeaders.length; c++) {
+                                obj[rawHeaders[c]] = rowArr[c] !== undefined ? rowArr[c] : '';
+                            }
+                            rows.push(obj);
+                        }
+                        return { jsonData: rows, headers: rawHeaders };
+                    };
+
+                    for (const sName of orderedSheets) {
+                        const sheet = workbook.Sheets[sName];
+                        if (!sheet) continue;
+                        const matrix = parseMatrixFromSheet(sheet);
+                        if (!matrix || matrix.length === 0) continue;
+                        const headerRowIdx = findHeaderIdx(matrix);
+                        if (headerRowIdx >= 0) {
+                            const built = buildObjectsFromMatrix(matrix, headerRowIdx);
+                            if (built.jsonData.length > 0) {
+                                return { ...built, sheetName: sName };
+                            }
+                        }
+                    }
+
+                    if (sheetNames.length > 0) {
+                        const firstName = sheetNames[0];
+                        const matrix = parseMatrixFromSheet(workbook.Sheets[firstName]);
+                        if (matrix && matrix.length > 1) {
+                            const built = buildObjectsFromMatrix(matrix, 0);
+                            return { ...built, sheetName: firstName };
+                        }
+                    }
+                    return { jsonData: [], headers: [], sheetName: sheetNames[0] || '' };
+                },
+
+                _getWorkbookValByKeyword(row, keywordStr, excludeStr = '') {
+                    const normHeader = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                    const keywords = String(keywordStr || '').split('|').map(k => normHeader(k)).filter(Boolean);
+                    const excludes = excludeStr ? String(excludeStr).split('|').map(k => normHeader(k)).filter(Boolean) : [];
+                    const keys = Object.keys(row || {});
+
+                    for (const kw of keywords) {
+                        const exactKey = keys.find(k => {
+                            const nk = normHeader(k);
+                            if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
+                            return nk === kw;
+                        });
+                        if (exactKey !== undefined && row[exactKey] !== undefined && String(row[exactKey]).trim() !== '') {
+                            return row[exactKey];
+                        }
+                    }
+                    for (const kw of keywords) {
+                        const partialKey = keys.find(k => {
+                            const nk = normHeader(k);
+                            if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
+                            return nk.includes(kw);
+                        });
+                        if (partialKey !== undefined && row[partialKey] !== undefined && String(row[partialKey]).trim() !== '') {
+                            return row[partialKey];
+                        }
+                    }
+                    return undefined;
+                },
+
+                _formatMonitoriaDateCell(dataRaw, fallbackDateStr = null) {
+                    const fallback = fallbackDateStr || new Date().toLocaleDateString('pt-BR');
+                    if (typeof dataRaw === 'number' && dataRaw > 20000 && dataRaw < 80000) {
+                        const ms = Math.round((dataRaw - 25569) * 86400 * 1000);
+                        const dt = new Date(ms);
+                        if (!isNaN(dt.getTime())) {
+                            const dd = String(dt.getUTCDate()).padStart(2, '0');
+                            const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+                            const yyyy = dt.getUTCFullYear();
+                            const hh = String(dt.getUTCHours()).padStart(2, '0');
+                            const mi = String(dt.getUTCMinutes()).padStart(2, '0');
+                            return (hh !== '00' || mi !== '00') ? `${dd}/${mm}/${yyyy} ${hh}:${mi}` : `${dd}/${mm}/${yyyy}`;
+                        }
+                    }
+                    if (dataRaw !== undefined && dataRaw !== null && String(dataRaw).trim() !== '') {
+                        return String(dataRaw).trim();
+                    }
+                    return fallback;
+                },
+
                 processarPlanilhaAmil(input) {
                     const file = input.files[0];
                     if (!file) return;
-                    app.ui.showAlert("Processando Amil...", "Lendo coluna Avaliador, invertendo 'Sobrenome, Nome' e conectando com a base de usuários...", "info");
+                    app.ui.showAlert("Processando Amil...", "Lendo Avaliador, Organizações/Grupos e Hora de Início...", "info");
             
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -46890,45 +47248,7 @@ storage: {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
                             const normHeader = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-
-                            // Localiza a aba (sheet) e a linha de cabeçalho que contém "Avaliador"
-                            let jsonData = [];
-                            const sheetNames = workbook.SheetNames || [];
-                            // Prioriza aba chamada "Avaliador" se existir, senão varre as abas procurando a coluna "Avaliador"
-                            const orderedSheets = [
-                                ...sheetNames.filter(n => normHeader(n).includes('AVALIADOR')),
-                                ...sheetNames.filter(n => !normHeader(n).includes('AVALIADOR'))
-                            ];
-
-                            for (const sName of orderedSheets) {
-                                const sheet = workbook.Sheets[sName];
-                                if (!sheet) continue;
-                                const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-                                if (!matrix || matrix.length === 0) continue;
-
-                                // Procura em qual das primeiras 15 linhas está o cabeçalho "Avaliador"
-                                let headerRowIdx = -1;
-                                for (let rIdx = 0; rIdx < Math.min(15, matrix.length); rIdx++) {
-                                    const rowArr = Array.isArray(matrix[rIdx]) ? matrix[rIdx] : [];
-                                    if (rowArr.some(cell => {
-                                        const nc = normHeader(cell);
-                                        return nc === 'AVALIADOR' || nc.includes('AVALIADOR') || nc === 'MONITOR' || nc === 'AUDITOR';
-                                    })) {
-                                        headerRowIdx = rIdx;
-                                        break;
-                                    }
-                                }
-
-                                if (headerRowIdx >= 0) {
-                                    jsonData = XLSX.utils.sheet_to_json(sheet, { range: headerRowIdx, defval: "" });
-                                    if (jsonData.length > 0) break;
-                                }
-                            }
-
-                            // Fallback para a primeira aba caso o cabeçalho tenha outro nome
-                            if (jsonData.length === 0 && sheetNames.length > 0) {
-                                jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetNames[0]], { defval: "" });
-                            }
+                            const { jsonData } = this._extractNormalizedWorkbookRows(workbook, { preferAvaliadorSheet: true });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "O arquivo da Amil está vazio.", "error");
             
@@ -46944,42 +47264,11 @@ storage: {
                             let linhasMantidas = linhasAtuais.filter(l => l.source !== 'AMIL');
                             let linhasNovas = [];
                             let matchCount = 0;
-            
-                            // Busca inteligente por lista de palavras-chave separadas por '|' respeitando a ordem de prioridade (AVALIADOR primeiro!)
-                            const getValByKeyword = (row, keywordStr, excludeStr = '') => {
-                                const keywords = String(keywordStr || '').split('|').map(k => normHeader(k)).filter(Boolean);
-                                const excludes = excludeStr ? String(excludeStr).split('|').map(k => normHeader(k)).filter(Boolean) : [];
-                                const keys = Object.keys(row);
-
-                                // 1ª Passada: Match exato do cabeçalho na ordem de prioridade (ex: coluna exatamente "Avaliador")
-                                for (const kw of keywords) {
-                                    const exactKey = keys.find(k => {
-                                        const nk = normHeader(k);
-                                        if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
-                                        return nk === kw;
-                                    });
-                                    if (exactKey !== undefined && row[exactKey] !== undefined && String(row[exactKey]).trim() !== '') {
-                                        return row[exactKey];
-                                    }
-                                }
-
-                                // 2ª Passada: Contém a palavra-chave na ordem de prioridade
-                                for (const kw of keywords) {
-                                    const partialKey = keys.find(k => {
-                                        const nk = normHeader(k);
-                                        if (excludes.length > 0 && excludes.some(ex => nk.includes(ex))) return false;
-                                        return nk.includes(kw);
-                                    });
-                                    if (partialKey !== undefined && row[partialKey] !== undefined && String(row[partialKey]).trim() !== '') {
-                                        return row[partialKey];
-                                    }
-                                }
-                                return undefined;
-                            };
+                            const getValByKeyword = (row, kw, ex = '') => this._getWorkbookValByKeyword(row, kw, ex);
             
                             jsonData.forEach(row => {
-                                // Prioriza estritamente a coluna "Avaliador" (excluindo colunas de operador/nota/status)
-                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|AUDITOR|SUPERVISOR', 'NOTA|PONTUACAO|STATUS|OPERADOR|FUNCIONARIO|COLABORADOR|ATENDENTE|AGENTE');
+                                // Amil: coluna exatamente "Avaliador" em formato invertido ("Sobrenome, Nome")
+                                let avaliadorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|AUDITOR|SUPERVISOR', 'NOTA|PONTUACAO|STATUS|OPERADOR|FUNCIONARIO|COLABORADOR|ATENDENTE|AGENTE|NUMERO|INDICADORES|HORA');
                                 if (!avaliadorRaw) {
                                     const keyNome = Object.keys(row).find(k => {
                                         const nk = normHeader(k);
@@ -46995,29 +47284,28 @@ storage: {
                                 if (matchAvaliador.isRegistered) matchCount++;
             
                                 let funcRaw = getValByKeyword(row, 'FUNCIONARIO|OPERADOR|COLABORADOR|ATENDENTE|AGENTE|AVALIADO', 'AVALIADOR|MONITOR|AUDITOR|NOTA|PONTUACAO') || 'Não Identificado';
-                                let operadorFmt = this.inverterNomeVirgula(funcRaw) || 'Não Identificado';
+                                let operadorFmt = String(funcRaw).includes(',') ? (this.inverterNomeVirgula(funcRaw) || 'Não Identificado') : String(funcRaw).trim();
             
-                                let notaRaw = getValByKeyword(row, 'PONTUACAO|NOTA|RESULTADO|SCORE|MEDIA');
+                                let notaRaw = getValByKeyword(row, 'PONTUACAO DE FORMULARIO|PONTUACAO|NOTA|RESULTADO|SCORE|MEDIA');
                                 let notaFormatada = 'N/A';
                                 if (notaRaw !== undefined && notaRaw !== null && notaRaw !== "") {
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.').trim();
                                     notaFormatada = parseFloat(notaRaw);
                                 }
 
-                                let statusLido = String(getValByKeyword(row, 'STATUS|SITUACAO|FEEDBACK') || 'Importação Amil').trim();
-                                let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|AVALIACAO');
+                                let statusLido = String(getValByKeyword(row, 'STATUS DA AVALIACAO|STATUS|SITUACAO|FEEDBACK') || 'Importação Amil').trim();
+                                // Amil: Data vem em "Hora de Início" no formato "23/11/2026 09:22"
+                                let dataRaw = getValByKeyword(row, 'HORA DE INICIO|HORA INICIO|INICIO|DATA|GRAVACAO', 'DURACAO|ESPERA|TIPO|INDICADOR|STATUS');
                                 const rowMonth = this.extractRowMonth(dataRaw, app.currentMonth);
                                 if (rowMonth && rowMonth !== app.currentMonth) {
                                     return; // Isolamento rigoroso: ignora linhas de outros meses para não somar competências
                                 }
 
-                                let dataFmt = new Date().toLocaleDateString('pt-BR');
-                                if (typeof dataRaw === 'number' && dataRaw > 20000) {
-                                    const dt = new Date((dataRaw - 25569) * 86400 * 1000);
-                                    dataFmt = dt.toLocaleDateString('pt-BR');
-                                } else if (dataRaw && String(dataRaw).trim() !== '') {
-                                    dataFmt = String(dataRaw).trim();
-                                }
+                                const dataFmt = this._formatMonitoriaDateCell(dataRaw);
+                                // Amil: Operação vem em "Organizações/Grupos"
+                                const operacaoRaw = getValByKeyword(row, 'ORGANIZACOES/GRUPOS|ORGANIZACOES|GRUPOS|OPERACAO|CAMPANHA|SETOR');
+                                const operacaoFmt = app.utils.fixEncoding(String(operacaoRaw || '').trim()).toUpperCase() || 'AMIL';
+                                const formAssunto = String(getValByKeyword(row, 'FORMULARIO|ASSUNTO|TIPO DE INTERACAO', 'PONTUACAO') || '').trim();
             
                                 linhasNovas.push({
                                     source: 'AMIL', // ETIQUETA MÁGICA
@@ -47028,12 +47316,13 @@ storage: {
                                     operador: app.utils.fixEncoding(operadorFmt),
                                     nota: isNaN(notaFormatada) ? 'N/A' : notaFormatada,
                                     status: statusLido,
-                                    operacao: 'AMIL',
-                                    data: dataFmt
+                                    operacao: operacaoFmt,
+                                    data: dataFmt,
+                                    ASSUNTO: formAssunto
                                 });
                             });
             
-                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna 'Avaliador' (ou Monitor) com dados válidos. Verifique o cabeçalho do arquivo.", "error");
+                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "Não encontramos a coluna 'Avaliador' com linhas do mês ativo. Verifique 'Hora de Início' e o mês selecionado.", "error");
                             
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
@@ -47063,9 +47352,8 @@ storage: {
                         try {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
-                            const firstSheet = workbook.SheetNames[0];
-                            // CORREÇÃO: Lê os dados usando a referência correta do arquivo
-                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+                            const normHeader = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+                            const { jsonData, headers } = this._extractNormalizedWorkbookRows(workbook, { preferAvaliadorSheet: false });
             
                             if (jsonData.length === 0) return app.ui.showAlert("Aviso", "A planilha está vazia.", "error");
             
@@ -47076,31 +47364,24 @@ storage: {
 
                             // Preserva lançamentos manuais antes de substituir as linhas da planilha
                             this.sincronizarLancamentosManuaisExistentes(linhasAtuais);
-            
-                            let linhasMantidas = linhasAtuais.filter(l => l.source !== 'PADRAO');
+
+                            const isAmilSchema = headers.some(h => normHeader(h).includes('ORGANIZACOES/GRUPOS')) || headers.some(h => normHeader(h) === 'HORA DE INICIO');
+                            const sourceTag = isAmilSchema ? 'AMIL' : 'PADRAO';
+                            let linhasMantidas = linhasAtuais.filter(l => l.source !== sourceTag);
                             let linhasNovas = [];
                             let matchCount = 0;
-            
-                            // FUNÇÃO BLINDADA: Ignora Acentos, Quebras de Linha e Maiúsculas/Minúsculas
-                            const getValByKeyword = (row, keywordStr, excludeStr = '') => {
-                                const keywords = keywordStr.split('|');
-                                const excludes = excludeStr ? excludeStr.split('|') : [];
-                                const normalize = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-                                const key = Object.keys(row).find(k => {
-                                    const normK = normalize(k);
-                                    if (excludes.length > 0 && excludes.some(ex => normK.includes(normalize(ex)))) return false;
-                                    return keywords.some(kw => normK.includes(normalize(kw)));
-                                });
-                                return key ? row[key] : undefined;
-                            };
+                            const getValByKeyword = (row, kw, ex = '') => this._getWorkbookValByKeyword(row, kw, ex);
              
                             let periodoAnalisado = new Date().toLocaleDateString('pt-BR');
              
                             jsonData.forEach(row => {
-                                // Ignora colunas que contenham NOTA ou STATUS no cabeçalho
-                                let monitorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|STATUS');
+                                // Ignora colunas que contenham NOTA, PONTUACAO ou STATUS no cabeçalho
+                                let monitorRaw = getValByKeyword(row, 'AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|PONTUACAO|STATUS|OPERADOR|FUNCIONARIO|COLABORADOR|ATENDENTE|AGENTE|NUMERO|INDICADORES|HORA');
                                 if (!monitorRaw) {
-                                    const keyNome = Object.keys(row).find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                                    const keyNome = Object.keys(row).find(k => {
+                                        const nk = normHeader(k);
+                                        return nk.includes('NOME') && !nk.includes('OPERADOR') && !nk.includes('COLABORADOR') && !nk.includes('FUNCION') && !nk.includes('ATENDENTE') && !nk.includes('AGENTE');
+                                    });
                                     if (keyNome) monitorRaw = row[keyNome];
                                 }
                                 if (!monitorRaw) return;
@@ -47114,55 +47395,48 @@ storage: {
                                 }
             
                                 const titulo = String(getValByKeyword(row, 'TITULO|TÍTULO') || '').toLowerCase();
-                                const operacao = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERACAO|OPERAÇÃO|CAMPANHA|SETOR') || '')).toUpperCase().trim();
+                                const operacao = app.utils.fixEncoding(String(getValByKeyword(row, 'ORGANIZACOES/GRUPOS|OPERACAO|OPERAÇÃO|CAMPANHA|SETOR|ORGANIZACOES|GRUPOS') || '')).toUpperCase().trim();
                                 const isNeutro = titulo.includes('neutro') || operacao.includes('NEUTROS');
             
                                 let notaFinalLida = 'N/A';
                                 if (!isNeutro) {
                                     let val1 = getValByKeyword(row, 'NOTA');
                                     let val2 = getValByKeyword(row, 'RESULTADO');
-                                    let val3 = getValByKeyword(row, 'PONTUACAO|PONTUAÇÃO');
+                                    let val3 = getValByKeyword(row, 'PONTUACAO DE FORMULARIO|PONTUACAO|PONTUAÇÃO');
                                     let notaRaw = (val1 !== undefined && val1 !== "") ? val1 : ((val2 !== undefined && val2 !== "") ? val2 : ((val3 !== undefined && val3 !== "") ? val3 : 100));
                                     
                                     if (typeof notaRaw === 'string') notaRaw = notaRaw.replace('%', '').replace(',', '.');
                                     notaFinalLida = parseFloat(notaRaw);
                                 }
             
-                                let opNomeRaw = app.utils.fixEncoding(String(getValByKeyword(row, 'OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO|ATENDENTE') || 'Não Identificado')).trim();
+                                let opNomeRaw = app.utils.fixEncoding(String(getValByKeyword(row, 'FUNCIONARIO|OPERADOR|COLABORADOR|ATENDENTE|AGENTE', 'AVALIADOR|MONITOR|AUDITOR|PONTUACAO') || 'Não Identificado')).trim();
                                 let opNomeDetalhe = opNomeRaw.includes(',') ? this.inverterNomeVirgula(opNomeRaw) : opNomeRaw;
                                 
-                                let dataRaw = getValByKeyword(row, 'DATA|GRAVACAO|GRAVAÇÃO');
+                                let dataRaw = getValByKeyword(row, 'HORA DE INICIO|HORA INICIO|DATA|GRAVACAO|GRAVAÇÃO', 'DURACAO|ESPERA|TIPO|INDICADOR|STATUS');
                                 const rowMonth = this.extractRowMonth(dataRaw, app.currentMonth);
                                 if (rowMonth && rowMonth !== app.currentMonth) {
                                     return; // Isolamento rigoroso: ignora linhas de outros meses para não somar competências
                                 }
 
-                                let dataFmt = periodoAnalisado;
-                                if (typeof dataRaw === 'number') {
-                                    const dt = new Date((dataRaw - 25569) * 86400 * 1000);
-                                    dataFmt = dt.toLocaleDateString('pt-BR');
-                                } else if (dataRaw) {
-                                    dataFmt = String(dataRaw);
-                                }
-
-                                const assuntoVal = String(getValByKeyword(row, 'ASSUNTO|MOTIVO|SUBMOTIVO|TEMA') || '').trim();
+                                const dataFmt = this._formatMonitoriaDateCell(dataRaw, periodoAnalisado);
+                                const assuntoVal = String(getValByKeyword(row, 'FORMULARIO|ASSUNTO|MOTIVO|SUBMOTIVO|TEMA', 'PONTUACAO') || '').trim();
             
                                 linhasNovas.push({
-                                    source: 'PADRAO',
+                                    source: sourceTag,
                                     rawMonitorOriginal: app.utils.fixEncoding(String(monitorRaw).trim()),
                                     monitor: matchMon.nomeFormatado,
                                     matriculaMonitor: isRegisteredMonitor ? matricula : null,
                                     isRegisteredMonitor: isRegisteredMonitor,
                                     operador: opNomeDetalhe,
                                     nota: isNaN(notaFinalLida) ? 'N/A' : notaFinalLida,
-                                    status: String(getValByKeyword(row, 'STATUS') || '-'),
-                                    operacao: operacao || 'PADRÃO',
+                                    status: String(getValByKeyword(row, 'STATUS DA AVALIACAO|STATUS|SITUACAO|FEEDBACK') || '-'),
+                                    operacao: operacao || (isAmilSchema ? 'AMIL' : 'PADRÃO'),
                                     data: dataFmt,
                                     ASSUNTO: assuntoVal
                                 });
                             });
             
-                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "As colunas obrigatórias não foram encontradas. A planilha deve conter algo como Monitor/Login, Nota e Data.", "error");
+                            if (linhasNovas.length === 0) return app.ui.showAlert("Erro na Planilha", "As colunas obrigatórias não foram encontradas para o mês selecionado. Verifique Monitor/Avaliador, Nota e Data (Hora de Início).", "error");
                             
                             if (!app.monitoriasData) app.monitoriasData = { detalhes: {} };
                             if (!app.monitoriasData.detalhes) app.monitoriasData.detalhes = {};
@@ -47188,61 +47462,64 @@ storage: {
                         try {
                             const data = new Uint8Array(e.target.result);
                             const workbook = XLSX.read(data, { type: 'array', raw: true });
-                            const firstSheet = workbook.SheetNames[0];
-                            const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: "" });
+                            const { jsonData, headers, sheetName } = this._extractNormalizedWorkbookRows(workbook, { preferAvaliadorSheet: true });
 
                             if (jsonData.length === 0) {
-                                return app.ui.showAlert("Debug Relatório Padrão", "A planilha está vazia (0 linhas detectadas).", "warning");
+                                return app.ui.showAlert("Debug Relatório", "A planilha está vazia (0 linhas detectadas).", "warning");
                             }
 
-                            const headers = Object.keys(jsonData[0]);
-                            const normalize = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+                            const normalize = (s) => app.utils.fixEncoding(String(s || '')).replace(/[\r\n\t]+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
                             const findCol = (kwStr, exStr = '') => {
-                                const kws = kwStr.split('|');
-                                const exs = exStr ? exStr.split('|') : [];
-                                return headers.find(h => {
-                                    const nh = normalize(h);
-                                    if (exs.length > 0 && exs.some(ex => nh.includes(normalize(ex)))) return false;
-                                    return kws.some(kw => nh.includes(normalize(kw)));
-                                });
+                                const kws = kwStr.split('|').map(k => normalize(k)).filter(Boolean);
+                                const exs = exStr ? exStr.split('|').map(x => normalize(x)).filter(Boolean) : [];
+                                for (const kw of kws) {
+                                    const ex = headers.find(h => {
+                                        const nh = normalize(h);
+                                        if (exs.length > 0 && exs.some(x => nh.includes(x))) return false;
+                                        return nh === kw;
+                                    });
+                                    if (ex) return ex;
+                                }
+                                for (const kw of kws) {
+                                    const part = headers.find(h => {
+                                        const nh = normalize(h);
+                                        if (exs.length > 0 && exs.some(x => nh.includes(x))) return false;
+                                        return nh.includes(kw);
+                                    });
+                                    if (part) return part;
+                                }
+                                return null;
                             };
 
-                            let colMonitor = findCol('AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|STATUS');
+                            let colMonitor = findCol('AVALIADOR|MONITOR|SUPERVISOR|AUDITOR|LOGIN|USUARIO|CRIADOR', 'NOTA|PONTUACAO|STATUS|OPERADOR|FUNCIONARIO|COLABORADOR|ATENDENTE|AGENTE|NUMERO|INDICADORES|HORA');
                             if (!colMonitor) {
-                                colMonitor = headers.find(k => k.toUpperCase().includes('NOME') && !k.toUpperCase().includes('OPERADOR') && !k.toUpperCase().includes('COLABORADOR') && !k.toUpperCase().includes('FUNCION'));
+                                colMonitor = headers.find(k => normalize(k).includes('NOME') && !normalize(k).includes('OPERADOR') && !normalize(k).includes('COLABORADOR') && !normalize(k).includes('FUNCION'));
                             }
-                            const colOperador = findCol('OPERADOR|COLABORADOR|FUNCIONÁRIO|FUNCIONARIO|ATENDENTE');
-                            const colNota = findCol('NOTA|RESULTADO|PONTUACAO|PONTUAÇÃO');
-                            const colData = findCol('DATA|GRAVACAO|GRAVAÇÃO');
-                            const colOperacao = findCol('OPERACAO|OPERAÇÃO|CAMPANHA|SETOR');
-                            const colStatus = findCol('STATUS');
-                            const colAssunto = findCol('ASSUNTO|MOTIVO|SUBMOTIVO|TEMA');
+                            const colOperador = findCol('FUNCIONARIO|OPERADOR|COLABORADOR|ATENDENTE|AGENTE', 'AVALIADOR|MONITOR|AUDITOR|PONTUACAO');
+                            const colNota = findCol('PONTUACAO DE FORMULARIO|PONTUACAO|NOTA|RESULTADO');
+                            const colData = findCol('HORA DE INICIO|HORA INICIO|DATA|GRAVACAO', 'DURACAO|ESPERA|TIPO|INDICADOR|STATUS');
+                            const colOperacao = findCol('ORGANIZACOES/GRUPOS|OPERACAO|CAMPANHA|SETOR|ORGANIZACOES|GRUPOS');
+                            const colStatus = findCol('STATUS DA AVALIACAO|STATUS|SITUACAO|FEEDBACK');
+                            const colAssunto = findCol('FORMULARIO|ASSUNTO|MOTIVO|SUBMOTIVO|TEMA', 'PONTUACAO');
 
                             let validas = 0, pareadas = 0, naoPareadasSet = new Set();
                             jsonData.forEach(r => {
                                 const mRaw = colMonitor ? String(r[colMonitor] || '').trim() : '';
                                 if (!mRaw) return;
                                 validas++;
-                                const mStr = app.utils.fixEncoding(mRaw).trim();
-                                let mat = mStr.includes('-') ? mStr.split('-')[0].trim() : mStr;
-                                let nomeP = mStr.includes('-') ? mStr.split('-')[1].trim() : mStr;
-                                if (app.config && app.config.aliases) {
-                                    if (app.config.aliases[mStr.toUpperCase()]) mat = app.config.aliases[mStr.toUpperCase()];
-                                    else if (app.config.aliases[mat.toUpperCase()]) mat = app.config.aliases[mat.toUpperCase()];
-                                }
-                                const uObj = app.users.find(u => u.matricula === mat || u.nome.toUpperCase() === nomeP.toUpperCase());
-                                if (uObj) pareadas++;
-                                else naoPareadasSet.add(mStr);
+                                const resMatch = this.inverterEConectarAvaliadorBase(mRaw);
+                                if (resMatch && resMatch.isRegistered) pareadas++;
+                                else naoPareadasSet.add(resMatch?.nomeFormatado || app.utils.fixEncoding(mRaw).trim());
                             });
 
                             const badge = (col) => col ? `<span class="text-emerald-600 font-black"><i class="fa-solid fa-check mr-1"></i>"${app.utils.fixEncoding(col)}"</span>` : `<span class="text-red-500 font-black">Não encontrada</span>`;
 
-                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-amber-500"></i> Diagnóstico do Relatório Padrão`;
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-bug text-amber-500"></i> Diagnóstico do Relatório (Padrão / Amil)`;
                             document.getElementById('modal-content').innerHTML = `
                                 <div class="space-y-4 text-left text-xs">
                                     <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-2">
                                         <div><b>Arquivo:</b> ${file.name}</div>
-                                        <div><b>Aba Lida:</b> ${firstSheet}</div>
+                                        <div><b>Aba Lida:</b> ${sheetName}</div>
                                         <div><b>Total de Linhas:</b> ${jsonData.length}</div>
                                         <div><b>Linhas c/ Monitor:</b> ${validas} (${pareadas} reconhecidas na equipe)</div>
                                     </div>
@@ -53014,14 +53291,19 @@ storage: {
                     const month = app.currentMonth;
                     if (!month) return app.ui.showAlert("Erro", "Mês não definido.", "error");
 
-                    const usersWithResults = app.users.filter(u => app.isUserQualidade(u) && u.results && u.results[month] && Object.keys(u.results[month]).length > 0);
+                    const usersWithResults = app.users.filter(u => {
+                        if (!app.isUserQualidade(u)) return false;
+                        const rec = (app.calc && typeof app.calc.getReconciledMonthResults === 'function') ? app.calc.getReconciledMonthResults(u, month) : (u.results && u.results[month]);
+                        return rec && Object.keys(rec).length > 0;
+                    });
                     if (usersWithResults.length === 0) return app.ui.showAlert("Aviso", "Nenhum resultado processado para exportar neste mês.", "error");
 
                     const rows = usersWithResults.map(u => {
-                        const total = app.calc.getTotal(u.results[month]);
-                        const rowData = { "Matrícula": u.matricula, "Nome": u.nome, "Status Feedback": (u.results[month].status || 'pendente').toUpperCase() };
+                        const recMonth = (app.calc && typeof app.calc.getReconciledMonthResults === 'function') ? app.calc.getReconciledMonthResults(u, month) : u.results[month];
+                        const total = app.calc.getTotal(recMonth);
+                        const rowData = { "Matrícula": u.matricula, "Nome": u.nome, "Status Feedback": (recMonth.status || 'pendente').toUpperCase() };
                         app.config.goals.forEach(g => {
-                            const res = app.calc.getGoalResult(g.id, u.results[month]);
+                            const res = app.calc.getGoalResult(g.id, recMonth);
                             rowData[g.title] = res.display;
                             rowData[`R$ ${g.title}`] = res.received.toFixed(2);
                         });
@@ -58662,6 +58944,7 @@ Object.assign(app.ui, {
                             const metaEl = document.getElementById('home-cwb-meta');
                             const rangeEl = document.getElementById('home-cwb-range');
                             const rainBox = document.getElementById('home-cwb-rain-alert');
+                            const rainIcon = document.getElementById('home-cwb-rain-icon');
                             const rainTxt = document.getElementById('home-cwb-rain-text');
                             if (!tempEl || !w) return;
                             const info = this._mapWeatherCodePt(w.code);
@@ -58675,13 +58958,17 @@ Object.assign(app.ui, {
                             if (rainBox && rainTxt) {
                                 const rainInfo = buildRainAlert(w);
                                 if (rainInfo) {
+                                    if (rainIcon) rainIcon.className = 'fa-solid fa-umbrella shrink-0';
                                     rainTxt.textContent = rainInfo.text;
                                     rainBox.className = `mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-extrabold ${rainInfo.severe
                                         ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
                                         : 'bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-200'}`;
                                     rainBox.classList.remove('hidden');
                                 } else {
-                                    rainBox.classList.add('hidden');
+                                    if (rainIcon) rainIcon.className = 'fa-solid fa-sun shrink-0';
+                                    rainTxt.textContent = 'Sem previsão de chuva para hoje';
+                                    rainBox.className = 'mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-extrabold bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200';
+                                    rainBox.classList.remove('hidden');
                                 }
                             }
                         };
@@ -58831,94 +59118,44 @@ Object.assign(app.ui, {
                         ].filter(h => h.date >= todayIso);
                         const upcomingHolidays = upcomingPool.slice(0, 6);
 
-                        // Eventos do usuário/equipe neste mês (mesma lógica do Calendário)
-                        const isGestorGerenteDev = typeof this.isGestorGerenteDev === 'function' ? this.isGestorGerenteDev() : false;
                         const curUser = app.currentUser || {};
-                        const curMat = String(curUser.matricula || '').trim();
-                        const curNome = String(curUser.nome || '').toLowerCase().trim();
-                        const allMonthEvts = Object.values(app.eventsList || {}).filter(e => e && e.data && e.data.startsWith(ym));
-                        const visibleEvts = allMonthEvts.filter(e => {
-                            if (isGestorGerenteDev) return true;
-                            if (e.matricula === 'TODOS') return true;
-                            if (app.isAdmin) return e.matricula === 'ADM' || e.autor === 'ADM';
-                            return (curMat && e.matricula === curMat) || (curNome && (e.autor || '').toLowerCase().trim() === curNome);
-                        });
-
-                        const coresEvt = {
-                            'Diário de Bordo': 'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-200 dark:border-emerald-700/60',
-                            'Quality Day': 'bg-purple-100/90 text-purple-800 border-purple-300 dark:bg-purple-900/50 dark:text-purple-200 dark:border-purple-700/60',
-                            'Aplicação de Ação': 'bg-blue-100/90 text-blue-800 border-blue-300 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/60',
-                            'Reunião': 'bg-orange-100/90 text-orange-800 border-orange-300 dark:bg-orange-900/50 dark:text-orange-200 dark:border-orange-700/60',
-                            'Calibração': 'bg-teal-100/90 text-teal-800 border-teal-300 dark:bg-teal-900/50 dark:text-teal-200 dark:border-teal-700/60',
-                            'Outros': 'bg-slate-200/80 text-slate-800 border-slate-300 dark:bg-slate-700/70 dark:text-slate-200 dark:border-slate-600',
-                            'Cancelado': 'bg-red-100/80 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60 line-through opacity-75'
-                        };
+                        const canOpenCalTab = app.isAdmin || (this.getEffectiveUserTabs(curUser).includes('calendario'));
 
                         const daysInMonth = new Date(year, month, 0).getDate();
                         const firstDayIdx = new Date(year, month - 1, 1).getDay();
                         let cellsHtml = '';
                         for (let i = 0; i < firstDayIdx; i++) {
-                            cellsHtml += `<div class="min-h-[82px] sm:min-h-[96px] rounded-2xl bg-slate-100/40 dark:bg-slate-800/20 border border-transparent"></div>`;
+                            cellsHtml += `<div class="min-h-[62px] sm:min-h-[72px] rounded-2xl bg-slate-100/35 dark:bg-slate-800/20 border border-transparent"></div>`;
                         }
 
                         for (let day = 1; day <= daysInMonth; day++) {
                             const dStr = `${ym}-${String(day).padStart(2, '0')}`;
                             const isToday = dStr === todayIso;
                             const hol = holidayByDate.get(dStr);
-                            const dayEvts = visibleEvts
-                                .filter(e => e.data === dStr)
-                                .sort((a, b) => String(a.hora || '00:00').localeCompare(String(b.hora || '00:00')));
 
                             const cellCls = isToday
                                 ? 'bg-indigo-50/85 dark:bg-indigo-950/45 border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm'
                                 : (hol
-                                    ? 'bg-rose-50/75 dark:bg-rose-950/30 border-rose-200/90 dark:border-rose-800/60 hover:border-rose-300'
-                                    : 'bg-white/75 dark:bg-slate-800/65 border-slate-200/80 dark:border-slate-700/70 hover:border-indigo-300 dark:hover:border-indigo-600');
-
-                            const evtsHtml = dayEvts.slice(0, 3).map(evt => {
-                                const cCls = evt.status === 'Cancelado'
-                                    ? coresEvt['Cancelado']
-                                    : (evt.tipo === 'pessoal'
-                                        ? 'bg-green-100/90 text-green-800 border-green-300 dark:bg-green-900/45 dark:text-green-200 dark:border-green-700/60'
-                                        : (coresEvt[evt.tema] || coresEvt['Outros']));
-                                const lbl = evt.tipo === 'pessoal'
-                                    ? 'Controle Dia'
-                                    : `${evt.hora ? evt.hora + ' ' : ''}${evt.tema || evt.op || 'Evento'}`;
-                                return `
-                                    <div onclick="event.stopPropagation(); app.calendar && app.calendar.viewEvent('${esc(evt.id)}')" class="px-1.5 py-0.5 rounded-lg border text-[10px] font-bold truncate cursor-pointer hover:brightness-95 transition ${cCls}" title="${esc(lbl)}${evt.op ? ' • ' + esc(evt.op) : ''}">
-                                        ${esc(lbl)}
-                                    </div>
-                                `;
-                            }).join('');
-                            const moreHtml = dayEvts.length > 3 ? `<div class="text-[9px] font-black text-slate-400 px-1">+${dayEvts.length - 3}</div>` : '';
+                                    ? 'bg-rose-50/80 dark:bg-rose-950/35 border-rose-200/90 dark:border-rose-800/60'
+                                    : 'bg-white/75 dark:bg-slate-800/60 border-slate-200/75 dark:border-slate-700/60');
 
                             cellsHtml += `
-                                <div onclick="app.calendar && app.calendar.openModal('${dStr}')" class="min-h-[82px] sm:min-h-[96px] rounded-2xl border p-1.5 sm:p-2 flex flex-col gap-1 transition-all cursor-pointer ${cellCls}" title="${hol ? esc(hol.name + ' (' + hol.scope + ')') : 'Clique para agendar em ' + dStr.split('-').reverse().join('/')}">
+                                <div ${canOpenCalTab ? `onclick="app.ui.renderTab('calendario', true)"` : ''} class="min-h-[62px] sm:min-h-[72px] rounded-2xl border p-2 flex flex-col justify-between gap-1 transition-all ${canOpenCalTab ? 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600' : ''} ${cellCls}" title="${hol ? esc(hol.name + ' (' + hol.scope + ')') : dStr.split('-').reverse().join('/')}">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="text-xs font-black tabular-nums ${isToday ? 'w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px]' : (hol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200')}">${day}</span>
+                                        <span class="text-xs font-black tabular-nums ${isToday ? 'w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px] shadow-xs' : (hol ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200')}">${day}</span>
                                         ${hol ? `<span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" title="${esc(hol.name)}"></span>` : ''}
                                     </div>
-                                    ${hol ? `<div class="px-1.5 py-0.5 rounded-md bg-rose-100/90 dark:bg-rose-900/50 text-rose-700 dark:text-rose-200 text-[9px] font-extrabold truncate leading-tight" title="${esc(hol.name)}">${esc(hol.name)}</div>` : ''}
-                                    <div class="flex-1 space-y-0.5 overflow-hidden">
-                                        ${evtsHtml}
-                                        ${moreHtml}
-                                    </div>
+                                    ${hol ? `<div class="px-1.5 py-0.5 rounded-lg bg-rose-100/95 dark:bg-rose-900/55 text-rose-700 dark:text-rose-200 text-[9px] font-extrabold truncate leading-tight" title="${esc(hol.name)} (${esc(hol.scope)})">${esc(hol.name)}</div>` : ''}
                                 </div>
                             `;
                         }
-
-                        const canOpenCalTab = app.isAdmin || (this.getEffectiveUserTabs(curUser).includes('calendario'));
-                        const upcomingEvents = visibleEvts
-                            .filter(e => e.data >= todayIso && e.status !== 'Cancelado')
-                            .sort((a, b) => (a.data + ' ' + (a.hora || '00:00')).localeCompare(b.data + ' ' + (b.hora || '00:00')))
-                            .slice(0, 4);
 
                         const todayMidMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
                         const weekdayShort = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
                         host.innerHTML = `
                             <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
-                                <!-- Calendário Mensal Interativo -->
+                                <!-- Calendário Mensal Limpo (apenas dias e feriados) -->
                                 <div class="xl:col-span-8 rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-4 sm:p-6 flex flex-col">
                                     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                                         <div class="flex items-center gap-2.5">
@@ -58927,22 +59164,19 @@ Object.assign(app.ui, {
                                             </span>
                                             <div>
                                                 <h3 class="text-base font-black text-slate-800 dark:text-white leading-tight capitalize">${esc(monthTitle)}</h3>
-                                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Clique em qualquer dia para agendar ou ver detalhes</p>
+                                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Visualização rápida de feriados e datas do mês</p>
                                             </div>
                                         </div>
 
-                                        <div class="flex flex-wrap items-center gap-1.5">
+                                        <div class="flex flex-wrap items-center gap-2">
                                             <div class="inline-flex items-center bg-slate-100/90 dark:bg-slate-800/80 rounded-xl p-1 border border-slate-200/70 dark:border-slate-700/70">
                                                 <button type="button" onclick="app.ui.setHomeCalMonth(-1)" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer" title="Mês anterior"><i class="fa-solid fa-chevron-left"></i></button>
                                                 <button type="button" onclick="app.ui.setHomeCalMonth('today')" class="px-2.5 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 transition cursor-pointer">Hoje</button>
                                                 <button type="button" onclick="app.ui.setHomeCalMonth(1)" class="w-7 h-7 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs transition cursor-pointer" title="Próximo mês"><i class="fa-solid fa-chevron-right"></i></button>
                                             </div>
-                                            <button type="button" onclick="app.calendar && app.calendar.openModal('${todayIso}')" class="px-3 py-1.5 rounded-xl text-white text-xs font-extrabold shadow-xs hover:brightness-110 transition flex items-center gap-1.5 cursor-pointer" style="background-color: var(--theme-color);">
-                                                <i class="fa-solid fa-plus text-[10px]"></i> Evento
-                                            </button>
                                             ${canOpenCalTab ? `
-                                                <button type="button" onclick="app.ui.renderTab('calendario', true)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">
-                                                    Abrir Completo
+                                                <button type="button" onclick="app.ui.renderTab('calendario', true)" class="px-3.5 py-1.5 rounded-xl text-white text-xs font-extrabold shadow-xs hover:brightness-110 transition flex items-center gap-1.5 cursor-pointer" style="background-color: var(--theme-color);">
+                                                    <i class="fa-solid fa-up-right-from-square text-[10px]"></i> Abrir Completo
                                                 </button>
                                             ` : ''}
                                         </div>
@@ -58956,80 +59190,50 @@ Object.assign(app.ui, {
                                     </div>
                                 </div>
 
-                                <!-- Próximos Feriados & Agenda -->
-                                <div class="xl:col-span-4 flex flex-col gap-4">
-                                    <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 flex-1">
-                                        <div class="flex items-center justify-between gap-2 mb-3.5">
-                                            <div class="flex items-center gap-2">
-                                                <span class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/70 dark:border-rose-800/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-sm shrink-0">
-                                                    <i class="fa-solid fa-umbrella-beach"></i>
-                                                </span>
-                                                <div>
-                                                    <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Próximos Feriados</h3>
-                                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Nacionais, Paraná e Curitiba</p>
-                                                </div>
+                                <!-- Próximos Feriados -->
+                                <div class="xl:col-span-4 rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 flex flex-col">
+                                    <div class="flex items-center justify-between gap-2 mb-3.5">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/70 dark:border-rose-800/50 text-rose-600 dark:text-rose-400 flex items-center justify-center text-sm shrink-0">
+                                                <i class="fa-solid fa-umbrella-beach"></i>
+                                            </span>
+                                            <div>
+                                                <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Próximos Feriados</h3>
+                                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Nacionais, Paraná e Curitiba</p>
                                             </div>
-                                        </div>
-
-                                        <div class="space-y-2">
-                                            ${upcomingHolidays.map(h => {
-                                                const [hy, hm, hd] = h.date.split('-').map(Number);
-                                                const hDt = new Date(hy, hm - 1, hd);
-                                                const diffDays = Math.round((hDt.getTime() - todayMidMs) / 86400000);
-                                                const countLabel = diffDays === 0 ? 'Hoje!' : (diffDays === 1 ? 'Amanhã' : `Em ${diffDays}d`);
-                                                const countCls = diffDays <= 7
-                                                    ? 'bg-rose-600 text-white'
-                                                    : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50';
-                                                const hYm = h.date.slice(0, 7);
-                                                return `
-                                                    <button type="button" onclick="app.ui.setHomeCalMonth('${hYm}')" class="w-full text-left p-2.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-slate-200/70 dark:border-slate-700/70 transition flex items-center justify-between gap-3 cursor-pointer group">
-                                                        <div class="flex items-center gap-3 min-w-0">
-                                                            <div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex flex-col items-center justify-center shrink-0 shadow-2xs">
-                                                                <span class="text-[9px] font-black uppercase text-rose-500 leading-none">${monthNames[hm - 1].slice(0, 3)}</span>
-                                                                <span class="text-sm font-black text-slate-800 dark:text-white leading-tight tabular-nums">${String(hd).padStart(2, '0')}</span>
-                                                            </div>
-                                                            <div class="min-w-0">
-                                                                <div class="text-xs font-extrabold text-slate-800 dark:text-white truncate group-hover:text-rose-600 dark:group-hover:text-rose-300 transition-colors">${esc(h.name)}</div>
-                                                                <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                                                    <span>${weekdayShort[hDt.getDay()]}</span>
-                                                                    <span>•</span>
-                                                                    <span>${esc(h.scope)}</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums shrink-0 ${countCls}">${countLabel}</span>
-                                                    </button>
-                                                `;
-                                            }).join('')}
                                         </div>
                                     </div>
 
-                                    <!-- Próximos Compromissos do Mês -->
-                                    <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5">
-                                        <div class="flex items-center justify-between gap-2 mb-3">
-                                            <div class="flex items-center gap-2">
-                                                <span class="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xs shrink-0">
-                                                    <i class="fa-solid fa-calendar-check"></i>
-                                                </span>
-                                                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Agenda Próxima</h4>
-                                            </div>
-                                            <span class="text-[10px] font-bold text-slate-400 tabular-nums">${visibleEvts.length} no mês</span>
-                                        </div>
-                                        ${upcomingEvents.length === 0 ? `
-                                            <p class="text-xs text-slate-400 italic py-2">Nenhum compromisso futuro marcado para ${esc(monthTitle)}.</p>
-                                        ` : `
-                                            <div class="space-y-1.5">
-                                                ${upcomingEvents.map(ev => `
-                                                    <button type="button" onclick="app.calendar && app.calendar.viewEvent('${esc(ev.id)}')" class="w-full text-left px-3 py-2 rounded-xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 border border-slate-200/70 dark:border-slate-700/70 transition flex items-center justify-between gap-2 cursor-pointer">
-                                                        <div class="min-w-0">
-                                                            <div class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">${esc(ev.tema || ev.op || 'Evento')}</div>
-                                                            <div class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${esc(ev.op || '')}</div>
+                                    <div class="space-y-2 flex-1">
+                                        ${upcomingHolidays.map(h => {
+                                            const [hy, hm, hd] = h.date.split('-').map(Number);
+                                            const hDt = new Date(hy, hm - 1, hd);
+                                            const diffDays = Math.round((hDt.getTime() - todayMidMs) / 86400000);
+                                            const countLabel = diffDays === 0 ? 'Hoje!' : (diffDays === 1 ? 'Amanhã' : `Em ${diffDays}d`);
+                                            const countCls = diffDays <= 7
+                                                ? 'bg-rose-600 text-white'
+                                                : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50';
+                                            const hYm = h.date.slice(0, 7);
+                                            return `
+                                                <button type="button" onclick="app.ui.setHomeCalMonth('${hYm}')" class="w-full text-left p-2.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-slate-200/70 dark:border-slate-700/70 transition flex items-center justify-between gap-3 cursor-pointer group">
+                                                    <div class="flex items-center gap-3 min-w-0">
+                                                        <div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex flex-col items-center justify-center shrink-0 shadow-2xs">
+                                                            <span class="text-[9px] font-black uppercase text-rose-500 leading-none">${monthNames[hm - 1].slice(0, 3)}</span>
+                                                            <span class="text-sm font-black text-slate-800 dark:text-white leading-tight tabular-nums">${String(hd).padStart(2, '0')}</span>
                                                         </div>
-                                                        <span class="text-[10px] font-black text-indigo-600 dark:text-indigo-300 tabular-nums shrink-0">${ev.data.split('-').slice(1).reverse().join('/')}${ev.hora ? ' · ' + ev.hora : ''}</span>
-                                                    </button>
-                                                `).join('')}
-                                            </div>
-                                        `}
+                                                        <div class="min-w-0">
+                                                            <div class="text-xs font-extrabold text-slate-800 dark:text-white truncate group-hover:text-rose-600 dark:group-hover:text-rose-300 transition-colors">${esc(h.name)}</div>
+                                                            <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                                                <span>${weekdayShort[hDt.getDay()]}</span>
+                                                                <span>•</span>
+                                                                <span>${esc(h.scope)}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums shrink-0 ${countCls}">${countLabel}</span>
+                                                </button>
+                                            `;
+                                        }).join('')}
                                     </div>
                                 </div>
                             </div>
@@ -59148,7 +59352,7 @@ Object.assign(app.ui, {
                                                     <span id="home-cwb-meta"></span>
                                                 </div>
                                                 <div id="home-cwb-rain-alert" class="hidden">
-                                                    <i class="fa-solid fa-umbrella shrink-0"></i>
+                                                    <i id="home-cwb-rain-icon" class="fa-solid fa-umbrella shrink-0"></i>
                                                     <span id="home-cwb-rain-text"></span>
                                                 </div>
                                             </div>
@@ -59801,18 +60005,18 @@ Object.assign(app.ui, {
                         const safeNext = esc(n.nextAction || '');
 
                         return `
-                            <div class="gtd-drag-card p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 ${spMeta ? spMeta.borderAccent : 'border-l-4 border-l-slate-300 dark:border-l-slate-600'} shadow-xs hover:shadow-md transition space-y-2.5"
+                            <div class="gtd-drag-card overflow-hidden min-w-0 p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 ${spMeta ? spMeta.borderAccent : 'border-l-4 border-l-slate-300 dark:border-l-slate-600'} shadow-xs hover:shadow-md transition space-y-2.5"
                                 draggable="true" data-note-id="${n.id}"
                                 ondragstart="app.ui.gtdOnDragStart(event, '${n.id}')" ondragend="app.ui.gtdOnDragEnd(event)">
-                                <div class="flex items-start justify-between gap-2">
+                                <div class="flex items-start justify-between gap-2 min-w-0">
                                     <div class="flex items-start gap-2 flex-1 min-w-0">
                                         <button type="button" onclick="app.ui.gtdToggleDone('${n.id}')" class="mt-0.5 text-slate-300 hover:text-emerald-600 dark:text-slate-600 dark:hover:text-emerald-400 transition shrink-0" title="Concluir tarefa">
                                             <i class="fa-regular fa-circle text-base"></i>
                                         </button>
-                                        <textarea rows="2" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
-                                            oninput="app.ui.gtdUpdateFieldLive('${n.id}', 'text', this.value)"
+                                        <textarea rows="2" style="field-sizing: content; overflow: hidden;" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
+                                            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'; app.ui.gtdUpdateFieldLive('${n.id}', 'text', this.value)"
                                             placeholder="Descreva a ação..."
-                                            class="w-full bg-transparent text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 resize-none outline-none leading-snug custom-scrollbar">${safeText}</textarea>
+                                            class="w-full min-w-0 min-h-[2.4rem] bg-transparent text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 resize-none outline-none leading-snug overflow-hidden">${safeText}</textarea>
                                     </div>
                                     <button type="button" onclick="app.ui.gtdDeleteNote('${n.id}')" class="p-1 rounded-lg text-slate-300 hover:text-rose-500 transition shrink-0" title="Excluir">
                                         <i class="fa-solid fa-trash-can text-xs"></i>
@@ -59820,23 +60024,23 @@ Object.assign(app.ui, {
                                 </div>
 
                                 ${n.gtdStatus === 'aguardando' ? `
-                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50">
-                                        <i class="fa-solid fa-user-clock text-[10px] text-amber-600"></i>
-                                        <input type="text" value="${safeDeleg}" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
+                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 min-w-0">
+                                        <i class="fa-solid fa-user-clock text-[10px] text-amber-600 shrink-0"></i>
+                                        <input type="text" value="${safeDeleg}" title="${safeDeleg}" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
                                             oninput="app.ui.gtdUpdateFieldLive('${n.id}', 'delegatedTo', this.value)"
-                                            placeholder="Cobrar retorno de quem?" class="w-full bg-transparent text-[11px] font-bold text-amber-900 dark:text-amber-200 placeholder-amber-600/50 outline-none" />
+                                            placeholder="Cobrar retorno de quem?" class="flex-1 min-w-0 bg-transparent text-[11px] font-bold text-amber-900 dark:text-amber-200 placeholder-amber-600/50 outline-none" />
                                     </div>
                                 ` : (n.gtdStatus === 'projeto' ? `
-                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50">
-                                        <i class="fa-solid fa-shoe-prints text-[10px] text-purple-600"></i>
-                                        <input type="text" value="${safeNext}" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
+                                    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50 min-w-0">
+                                        <i class="fa-solid fa-shoe-prints text-[10px] text-purple-600 shrink-0"></i>
+                                        <input type="text" value="${safeNext}" title="${safeNext}" onfocus="const c=this.closest('.gtd-drag-card');if(c)c.draggable=false;" onblur="const c=this.closest('.gtd-drag-card');if(c)c.draggable=true;"
                                             oninput="app.ui.gtdUpdateFieldLive('${n.id}', 'nextAction', this.value)"
-                                            placeholder="Próximo passo físico..." class="w-full bg-transparent text-[11px] font-bold text-purple-900 dark:text-purple-200 placeholder-purple-500/50 outline-none" />
+                                            placeholder="Próximo passo físico..." class="flex-1 min-w-0 bg-transparent text-[11px] font-bold text-purple-900 dark:text-purple-200 placeholder-purple-500/50 outline-none" />
                                     </div>
                                 ` : '')}
 
-                                <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                                    <div class="flex flex-wrap items-center gap-1">
+                                <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <div class="flex flex-wrap items-center gap-1 min-w-0">
                                         ${viewMode === 'gtd' ? ['importante', 'urgente', 'circunstancial'].map(spKey => {
                                             const sp = app.gtd.TRIAD_SPHERES[spKey];
                                             const act = n.triad === spKey;
@@ -59852,24 +60056,21 @@ Object.assign(app.ui, {
                                         ${dueBadge ? `<span class="px-1.5 py-0.5 rounded-full border text-[10px] font-bold ${dueBadge.cls}">${dueBadge.label}</span>` : ''}
                                     </div>
 
-                                    <div class="flex items-center gap-1">
-                                        <select onchange="app.ui.gtdMoveStage('${n.id}', this.value)" class="px-1.5 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer" title="Mover estágio GTD">
+                                    <div class="flex items-center gap-1.5 w-full min-w-0">
+                                        <select onchange="app.ui.gtdMoveStage('${n.id}', this.value)" class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer truncate" title="Mover estágio GTD">
                                             ${Object.values(app.gtd.GTD_STAGES).map(g => `<option value="${g.id}" ${n.gtdStatus === g.id ? 'selected' : ''}>${g.label}</option>`).join('')}
                                         </select>
-                                        <button type="button" onclick="app.ui.gtdStartFocus('${n.id}', ${n.twoMin ? 2 : 25})" class="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 text-indigo-600 dark:text-indigo-300 hover:text-white transition" title="Iniciar Foco nesta tarefa (${n.twoMin ? '2' : '25'} min)">
+                                        <button type="button" onclick="app.ui.gtdStartFocus('${n.id}', ${n.twoMin ? 2 : 25})" class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 text-indigo-600 dark:text-indigo-300 hover:text-white transition shrink-0" title="Iniciar Foco nesta tarefa (${n.twoMin ? '2' : '25'} min)">
                                             <i class="fa-solid fa-play text-[10px]"></i>
                                         </button>
                                     </div>
                                 </div>
 
-                                <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-bold">
-                                    <div class="flex items-center gap-1.5">
-                                        <select onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'gtdContext', this.value)" class="bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] outline-none" title="Objetivo da tarefa">
-                                            ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${n.gtdContext === c.id ? 'selected' : ''}>${c.id ? c.label : 'Objetivo'}</option>`).join('')}
-                                        </select>
-                                        <input type="date" value="${n.dueDate || ''}" onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'dueDate', this.value)" class="bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] outline-none w-[105px]" title="Definir prazo" />
-                                    </div>
-                                    <span class="truncate">${n.updatedAt || ''}</span>
+                                <div class="grid grid-cols-2 gap-1.5 w-full items-center text-[10px] text-slate-500 dark:text-slate-400 font-bold">
+                                    <select onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'gtdContext', this.value)" class="w-full min-w-0 bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-1 text-[10px] outline-none truncate cursor-pointer" title="Objetivo da tarefa">
+                                        ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${n.gtdContext === c.id ? 'selected' : ''}>${c.id ? c.label : 'Objetivo'}</option>`).join('')}
+                                    </select>
+                                    <input type="date" value="${n.dueDate || ''}" onchange="app.ui.gtdUpdateFieldAndRender('${n.id}', 'dueDate', this.value)" class="w-full min-w-0 bg-transparent border border-slate-200 dark:border-slate-700 rounded-md px-1.5 py-1 text-[10px] outline-none" title="Definir prazo" />
                                 </div>
                             </div>
                         `;
@@ -59900,14 +60101,14 @@ Object.assign(app.ui, {
                             return `
                                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
                                     ${cols.map(col => `
-                                        <div class="gtd-drop-col rounded-3xl bg-slate-50/90 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-4 space-y-3 min-h-[340px] transition-all"
+                                        <div class="gtd-drop-col min-w-0 rounded-3xl bg-slate-50/90 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-4 space-y-3 min-h-[340px] transition-all"
                                             ondragover="app.ui.gtdOnDragOver(event, this)" ondragleave="app.ui.gtdOnDragLeave(this)" ondrop="app.ui.gtdOnDropColumn(event, this, 'gtd', '${col.id}')">
-                                            <div class="flex items-center justify-between pb-2.5 border-b-2 ${col.headCls}">
-                                                <div>
-                                                    <h3 class="text-sm font-black flex items-center gap-1.5"><i class="fa-solid ${col.icon}"></i> ${col.title}</h3>
-                                                    <p class="text-[11px] opacity-75 font-medium">${col.sub}</p>
+                                            <div class="flex items-center justify-between gap-2 pb-2.5 border-b-2 ${col.headCls}">
+                                                <div class="min-w-0 flex-1">
+                                                    <h3 class="text-sm font-black flex items-center gap-1.5"><i class="fa-solid ${col.icon} shrink-0"></i> <span class="truncate">${col.title}</span></h3>
+                                                    <p class="text-[11px] opacity-75 font-medium truncate" title="${col.sub}">${col.sub}</p>
                                                 </div>
-                                                <div class="flex items-center gap-1.5">
+                                                <div class="flex items-center gap-1.5 shrink-0">
                                                     <span class="px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 text-xs font-black border border-slate-200 dark:border-slate-700">${col.items.length}</span>
                                                     <button type="button" onclick="app.ui.gtdCreateInColumn('gtd', '${col.id}')" class="w-7 h-7 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-600 hover:text-white border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs transition" title="Adicionar card nesta coluna">
                                                         <i class="fa-solid fa-plus"></i>
