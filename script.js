@@ -70046,6 +70046,7 @@ app.pdcaTeste = {
     ciclos: {},
     ocultos: {},
     selectedAprId: '__atual__',
+    filtroAprId: null,
     filtroArea: 'TODOS',
     filtroTipoGap: 'TODOS',
     filtroOperacao: 'TODAS',
@@ -70060,10 +70061,10 @@ app.pdcaTeste = {
     _lastCloudSyncLabel: '',
 
     _stages: [
-        { key: 'P', num: '1', title: 'Identificar', hint: 'O que dói nos Resultados?', accent: 'blue', badgeBg: 'bg-blue-500', softBg: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-300/60 dark:border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', icon: 'fa-bullseye' },
-        { key: 'D', num: '2', title: 'Executar', hint: 'Ação na Qualidade & Trein.', accent: 'amber', badgeBg: 'bg-amber-500', softBg: 'from-amber-500/15 to-orange-500/5', border: 'border-amber-300/60 dark:border-amber-500/30', text: 'text-amber-700 dark:text-amber-300', icon: 'fa-play' },
-        { key: 'C', num: '3', title: 'Conferir', hint: 'Comparar Antes × Depois', accent: 'violet', badgeBg: 'bg-violet-500', softBg: 'from-violet-500/15 to-fuchsia-500/5', border: 'border-violet-300/60 dark:border-violet-500/30', text: 'text-violet-700 dark:text-violet-300', icon: 'fa-scale-balanced' },
-        { key: 'A', num: '4', title: 'Ação Contínua', hint: 'Evolução constante ou Novo Ciclo', accent: 'emerald', badgeBg: 'bg-emerald-500', softBg: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-300/60 dark:border-emerald-500/30', text: 'text-emerald-700 dark:text-emerald-300', icon: 'fa-infinity' }
+        { key: 'P', num: '1', title: 'Identificar', hint: 'Gaps identificados', accent: 'blue', badgeBg: 'bg-blue-500', softBg: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-300/60 dark:border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', icon: 'fa-bullseye' },
+        { key: 'D', num: '2', title: 'Executar', hint: 'Ações em andamento', accent: 'amber', badgeBg: 'bg-amber-500', softBg: 'from-amber-500/15 to-orange-500/5', border: 'border-amber-300/60 dark:border-amber-500/30', text: 'text-amber-700 dark:text-amber-300', icon: 'fa-play' },
+        { key: 'C', num: '3', title: 'Conferir', hint: 'Antes × Depois', accent: 'violet', badgeBg: 'bg-violet-500', softBg: 'from-violet-500/15 to-fuchsia-500/5', border: 'border-violet-300/60 dark:border-violet-500/30', text: 'text-violet-700 dark:text-violet-300', icon: 'fa-scale-balanced' },
+        { key: 'A', num: '4', title: 'Ação Contínua', hint: 'Consolidado', accent: 'emerald', badgeBg: 'bg-emerald-500', softBg: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-300/60 dark:border-emerald-500/30', text: 'text-emerald-700 dark:text-emerald-300', icon: 'fa-infinity' }
     ],
 
     _canAccess() {
@@ -70371,9 +70372,10 @@ app.pdcaTeste = {
         if (!src || !opTarget || opTarget === 'TODAS') return true;
         const targetNorm = this._normTxt(opTarget);
         if (!targetNorm) return true;
-        const candidatos = [src.operacao, src.pasta, src.nome].map(v => this._normTxt(v)).filter(Boolean);
-        if (candidatos.some(c => c === targetNorm)) return true;
-        return candidatos.some(c => c.length >= 3 && (c.includes(targetNorm) || targetNorm.includes(c)));
+        const opExact = [src.operacao, src.pasta].map(v => this._normTxt(v)).filter(Boolean);
+        if (opExact.some(c => c === targetNorm)) return true;
+        const nomeNorm = this._normTxt(src.nome);
+        return Boolean(nomeNorm && nomeNorm === targetNorm);
     },
 
     _findLatestSourcesForSync(opFilter = null) {
@@ -70406,17 +70408,18 @@ app.pdcaTeste = {
     },
 
     async selecionarOperacao(op) {
-        const nextOp = op || 'TODAS';
+        const nextOp = String(op || 'TODAS').trim() || 'TODAS';
         this.filtroOperacao = nextOp;
+        this.filtroAprId = null;
         if (nextOp !== 'TODAS') {
             const matched = this._findLatestSourcesForSync(nextOp);
             const bestSaved = matched.find(s => !s.isAtual) || matched[0] || null;
-            if (bestSaved) {
-                this.selectedAprId = bestSaved.id;
-            }
+            this.selectedAprId = bestSaved ? bestSaved.id : '';
         }
         this.renderView();
-        await this.syncGapsOperacao(nextOp === 'TODAS' ? null : nextOp, { silent: true, renderAfter: true });
+        if (nextOp !== 'TODAS') {
+            await this.syncGapsOperacao(nextOp, { silent: true, renderAfter: true });
+        }
     },
 
     toggleSourceDropdown(forceState = null) {
@@ -70432,8 +70435,11 @@ app.pdcaTeste = {
         this.sourceDropdownOpen = false;
         this.sourceSearch = '';
         const src = this._getAvailableSources().find(s => s.id === aprId);
+        this.filtroAprId = (aprId && aprId !== '__atual__') ? aprId : null;
         if (src && src.operacao && src.operacao !== 'Sessão Ativa' && src.operacao !== 'Geral') {
             this.filtroOperacao = String(src.operacao).trim().toUpperCase();
+        } else {
+            this.filtroOperacao = 'TODAS';
         }
         this.renderView();
         await this.syncGapsOperacao(src?.operacao || null, { sourceIds: [aprId], silent: true, renderAfter: true });
@@ -70533,6 +70539,33 @@ app.pdcaTeste = {
         const n = Number(v);
         if (!Number.isFinite(n)) return '—';
         return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+    },
+
+    _extractOcorrencias(c) {
+        if (Number.isFinite(Number(c?.ocorrencias))) return Number(c.ocorrencias);
+        const m = String(c?.criterioGap || c?.alvo || '').match(/(\d+)\s*ocorr/i);
+        return m ? parseInt(m[1], 10) : 0;
+    },
+
+    _compareCriticidade(a, b) {
+        const rankTipo = (t) => (t === 'critica' ? 0 : (t === 'comum' ? 1 : (t === 'nota' ? 2 : 3)));
+        const rA = rankTipo(a?.criterioTipo);
+        const rB = rankTipo(b?.criterioTipo);
+        if (rA !== rB) return rA - rB;
+
+        if (rA === 0 || rA === 1) {
+            const ocDiff = this._extractOcorrencias(b) - this._extractOcorrencias(a);
+            if (ocDiff !== 0) return ocDiff;
+        }
+        if (rA === 2) {
+            const notaA = Number.isFinite(Number(a?.antesValor)) ? Number(a.antesValor) : 999;
+            const notaB = Number.isFinite(Number(b?.antesValor)) ? Number(b.antesValor) : 999;
+            if (notaA !== notaB) return notaA - notaB; // pior nota primeiro
+        }
+        const gapA = Number(a?.metaValor || 85) - Number(a?.antesValor || 0);
+        const gapB = Number(b?.metaValor || 85) - Number(b?.antesValor || 0);
+        if (gapB !== gapA) return gapB - gapA;
+        return String(a?.titulo || '').localeCompare(String(b?.titulo || ''), 'pt-BR');
     },
 
     _extractAllGapsFromSource(sourceObj, consolidado, tratMap, forcedOp = null) {
@@ -71147,120 +71180,118 @@ app.pdcaTeste = {
         const areaDona = this._resolveArea(c);
         const areaMeta = this._getAreaMeta(areaDona);
         const opCiclo = this._resolveOperacaoCiclo(c);
-        const criterioTxt = c.criterioGap || (c.alvo ? `Critério: ${c.alvo}` : `Antes ${this._formatNum(antes)} vs Meta ${this._formatNum(meta)}`);
-        const tipoMeta = c.criterioTipo === 'critica'
-            ? { cls: 'bg-rose-50/80 dark:bg-rose-950/35 border-rose-200/70 dark:border-rose-800/50 text-rose-700 dark:text-rose-300', icon: 'fa-fire' }
+        const cicloNum = Number(c.cicloNumero || 1);
+
+        // Resumo curto de 1 linha para identificação instantânea sem poluição
+        const ocorrMatch = String(c.criterioGap || c.alvo || '').match(/(\d+)\s*ocorr/i);
+        const badgeTipo = c.criterioTipo === 'critica'
+            ? { label: ocorrMatch ? `Crítica • ${ocorrMatch[1]} ocorr.` : 'Crítica', cls: 'text-rose-600 dark:text-rose-400', dot: 'bg-rose-500' }
             : (c.criterioTipo === 'comum'
-                ? { cls: 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200/70 dark:border-amber-800/50 text-amber-700 dark:text-amber-300', icon: 'fa-triangle-exclamation' }
-                : { cls: 'bg-sky-50/80 dark:bg-sky-950/30 border-sky-200/70 dark:border-sky-800/50 text-sky-700 dark:text-sky-300', icon: 'fa-chart-line' });
+                ? { label: ocorrMatch ? `Qualidade • ${ocorrMatch[1]} ocorr.` : 'Qualidade', cls: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500' }
+                : (c.criterioTipo === 'nota'
+                    ? { label: `Operador • ${this._formatNum(antes)}`, cls: 'text-sky-600 dark:text-sky-400', dot: 'bg-sky-500' }
+                    : { label: 'Manual', cls: 'text-slate-500 dark:text-slate-400', dot: 'bg-slate-400' }));
+
+        const autoTemplates = [
+            'Reciclagem técnica dirigida e material visual do processo crítico',
+            'Checklist de auditoria + alinhamento corretivo em sala',
+            'Calibração de item recorrente + reforço operacional',
+            'Feedback pontual nas monitorias e acompanhamento amostral',
+            'Reciclagem focada + simulado prático (nota abaixo de 75%)',
+            'Feedback individual + monitoria assistida de qualidade',
+            'Definir ação prática com o time'
+        ];
+        const acaoCustom = String(c.acaoPlanejada || '').trim();
+        const mostrarAcaoCustom = acaoCustom && !autoTemplates.includes(acaoCustom);
 
         const ctaHtml = (() => {
             if (stageKey === 'P') {
                 return `
-                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'D')" class="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black tracking-wide shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
-                        <span>Executar em Q&T</span>
-                        <i class="fa-solid fa-arrow-right"></i>
+                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'D')" class="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer">
+                        <span>Executar</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </button>
                 `;
             }
             if (stageKey === 'D') {
                 return `
-                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'C')" class="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-black tracking-wide shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
-                        <span>Ir para Conferir</span>
-                        <i class="fa-solid fa-arrow-right"></i>
+                    <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'C')" class="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-black shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer">
+                        <span>Conferir</span>
+                        <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </button>
                 `;
             }
             if (stageKey === 'C') {
                 return `
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" title="Não bateu a meta? Volta para P no próximo ciclo" class="py-2 px-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-700/50 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all">
-                            <i class="fa-solid fa-rotate-left"></i>
-                            <span>Girar (P)</span>
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" title="Voltar para Identificar (novo ciclo)" class="py-2 px-2 rounded-xl bg-white/90 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-700/50 text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer">
+                            <i class="fa-solid fa-rotate-left text-[10px]"></i>
+                            <span>Voltar</span>
                         </button>
-                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'A')" class="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 transition-all">
-                            <i class="fa-solid fa-infinity"></i>
-                            <span>Ação Contínua</span>
+                        <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'A')" class="py-2 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black shadow-sm flex items-center justify-center gap-1 transition-all cursor-pointer">
+                            <i class="fa-solid fa-check text-[10px]"></i>
+                            <span>Concluir</span>
                         </button>
                     </div>
                 `;
             }
             return `
-                <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" class="w-full py-2 px-3 rounded-xl bg-white/80 dark:bg-slate-800/70 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-700/50 text-[11px] font-black flex items-center justify-center gap-2 transition-all">
-                    <i class="fa-solid fa-rotate"></i>
-                    <span>Girar Novo Ciclo (Ciclo #${Number(c.cicloNumero || 1) + 1})</span>
+                <button onclick="app.pdcaTeste.avancarEtapa('${esc(c.id)}', 'GIRAR')" class="w-full py-2 px-3 rounded-xl bg-white/90 dark:bg-slate-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-700/50 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer">
+                    <i class="fa-solid fa-rotate text-[10px]"></i>
+                    <span>Novo Ciclo</span>
                 </button>
             `;
         })();
 
         return `
-            <div class="group relative rounded-2xl bg-white/75 dark:bg-slate-900/65 backdrop-blur-xl border border-white/80 dark:border-white/10 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] hover:shadow-[0_14px_30px_-8px_rgba(15,23,42,0.18)] p-4 transition-all duration-200 hover:-translate-y-0.5">
+            <div class="group relative rounded-2xl bg-white/85 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.1)] hover:shadow-[0_12px_26px_-8px_rgba(15,23,42,0.16)] p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
                 <div class="flex items-start justify-between gap-2 mb-2">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar quem cuida (Qualidade / Treinamento)" class="px-2 py-0.5 rounded-full text-[10px] font-black border flex items-center gap-1 cursor-pointer transition-all ${areaMeta.cls}">
+                    <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                        <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar responsável" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-all shrink-0 ${areaMeta.cls}">
                             <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
                             <span>${esc(areaMeta.label)}</span>
                         </button>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100/90 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/70 dark:border-slate-700 truncate max-w-[110px]" title="Operação: ${esc(opCiclo)}">
-                            ${esc(opCiclo)}
-                        </span>
-                        <span class="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100/90 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">
-                            #${Number(c.cicloNumero || 1)}
-                        </span>
+                        ${this.filtroOperacao === 'TODAS' ? `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 break-words">
+                                ${esc(opCiclo)}
+                            </span>
+                        ` : ''}
+                        ${cicloNum > 1 ? `
+                            <span class="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-500 tabular-nums shrink-0">#${cicloNum}</span>
+                        ` : ''}
                     </div>
-                    <div class="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button onclick="app.pdcaTeste.openModalNovo('${esc(c.id)}')" title="Editar" class="w-6 h-6 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-700/70 text-slate-500 flex items-center justify-center text-[11px]">
+                    <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button onclick="app.pdcaTeste.openModalNovo('${esc(c.id)}')" title="Editar" class="w-6 h-6 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-white flex items-center justify-center text-[11px] cursor-pointer">
                             <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button onclick="app.pdcaTeste._deleteCiclo('${esc(c.id)}')" title="Remover" class="w-6 h-6 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-500 flex items-center justify-center text-[11px]">
+                        <button onclick="app.pdcaTeste._deleteCiclo('${esc(c.id)}')" title="Remover" class="w-6 h-6 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/40 text-slate-400 hover:text-rose-500 flex items-center justify-center text-[11px] cursor-pointer">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
                 </div>
 
-                <h4 class="text-sm font-black text-slate-800 dark:text-white leading-snug mb-1.5">${esc(c.titulo)}</h4>
+                <h4 class="text-[13px] font-black text-slate-800 dark:text-white leading-snug break-words whitespace-normal mb-2">${esc(c.titulo)}</h4>
 
-                <!-- Por que virou Gap (Critério explícito) -->
-                <div class="mb-2 px-2.5 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 tabular-nums ${tipoMeta.cls}">
-                    <i class="fa-solid ${tipoMeta.icon} text-[9px] shrink-0"></i>
-                    <span class="truncate" title="${esc(criterioTxt)}">${esc(criterioTxt)}</span>
-                </div>
-
-                <p class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">${esc(c.acaoPlanejada || c.alvo || '')}</p>
-
-                <!-- Antes x Depois visual instantâneo -->
-                <div class="rounded-xl bg-slate-50/80 dark:bg-slate-950/50 border border-slate-200/60 dark:border-white/5 px-3 py-2 mb-3 flex items-center justify-between gap-2 tabular-nums">
-                    <div>
-                        <div class="text-[9px] font-bold uppercase text-slate-400">Antes</div>
-                        <div class="text-xs font-black text-slate-700 dark:text-slate-200">${this._formatNum(antes)}</div>
-                    </div>
-                    <i class="fa-solid fa-arrow-right text-[10px] text-slate-300 dark:text-slate-600"></i>
+                <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] font-bold mb-2.5 tabular-nums">
+                    <span class="inline-flex items-center gap-1.5 ${badgeTipo.cls} break-words whitespace-normal">
+                        <span class="w-1.5 h-1.5 rounded-full ${badgeTipo.dot} shrink-0"></span>
+                        <span>${esc(badgeTipo.label)}</span>
+                    </span>
                     ${stageKey === 'C' ? `
-                        <div class="text-center">
-                            <div class="text-[9px] font-bold uppercase text-violet-500">Depois (%)</div>
-                            <input type="number" step="0.1" value="${hasDepois ? depois : antes}" onchange="app.pdcaTeste.atualizarDepoisInline('${esc(c.id)}', this.value)" class="w-16 text-center text-xs font-black rounded-lg bg-white dark:bg-slate-900 border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 py-0.5 outline-none focus:ring-2 focus:ring-violet-400">
+                        <div class="flex items-center gap-1 shrink-0">
+                            <span class="text-[10px] text-slate-400 font-semibold">Depois</span>
+                            <input type="number" step="0.1" value="${hasDepois ? depois : antes}" onchange="app.pdcaTeste.atualizarDepoisInline('${esc(c.id)}', this.value)" class="w-14 text-center text-[11px] font-black rounded-lg bg-slate-50 dark:bg-slate-800 border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 py-0.5 outline-none focus:ring-2 focus:ring-violet-400">
                         </div>
                     ` : `
-                        <div>
-                            <div class="text-[9px] font-bold uppercase text-slate-400">${hasDepois ? 'Depois' : 'Meta'}</div>
-                            <div class="text-xs font-black ${hasDepois ? (bateuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400') : 'text-blue-600 dark:text-blue-400'}">
-                                ${this._formatNum(hasDepois ? depois : meta)}
-                            </div>
-                        </div>
+                        <span class="text-[10px] text-slate-500 dark:text-slate-400 font-bold shrink-0">
+                            ${hasDepois
+                                ? `<span class="${bateuMeta ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">${this._formatNum(antes)} → ${this._formatNum(depois)}</span>`
+                                : `Meta ${this._formatNum(meta)}`}
+                        </span>
                     `}
-                    <div class="text-right">
-                        <div class="text-[9px] font-bold uppercase text-slate-400">${hasDepois ? 'Ganho' : 'Alvo'}</div>
-                        <div class="text-xs font-black ${hasDepois ? (delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400') : 'text-slate-500 dark:text-slate-400'}">
-                            ${hasDepois ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} p.p.` : this._formatNum(meta)}
-                        </div>
-                    </div>
                 </div>
 
-                <!-- Elo visual com Qualidade & Treinamento -->
-                <div class="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-3 px-1">
-                    <span class="flex items-center gap-1.5 truncate"><i class="fa-solid fa-link text-amber-500"></i> ${esc(c.qtLink || 'Q&T')}</span>
-                    <span class="shrink-0 text-slate-400 truncate max-w-[110px]" title="${esc(c.atualizadoPor ? `Atualizado por ${c.atualizadoPor}` : (c.responsavel || ''))}">${esc(c.responsavel || '')}</span>
-                </div>
+                ${mostrarAcaoCustom ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5 break-words whitespace-normal leading-snug">${esc(acaoCustom)}</p>` : ''}
 
                 ${ctaHtml}
             </div>
@@ -71395,9 +71426,15 @@ app.pdcaTeste = {
             opCountMap[k] = (opCountMap[k] || 0) + 1;
         });
 
-        const ciclosDaOperacao = this.filtroOperacao === 'TODAS'
-            ? allCiclos
-            : allCiclos.filter(c => this._normTxt(this._resolveOperacaoCiclo(c)) === this._normTxt(this.filtroOperacao));
+        const ciclosDaOperacao = allCiclos.filter(c => {
+            if (this.filtroOperacao && this.filtroOperacao !== 'TODAS') {
+                if (this._normTxt(this._resolveOperacaoCiclo(c)) !== this._normTxt(this.filtroOperacao)) return false;
+            }
+            if (this.filtroAprId && c.aprId && c.aprId !== this.filtroAprId) {
+                return false;
+            }
+            return true;
+        });
 
         const cntQualidade = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Qualidade').length;
         const cntTreinamento = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Treinamento').length;
@@ -71405,9 +71442,10 @@ app.pdcaTeste = {
         const filtradosPorArea = this.filtroArea === 'TODOS'
             ? ciclosDaOperacao
             : ciclosDaOperacao.filter(c => this._resolveArea(c) === this.filtroArea);
-        const filtradosFinais = this.filtroTipoGap === 'TODOS'
-            ? filtradosPorArea
-            : filtradosPorArea.filter(c => c.criterioTipo === this.filtroTipoGap);
+        const filtradosFinais = (this.filtroTipoGap === 'TODOS'
+            ? [...filtradosPorArea]
+            : filtradosPorArea.filter(c => c.criterioTipo === this.filtroTipoGap)
+        ).sort((a, b) => this._compareCriticidade(a, b));
 
         const byStage = { P: [], D: [], C: [], A: [] };
         filtradosFinais.forEach(c => {
@@ -71514,8 +71552,8 @@ app.pdcaTeste = {
                     <!-- Linha 2: Lista Suspensa de Operação (traz todos os gaps automaticamente ao selecionar) + Filtros + Guia Rápido -->
                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5">
                         <div class="flex flex-wrap items-center gap-2">
-                            <!-- Operação (Lista Suspensa) -->
-                            <select onchange="app.pdcaTeste.selecionarOperacao(this.value)" title="Selecione uma operação para carregar automaticamente todos os gaps dela" class="h-8 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                            <!-- Operação (Lista Suspensa única, troca sem acumular) -->
+                            <select onchange="app.pdcaTeste.selecionarOperacao(this.value)" title="Selecione uma operação para filtrar os gaps dela" class="h-8 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
                                 <option value="TODAS" ${this.filtroOperacao === 'TODAS' ? 'selected' : ''}>Todas Operações (${allCiclos.length})</option>
                                 ${opsExistentes.map(op => {
                                     const opCnt = opCountMap[this._normTxt(op)] || 0;
@@ -71523,13 +71561,6 @@ app.pdcaTeste = {
                                     return `<option value="${esc(op)}" ${this._normTxt(this.filtroOperacao) === this._normTxt(op) ? 'selected' : ''}>${hasApres ? '● ' : ''}${esc(op)}${opCnt > 0 ? ` (${opCnt})` : ''}</option>`;
                                 }).join('')}
                             </select>
-
-                            ${selectedSourceObj && !selectedSourceObj.isAtual ? `
-                                <select onchange="if(this.value) app.pdcaTeste.vincularOperacaoFonteAtual(this.value)" title="Vincular ou trocar a operação desta apresentação" class="h-8 px-2.5 rounded-xl bg-white dark:bg-slate-900 border ${selectedSourceObj.hasOperacaoExplicita ? 'border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300' : 'border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'} text-[11px] font-bold outline-none cursor-pointer">
-                                    <option value="">${selectedSourceObj.hasOperacaoExplicita ? `Vinc. Apres.: ${esc(selectedSourceObj.operacao)}` : 'Vincular operação à apresentação...'}</option>
-                                    ${opsExistentes.map(op => `<option value="${esc(op)}">${esc(op)}</option>`).join('')}
-                                </select>
-                            ` : ''}
 
                             <!-- Quem cuida -->
                             <div class="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-white/10 text-[11px] font-bold">
@@ -71622,11 +71653,11 @@ app.pdcaTeste = {
                 </div>
 
                 <!-- QUADRO LIMPO COM AS 4 ETAPAS + FLECHAS ENTRE COLUNAS -->
-                <div class="grid grid-cols-1 lg:grid-cols-[1fr_28px_1fr_28px_1fr_28px_1fr] gap-3 items-start">
+                <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)_18px_minmax(0,1fr)_18px_minmax(0,1fr)] gap-2 items-start">
                     ${this._stages.map((st, idx) => {
                         const cards = byStage[st.key];
                         const colHtml = `
-                            <div class="rounded-[24px] bg-gradient-to-b ${st.softBg} bg-white/45 dark:bg-slate-900/45 backdrop-blur-xl border ${st.border} p-3.5 min-h-[420px] flex flex-col">
+                            <div class="min-w-0 rounded-[24px] bg-gradient-to-b ${st.softBg} bg-white/45 dark:bg-slate-900/45 backdrop-blur-xl border ${st.border} p-3 min-h-[420px] flex flex-col">
                                 <!-- Topo da Coluna -->
                                 <div class="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-white/60 dark:border-white/10">
                                     <div class="flex items-center gap-2.5">
