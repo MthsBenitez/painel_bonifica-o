@@ -354,49 +354,74 @@ const app = {
                         span: 0,
                         totalOperadores: 0,
                         totalMonitoriasEsperadas: 0,
+                        frente: 'outro',
                         operacoes: [],
                         detalhes: [],
                         operacoesDetalhe: [],
+                        exclusivas: [],
+                        compartilhadas: [],
                         subordinadosCount: 0
                     };
                 }
-                const tipo = user.tipoAcesso || 'Qualidade';
+                const tipo = String(user.tipoAcesso || 'Qualidade').trim();
                 const allOpsSetoriais = this.getOperacoesSetoriais();
                 const regras = this.config?.regrasMonitoriaVG || {};
+                const normOp = (v) => String(v || '').trim().toUpperCase();
+                const isTrackQual = (u) => Boolean(u && !this.isUserOperador(u) && String(u.tipoAcesso || 'Qualidade').trim() === 'Qualidade');
+                const isTrackTrein = (u) => Boolean(u && !this.isUserOperador(u) && String(u.tipoAcesso || '').trim() === 'Treinamento');
 
-                // Mapeamento de quantos monitores de qualidade cuidam de cada operação
-                // para realizar a divisão proporcional do span compartilhado
-                const mapaMonitoresPorOp = {};
+                // Span de Qualidade e Span de Treinamento são independentes:
+                // só divide headcount entre membros da MESMA frente (Qualidade com Qualidade; Treinamento com Treinamento).
+                const mapaQualPorOp = {};
+                const mapaTreinPorOp = {};
                 (this.users || []).forEach(u => {
-                    if (this.isUserQualidade(u)) {
-                        (u.operacoes || []).forEach(op => {
-                            const k = String(op || '').trim().toUpperCase();
-                            if (k) {
-                                mapaMonitoresPorOp[k] = (mapaMonitoresPorOp[k] || 0) + 1;
-                            }
-                        });
-                    }
+                    if (!u || this.isUserOperador(u)) return;
+                    const seenOps = new Set();
+                    (Array.isArray(u.operacoes) ? u.operacoes : []).forEach(op => {
+                        const k = normOp(op);
+                        if (!k || seenOps.has(k)) return;
+                        seenOps.add(k);
+                        if (isTrackQual(u)) {
+                            (mapaQualPorOp[k] = mapaQualPorOp[k] || []).push(u);
+                        } else if (isTrackTrein(u)) {
+                            (mapaTreinPorOp[k] = mapaTreinPorOp[k] || []).push(u);
+                        }
+                    });
                 });
 
-                const buildDetalhe = (nome, isIndividualMonitor = false) => {
-                    const normNome = String(nome || '').trim().toUpperCase();
+                const userFrente = isTrackTrein(user) ? 'treinamento' : (isTrackQual(user) ? 'qualidade' : (['Gerente', 'Gestor'].includes(tipo) ? 'gestao' : 'outro'));
+
+                const buildDetalhe = (nome, aplicarDivisaoPorFrente = false) => {
+                    const normNome = normOp(nome);
                     const hcVal = this.getHeadcountOperacao(nome);
                     const r = parseInt(regras[normNome]);
                     const regraPorOp = (!isNaN(r) && r > 0) ? r : 2;
 
-                    // Se a operação é compartilhada entre múltiplos monitores de qualidade,
-                    // o span é dividido proporcionalmente pela quantidade de monitores responsáveis
-                    const qtdMonitores = isIndividualMonitor ? Math.max(1, mapaMonitoresPorOp[normNome] || 1) : 1;
-                    const hcEfetivo = qtdMonitores > 1 ? Math.round(hcVal / qtdMonitores) : hcVal;
-                    const metaMonEfetiva = qtdMonitores > 1 ? Math.round((hcVal / qtdMonitores) * regraPorOp) : (hcVal * regraPorOp);
+                    let colegasMesmaFrente = [];
+                    if (aplicarDivisaoPorFrente) {
+                        if (userFrente === 'treinamento') colegasMesmaFrente = mapaTreinPorOp[normNome] || [];
+                        else if (userFrente === 'qualidade') colegasMesmaFrente = mapaQualPorOp[normNome] || [];
+                    }
+
+                    const qtdNaFrente = aplicarDivisaoPorFrente ? Math.max(1, colegasMesmaFrente.length || 1) : 1;
+                    const hcEfetivo = qtdNaFrente > 1 ? Math.round(hcVal / qtdNaFrente) : hcVal;
+                    const metaMonEfetiva = qtdNaFrente > 1 ? Math.round((hcVal / qtdNaFrente) * regraPorOp) : (hcVal * regraPorOp);
+                    const selfMat = String(user.matricula || '').trim().toUpperCase();
+                    const compartilhadoCom = colegasMesmaFrente
+                        .filter(c => String(c.matricula || '').trim().toUpperCase() !== selfMat)
+                        .map(c => this.utils && this.utils.fixEncoding ? this.utils.fixEncoding(c.nome || '') : (c.nome || ''));
 
                     return {
                         nome,
                         hc: hcEfetivo,
                         hcOriginal: hcVal,
                         headcount: hcEfetivo,
-                        qtdMonitores,
-                        compartilhado: qtdMonitores > 1,
+                        qtdMonitores: qtdNaFrente,
+                        qtdNaFrente,
+                        frente: userFrente,
+                        compartilhado: qtdNaFrente > 1,
+                        exclusivo: qtdNaFrente === 1,
+                        compartilhadoCom,
                         regraPorOp,
                         metaMonitorias: metaMonEfetiva
                     };
@@ -414,9 +439,12 @@ const app = {
                         span: totalSpan,
                         totalOperadores: totalSpan,
                         totalMonitoriasEsperadas: totalMon,
+                        frente: 'gestao',
                         operacoes: detalhes.map(o => o.nome),
                         detalhes,
                         operacoesDetalhe: detalhes,
+                        exclusivas: detalhes,
+                        compartilhadas: [],
                         subordinadosCount: subs.length
                     };
                 }
@@ -436,34 +464,41 @@ const app = {
                         span: totalSpan,
                         totalOperadores: totalSpan,
                         totalMonitoriasEsperadas: totalMon,
+                        frente: 'gestao',
                         operacoes: opsArray,
                         detalhes,
                         operacoesDetalhe: detalhes,
+                        exclusivas: detalhes,
+                        compartilhadas: [],
                         subordinadosCount: subordinados.length
                     };
                 }
 
-                // Qualidade, Treinamento, Dev (Monitores individuais: aplicam a divisão por monitores compartilhados)
+                // Qualidade, Treinamento, Dev (divisão estritamente dentro da própria frente)
                 const opsUser = Array.isArray(user.operacoes) ? user.operacoes.filter(Boolean) : [];
                 const uniqueUpper = [];
                 const seen = new Set();
                 opsUser.forEach(op => {
-                    const up = String(op).trim().toUpperCase();
+                    const up = normOp(op);
                     if (up && !seen.has(up)) {
                         seen.add(up);
                         uniqueUpper.push(String(op).trim());
                     }
                 });
-                const detalhes = uniqueUpper.map(nome => buildDetalhe(nome, true));
+                const aplicarDiv = isTrackQual(user) || isTrackTrein(user);
+                const detalhes = uniqueUpper.map(nome => buildDetalhe(nome, aplicarDiv));
                 const totalSpan = detalhes.reduce((acc, d) => acc + d.hc, 0);
                 const totalMon = detalhes.reduce((acc, d) => acc + d.metaMonitorias, 0);
                 return {
                     span: totalSpan,
                     totalOperadores: totalSpan,
                     totalMonitoriasEsperadas: totalMon,
+                    frente: userFrente,
                     operacoes: uniqueUpper,
                     detalhes,
                     operacoesDetalhe: detalhes,
+                    exclusivas: detalhes.filter(d => d.exclusivo),
+                    compartilhadas: detalhes.filter(d => d.compartilhado),
                     subordinadosCount: 0
                 };
             },
@@ -623,7 +658,7 @@ storage: {
                 },
 
                 syncCloudFromServer(silent = true) {
-                    if (window.__TEST_MODE__ || this._syncingCloudNow) return Promise.resolve();
+                    if (window.__TEST_MODE__ || this._syncingCloudNow || this._userSaveInFlight) return Promise.resolve();
                     this._syncingCloudNow = true;
                     const syncKeys = ['config', 'users', 'operacoes', 'notifications', 'diario_bordo', 'turmas_treinamento', 'harmonyDeploy', 'harmonyChecklist', 'apresentacoes'];
                     return Promise.all(
@@ -745,6 +780,11 @@ storage: {
 
                     if (has('users')) {
                         if (data.users) {
+                            const prevUsersByMat = new Map();
+                            (app.users || []).forEach(pu => {
+                                const pk = this._normalizeMat(pu && pu.matricula);
+                                if (pk && !prevUsersByMat.has(pk)) prevUsersByMat.set(pk, pu);
+                            });
                             this._userKeyMap = new Map();
                             if (!this._plaintextPwdMats) this._plaintextPwdMats = new Set();
                             const rawEntries = Array.isArray(data.users)
@@ -761,11 +801,16 @@ storage: {
                                 }
                                 if(!u.results) u.results = {};
                                 if (u.operacoes) {
-                                    u.operacoes = Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes);
+                                    u.operacoes = (Array.isArray(u.operacoes) ? u.operacoes : Object.values(u.operacoes)).filter(Boolean);
                                 } else {
                                     u.operacoes = [];
                                 }
                                 const mKey = this._normalizeMat(u.matricula);
+                                const prevLoc = mKey ? prevUsersByMat.get(mKey) : null;
+                                if (prevLoc && Number(prevLoc.operacoesUpdatedAt || 0) > Number(u.operacoesUpdatedAt || 0)) {
+                                    u.operacoes = Array.isArray(prevLoc.operacoes) ? [...prevLoc.operacoes] : [];
+                                    u.operacoesUpdatedAt = prevLoc.operacoesUpdatedAt;
+                                }
                                 if (u.senha && app.utils && typeof app.utils.encryptPassword === 'function') {
                                     if (!String(u.senha).startsWith('enc$v1$') && mKey) {
                                         this._plaintextPwdMats.add(mKey);
@@ -1636,6 +1681,18 @@ storage: {
                     }
                     const maxRoleTs = Math.max(exExplicitRoleTs, locExplicitRoleTs);
                     if (maxRoleTs > 0) merged.roleUpdatedAt = maxRoleTs;
+                    // Proteção de Operações / Span: preserva alteração mais recente pelo timestamp operacoesUpdatedAt
+                    const exOpsTs = Number(existing?.operacoesUpdatedAt || 0);
+                    const locOpsTs = Number(localU?.operacoesUpdatedAt || 0);
+                    if (exOpsTs > locOpsTs) {
+                        merged.operacoes = Array.isArray(existing.operacoes) ? [...existing.operacoes] : [];
+                        merged.operacoesUpdatedAt = exOpsTs;
+                    } else if (locOpsTs > exOpsTs) {
+                        merged.operacoes = Array.isArray(localU.operacoes) ? [...localU.operacoes] : [];
+                        merged.operacoesUpdatedAt = locOpsTs;
+                    } else if (Math.max(exOpsTs, locOpsTs) > 0) {
+                        merged.operacoesUpdatedAt = Math.max(exOpsTs, locOpsTs);
+                    }
                     if (merged.tipoAcesso && merged.tipoAcesso !== 'Operador') {
                         merged.turmaId = null;
                         merged.turmaNumero = null;
@@ -1824,6 +1881,7 @@ storage: {
                         return Promise.resolve();
                     }
 
+                    this._userSaveInFlight = (this._userSaveInFlight || 0) + 1;
                     return this._enqueueUserSave(() => {
                         let primaryRemoteKey = null;
                         return this._fetchFirebaseNodeFast('sistema_bonificacao/users', 350, 15000).then(res => {
@@ -1840,6 +1898,7 @@ storage: {
                                 if (idx > -1 && remoteEntry && remoteEntry.user) {
                                     const mergedLocal = Object.assign({}, remoteEntry.user, app.users[idx], payload);
                                     if (payload.foto === undefined && !app.users[idx].foto && remoteEntry.user.foto) mergedLocal.foto = remoteEntry.user.foto;
+                                    if (payload.operacoes !== undefined) mergedLocal.operacoes = Array.isArray(payload.operacoes) ? [...payload.operacoes] : [];
                                     app.users[idx] = mergedLocal;
                                     if (app.currentUser && this._normalizeMat(app.currentUser.matricula) === mKey) {
                                         app.currentUser = mergedLocal;
@@ -1848,7 +1907,7 @@ storage: {
                                 if (!this._userKeyMap) this._userKeyMap = new Map();
                                 this._userKeyMap.set(mKey, remoteKey);
 
-                                // Se houver registros duplicados da mesma matricula, sincroniza senha e foto em TODOS no Firebase
+                                // Se houver registros duplicados da mesma matricula, sincroniza perfil/operacoes em TODOS no Firebase
                                 const targetKeys = isProfileSyncPayload && matchingKeys.length > 1 ? matchingKeys : [remoteKey];
                                 const multiPatch = {};
                                 targetKeys.forEach(rk => {
@@ -1886,6 +1945,8 @@ storage: {
                                     localStorage.setItem("soft_users_backup", JSON.stringify(app.users));
                                 }
                             } catch(e) {}
+                        }).finally(() => {
+                            this._userSaveInFlight = Math.max(0, (this._userSaveInFlight || 1) - 1);
                         });
                     });
                 },
@@ -3655,8 +3716,8 @@ storage: {
                     }
                 },
                 getRelevant() {
-                    const targetId = app.isAdmin ? 'ADM' : app.currentUser.matricula;
-                    return Object.values(app.notificationsList).filter(n => n.userId === targetId).sort((a,b) => b.timestamp - a.timestamp);
+                    const targetId = app.isAdmin ? 'ADM' : (app.currentUser && app.currentUser.matricula ? app.currentUser.matricula : '');
+                    return Object.values(app.notificationsList || {}).filter(n => n && n.userId === targetId).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
                 },
                 updateBadge() {
                     const unreadList = this.getRelevant().filter(n => !n.read);
@@ -14390,12 +14451,17 @@ storage: {
                     if (!user || !monthKey || !app.isUserQualidade(user)) return base;
                     if (base.status === 'validado') return base;
 
+                    const gCalib = (app.config && Array.isArray(app.config.goals)) ? app.config.goals.find(g => g && g.type === 'calibracao') : null;
+                    const gAcoes = (app.config && Array.isArray(app.config.goals)) ? app.config.goals.find(g => g && g.type === 'actions') : null;
+                    const g3Id = gCalib ? gCalib.id : 'g3';
+                    const g4Id = gAcoes ? gAcoes.id : 'g4';
+
                     const counts = this.countApprovedFromSources(user, monthKey);
-                    if (counts.hasAtas && !(base.g3 && base.g3.manualOverride)) {
-                        base.g3 = Object.assign({}, base.g3 || {}, { val: String(counts.g3Count) });
+                    if (counts.hasAtas && !(base[g3Id] && base[g3Id].manualOverride)) {
+                        base[g3Id] = Object.assign({}, base[g3Id] || {}, { val: String(counts.g3Count) });
                     }
-                    if (counts.hasActions && !(base.g4 && base.g4.manualOverride)) {
-                        base.g4 = Object.assign({}, base.g4 || {}, { val: String(counts.g4Count) });
+                    if (counts.hasActions && !(base[g4Id] && base[g4Id].manualOverride)) {
+                        base[g4Id] = Object.assign({}, base[g4Id] || {}, { val: String(counts.g4Count) });
                     }
                     return base;
                 },
@@ -18367,7 +18433,7 @@ storage: {
                     const data = app.analiseCSVDinamicoData.consolidado;
                     const txt = document.getElementById('card-comment-input').value;
                     data.comments[cardId] = txt;
-                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
+                    if (typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
                     document.getElementById('global-modal').classList.add('hidden');
                     app.ui.renderTab('analise_csv_dinamico', true);
                 },
@@ -31236,35 +31302,63 @@ storage: {
                 },
 
                 abrirModalOperacoesMonitor(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const u = (app.users || []).find(x => app.storage._normalizeMat(x.matricula) === normMat);
                     if (!u) return;
+                    const esc = (v) => (app.utils && app.utils.escapeHtml) ? app.utils.escapeHtml(v) : String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
                     app.syncOperacoesFromSetorial();
                     const opsSetoriais = app.getOperacoesSetoriais();
-                    const userOpsUpper = (u.operacoes || []).map(o => String(o).trim().toUpperCase());
+                    const userOpsUpper = (Array.isArray(u.operacoes) ? u.operacoes : []).map(o => String(o).trim().toUpperCase());
+                    const targetTipo = String(u.tipoAcesso || 'Qualidade').trim();
+                    const targetIsTrein = targetTipo === 'Treinamento';
+                    const targetIsQual = targetTipo === 'Qualidade';
+                    const frenteLabel = targetIsTrein ? 'Treinamento' : (targetIsQual ? 'Qualidade' : targetTipo);
 
                     let listHtml = '';
                     if (opsSetoriais.length === 0) {
                         listHtml = `<div class="p-6 text-center text-slate-400 italic text-sm">Nenhuma operação encontrada. Importe a Base RH na aba <strong>Visão Geral Setorial</strong> para carregar as operações e a quantidade de operadores.</div>`;
                     } else {
                         listHtml = opsSetoriais.map(op => {
-                            const isChecked = userOpsUpper.includes(op.nome.toUpperCase());
-                            const ResponsaveisAtuais = app.users
-                                .filter(x => x.matricula !== u.matricula && (app.isUserQualidade(x) || app.isUserTreinamento(x)) && (x.operacoes || []).some(uo => String(uo).trim().toUpperCase() === op.nome.toUpperCase()))
-                                .map(x => {
-                                    const pNome = app.utils.fixEncoding(x.nome || '').split(' ')[0];
-                                    return app.isUserTreinamento(x) ? `${pNome} (Trein.)` : pNome;
-                                });
+                            const opUpper = String(op.nome || '').trim().toUpperCase();
+                            const isChecked = userOpsUpper.includes(opUpper);
+                            const colegasQual = [];
+                            const colegasTrein = [];
+                            (app.users || []).forEach(x => {
+                                if (!x || app.isUserOperador(x)) return;
+                                if (app.storage._normalizeMat(x.matricula) === normMat) return;
+                                const xOps = Array.isArray(x.operacoes) ? x.operacoes : [];
+                                if (!xOps.some(uo => String(uo || '').trim().toUpperCase() === opUpper)) return;
+                                const pNome = app.utils.fixEncoding(x.nome || '').split(' ')[0];
+                                const xt = String(x.tipoAcesso || 'Qualidade').trim();
+                                if (xt === 'Treinamento') colegasTrein.push(pNome);
+                                else if (xt === 'Qualidade') colegasQual.push(pNome);
+                            });
+                            const colegasMesmaFrente = targetIsTrein ? colegasTrein : (targetIsQual ? colegasQual : []);
+                            const divisorSeSelecionar = 1 + colegasMesmaFrente.length;
+                            const partesSub = [];
+                            if (colegasQual.length > 0) {
+                                partesSub.push(`Qualidade: ${colegasQual.join(', ')}${targetIsQual ? ' (divide span)' : ' (não divide)'}`);
+                            }
+                            if (colegasTrein.length > 0) {
+                                partesSub.push(`Treinamento: ${colegasTrein.join(', ')}${targetIsTrein ? ' (divide span)' : ' (não divide)'}`);
+                            }
+                            const hcOp = parseInt(op.headcount) || 0;
+                            const hcDivPreview = divisorSeSelecionar > 1 ? Math.round(hcOp / divisorSeSelecionar) : hcOp;
+
                             return `
                                 <label class="flex items-center justify-between gap-3 p-3 rounded-2xl border ${isChecked ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} cursor-pointer hover:border-indigo-400 transition-all">
                                     <div class="flex items-center gap-3 min-w-0 flex-1">
-                                        <input type="checkbox" value="${op.nome}" data-hc="${op.headcount || 0}" onchange="app.ui.atualizarPreviewSpanModal()" class="hier-op-check w-4 h-4 accent-indigo-600 rounded shrink-0" ${isChecked ? 'checked' : ''}>
+                                        <input type="checkbox" value="${esc(op.nome)}" data-hc="${hcOp}" data-div="${divisorSeSelecionar}" onchange="app.ui.atualizarPreviewSpanModal()" class="hier-op-check w-4 h-4 accent-indigo-600 rounded shrink-0" ${isChecked ? 'checked' : ''}>
                                         <div class="min-w-0">
-                                            <div class="text-sm font-bold text-slate-800 dark:text-white leading-snug break-words">${app.utils.fixEncoding(op.nome)}</div>
-                                            ${ResponsaveisAtuais.length > 0 ? `<div class="text-[11px] text-slate-400 leading-snug break-words">Também com: ${ResponsaveisAtuais.join(', ')}</div>` : `<div class="text-[10px] text-emerald-500 font-bold">Disponível</div>`}
+                                            <div class="text-sm font-bold text-slate-800 dark:text-white leading-snug break-words">${esc(app.utils.fixEncoding(op.nome))}</div>
+                                            ${partesSub.length > 0
+                                                ? `<div class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug break-words">${esc(partesSub.join(' • '))}</div>`
+                                                : `<div class="text-[10px] text-emerald-500 font-bold">Exclusiva (${esc(frenteLabel)} livre)</div>`}
                                         </div>
                                     </div>
-                                    <div class="flex items-center gap-1.5 shrink-0">
-                                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs tabular-nums whitespace-nowrap">${op.headcount || 0} op.</span>
+                                    <div class="flex flex-col items-end gap-0.5 shrink-0">
+                                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs tabular-nums whitespace-nowrap">${hcOp} op.</span>
+                                        ${divisorSeSelecionar > 1 ? `<span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 tabular-nums">÷${divisorSeSelecionar} = ${hcDivPreview}</span>` : ''}
                                     </div>
                                 </label>
                             `;
@@ -31273,13 +31367,13 @@ storage: {
 
                     const spanAtual = app.getSpanUsuario(u);
 
-                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-diagram-project text-indigo-500 mr-2"></i> Responsabilidade & Span — ${app.utils.fixEncoding(u.nome)}`;
+                    document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-diagram-project text-indigo-500 mr-2"></i> Responsabilidade & Span — ${esc(app.utils.fixEncoding(u.nome))}`;
                     document.getElementById('modal-content').innerHTML = `
                         <div class="space-y-4">
                             <div class="p-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between shadow-md">
                                 <div>
-                                    <div class="text-[10px] uppercase font-black tracking-widest opacity-80">Span Calculado em Tempo Real</div>
-                                    <div class="text-xs opacity-90 mt-0.5">Total de operadores sob responsabilidade deste colaborador</div>
+                                    <div class="text-[10px] uppercase font-black tracking-widest opacity-80">Span Calculado em Tempo Real · ${esc(frenteLabel)}</div>
+                                    <div class="text-xs opacity-90 mt-0.5">Dividido apenas entre membros de <strong>${esc(frenteLabel)}</strong> na mesma operação</div>
                                 </div>
                                 <div class="text-right">
                                     <div id="hier-modal-span-total" class="text-3xl font-black leading-none">${spanAtual.totalOperadores}</div>
@@ -31301,7 +31395,7 @@ storage: {
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm">Cancelar</button>
-                        <button type="button" onclick="app.ui.salvarOperacoesMonitorHierarquia('${u.matricula}')" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg">Salvar Operações & Span</button>
+                        <button id="btn-salvar-ops-span" type="button" onclick="app.ui.salvarOperacoesMonitorHierarquia('${esc(u.matricula)}')" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg cursor-pointer">Salvar Operações & Span</button>
                     `;
                     const gm = document.getElementById('global-modal');
                     const box = gm.firstElementChild;
@@ -31318,21 +31412,41 @@ storage: {
                 atualizarPreviewSpanModal() {
                     const checks = document.querySelectorAll('.hier-op-check:checked');
                     let soma = 0;
-                    checks.forEach(c => { soma += parseInt(c.getAttribute('data-hc')) || 0; });
+                    checks.forEach(c => {
+                        const hc = parseInt(c.getAttribute('data-hc')) || 0;
+                        const div = Math.max(1, parseInt(c.getAttribute('data-div')) || 1);
+                        soma += (div > 1 ? Math.round(hc / div) : hc);
+                    });
                     const el = document.getElementById('hier-modal-span-total');
                     if (el) el.textContent = soma;
                 },
 
                 salvarOperacoesMonitorHierarquia(matricula) {
-                    const u = app.users.find(x => x.matricula === matricula);
+                    const normMat = app.storage._normalizeMat(matricula);
+                    const matches = (app.users || []).filter(x => x && app.storage._normalizeMat(x.matricula) === normMat);
+                    const u = matches[0] || null;
                     if (!u) return;
+
                     const opsAntes = Array.isArray(u.operacoes) ? [...u.operacoes] : [];
                     const checks = document.querySelectorAll('.hier-op-check:checked');
-                    u.operacoes = Array.from(checks).map(c => c.value);
-                    u.atualizadoEm = new Date().toISOString();
+                    const novasOps = Array.from(checks).map(c => c.value).filter(Boolean);
+                    const nowTs = Date.now();
+                    const nowIso = new Date().toISOString();
+
+                    matches.forEach(m => {
+                        m.operacoes = [...novasOps];
+                        m.operacoesUpdatedAt = nowTs;
+                        m.atualizadoEm = nowIso;
+                    });
+                    if (app.currentUser && app.storage._normalizeMat(app.currentUser.matricula) === normMat) {
+                        app.currentUser.operacoes = [...novasOps];
+                        app.currentUser.operacoesUpdatedAt = nowTs;
+                        app.currentUser.atualizadoEm = nowIso;
+                    }
+
                     if (app.jovemAprendizAudit) {
-                        const add = u.operacoes.filter(o => !opsAntes.includes(o));
-                        const rem = opsAntes.filter(o => !u.operacoes.includes(o));
+                        const add = novasOps.filter(o => !opsAntes.includes(o));
+                        const rem = opsAntes.filter(o => !novasOps.includes(o));
                         const diffs = [];
                         if (add.length > 0) diffs.push(`Adicionadas: ${add.join(', ')}`);
                         if (rem.length > 0) diffs.push(`Removidas: ${rem.join(', ')}`);
@@ -31340,18 +31454,32 @@ storage: {
                             app.jovemAprendizAudit.registrarSeAplicavel('Alteração de Operações & Span', u, diffs, 'hierarquia');
                         }
                     }
-                    document.getElementById('global-modal').classList.add('hidden');
-                    app.ui._refreshSpanOrHierarquiaInPlace();
-                    const sp = app.getSpanUsuario(u);
-                    if (app.ui && app.ui.showToast) {
-                        app.ui.showToast(`${app.utils.fixEncoding(u.nome).split(' ')[0]} atualizado(a): ${u.operacoes.length} op. (${sp.totalOperadores} op. de span)`, 'success');
+
+                    const btn = document.getElementById('btn-salvar-ops-span');
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Salvando...';
                     }
+
                     app.storage.saveUserByMatricula(u.matricula, {
-                        operacoes: u.operacoes,
-                        atualizadoEm: u.atualizadoEm
+                        operacoes: novasOps,
+                        operacoesUpdatedAt: nowTs,
+                        atualizadoEm: nowIso
+                    }).then(() => {
+                        const gm = document.getElementById('global-modal');
+                        if (gm) gm.classList.add('hidden');
+                        app.ui._refreshSpanOrHierarquiaInPlace();
+                        const sp = app.getSpanUsuario(u);
+                        if (app.ui && app.ui.showToast) {
+                            app.ui.showToast(`${app.utils.fixEncoding(u.nome).split(' ')[0]} salvo na nuvem: ${novasOps.length} op. (${sp.totalOperadores} op. de span)`, 'success');
+                        }
                     }).catch(err => {
                         console.error("Erro ao salvar span/operações:", err);
-                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar operações na nuvem.", "error");
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = 'Salvar Operações & Span';
+                        }
+                        if (app.ui && app.ui.showToast) app.ui.showToast("Falha ao sincronizar operações na nuvem. Tente novamente.", "error");
                     });
                 },
 
@@ -31614,6 +31742,23 @@ storage: {
                     });
                 },
 
+                _spanFiltroFrente: 'todos',
+                _spanBusca: '',
+
+                setSpanFiltroFrente(frente = 'todos') {
+                    this._spanFiltroFrente = frente || 'todos';
+                    this._refreshSpanOrHierarquiaInPlace();
+                },
+
+                setSpanBusca(val = '') {
+                    this._spanBusca = String(val || '');
+                    const term = this._spanBusca.trim().toLowerCase();
+                    document.querySelectorAll('.span-filterable-row').forEach(el => {
+                        const hay = (el.getAttribute('data-span-search') || '').toLowerCase();
+                        el.style.display = (!term || hay.includes(term)) ? '' : 'none';
+                    });
+                },
+
                 renderView_Span(container) {
                     if (!app.hasAdminAccess('span_operacoes') && !app.hasAdminAccess('hierarquia') && !app.isGestor() && !app.isSuperAdmin()) return;
                     app.syncOperacoesFromSetorial();
@@ -31622,50 +31767,96 @@ storage: {
                     const hcDe = (op) => parseInt(op.headcount) || 0;
 
                     const isGestor = app.isGestor();
-                    const monitoresQualidade = app.users.filter(u => app.isUserQualidade(u));
-                    const equipeTreinamento = app.users.filter(u => app.isUserTreinamento(u));
-                    const responsaveisSpan = app.users.filter(u => app.isUserQualidade(u) || app.isUserTreinamento(u));
+                    const isTrackQual = (u) => Boolean(u && !app.isUserOperador(u) && String(u.tipoAcesso || 'Qualidade').trim() === 'Qualidade');
+                    const isTrackTrein = (u) => Boolean(u && !app.isUserOperador(u) && String(u.tipoAcesso || '').trim() === 'Treinamento');
 
-                    // Mapa operação -> responsáveis (Qualidade e Treinamento, sem Operadores)
-                    const mapaOps = {};
+                    const monitoresQualidade = app.users.filter(isTrackQual);
+                    const equipeTreinamento = app.users.filter(isTrackTrein);
+                    const responsaveisSpan = app.users.filter(u => isTrackQual(u) || isTrackTrein(u));
+
+                    // Mapa operação -> responsáveis por frente separada (Qualidade x Treinamento)
+                    const mapaOpsQual = {};
                     const mapaOpsTrein = {};
-                    monitoresQualidade.forEach(m => (m.operacoes || []).forEach(o => {
-                        const k = String(o).trim().toUpperCase();
-                        (mapaOps[k] = mapaOps[k] || []).push(m);
-                    }));
-                    equipeTreinamento.forEach(t => (t.operacoes || []).forEach(o => {
-                        const k = String(o).trim().toUpperCase();
-                        (mapaOpsTrein[k] = mapaOpsTrein[k] || []).push(t);
-                    }));
+                    monitoresQualidade.forEach(m => {
+                        const seen = new Set();
+                        (m.operacoes || []).forEach(o => {
+                            const k = String(o || '').trim().toUpperCase();
+                            if (!k || seen.has(k)) return;
+                            seen.add(k);
+                            (mapaOpsQual[k] = mapaOpsQual[k] || []).push(m);
+                        });
+                    });
+                    equipeTreinamento.forEach(t => {
+                        const seen = new Set();
+                        (t.operacoes || []).forEach(o => {
+                            const k = String(o || '').trim().toUpperCase();
+                            if (!k || seen.has(k)) return;
+                            seen.add(k);
+                            (mapaOpsTrein[k] = mapaOpsTrein[k] || []).push(t);
+                        });
+                    });
 
                     const linhasOps = ops.map(op => {
-                        const k = op.nome.toUpperCase();
-                        const resp = mapaOps[k] || [];
+                        const k = String(op.nome || '').trim().toUpperCase();
+                        const respQual = mapaOpsQual[k] || [];
                         const respTrein = mapaOpsTrein[k] || [];
-                        return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp, respTrein };
+                        return { nome: app.utils.fixEncoding(op.nome), hc: hcDe(op), resp: respQual, respQual, respTrein };
                     }).sort((a, b) => b.hc - a.hc);
 
                     const totalHc = linhasOps.reduce((a, o) => a + o.hc, 0);
-                    const semCobertura = linhasOps.filter(o => o.resp.length === 0);
-                    const hcDescoberto = semCobertura.reduce((a, o) => a + o.hc, 0);
-                    const compartilhadas = linhasOps.filter(o => o.resp.length > 1);
-                    const pctCobertura = totalHc > 0 ? Math.round(((totalHc - hcDescoberto) / totalHc) * 100) : 100;
+                    const semCoberturaQual = linhasOps.filter(o => o.respQual.length === 0);
+                    const semCoberturaTrein = linhasOps.filter(o => o.respTrein.length === 0);
+                    const hcDescobertoQual = semCoberturaQual.reduce((a, o) => a + o.hc, 0);
+                    const hcDescobertoTrein = semCoberturaTrein.reduce((a, o) => a + o.hc, 0);
+                    const pctCobQual = totalHc > 0 ? Math.round(((totalHc - hcDescobertoQual) / totalHc) * 100) : 100;
+                    const pctCobTrein = totalHc > 0 ? Math.round(((totalHc - hcDescobertoTrein) / totalHc) * 100) : 100;
+                    const compQualOps = linhasOps.filter(o => o.respQual.length > 1).length;
+                    const compTreinOps = linhasOps.filter(o => o.respTrein.length > 1).length;
 
-                    const spans = responsaveisSpan.map(m => ({ u: m, isQual: app.isUserQualidade(m), isTrein: app.isUserTreinamento(m), nome: app.utils.fixEncoding(m.nome), sp: app.getSpanUsuario(m) }))
-                        .map(x => ({ ...x, total: x.sp.span !== undefined ? x.sp.span : (x.sp.totalOperadores || 0), nOps: (x.sp.detalhes || []).length }))
+                    const spansAll = responsaveisSpan.map(m => ({
+                        u: m,
+                        isQual: isTrackQual(m),
+                        isTrein: isTrackTrein(m),
+                        frente: isTrackTrein(m) ? 'treinamento' : 'qualidade',
+                        nome: app.utils.fixEncoding(m.nome),
+                        sp: app.getSpanUsuario(m)
+                    }))
+                        .map(x => ({
+                            ...x,
+                            total: x.sp.span !== undefined ? x.sp.span : (x.sp.totalOperadores || 0),
+                            nOps: (x.sp.detalhes || []).length
+                        }))
                         .sort((a, b) => b.total - a.total);
-                    const spansQual = spans.filter(s => s.isQual);
-                    const media = spansQual.length ? Math.round(spansQual.reduce((a, s) => a + s.total, 0) / spansQual.length) : 0;
+
+                    const spansQual = spansAll.filter(s => s.isQual);
+                    const spansTrein = spansAll.filter(s => s.isTrein);
+                    const mediaQual = spansQual.length ? Math.round(spansQual.reduce((a, s) => a + s.total, 0) / spansQual.length) : 0;
+                    const mediaTrein = spansTrein.length ? Math.round(spansTrein.reduce((a, s) => a + s.total, 0) / spansTrein.length) : 0;
+
+                    const filtroFrente = this._spanFiltroFrente || 'todos';
+                    const spans = filtroFrente === 'qualidade'
+                        ? spansQual
+                        : (filtroFrente === 'treinamento' ? spansTrein : spansAll);
+
                     const maxSpan = Math.max(1, ...spans.map(s => s.total));
-                    const limiteAlto = Math.round(media * 1.25);
-                    const limiteBaixo = Math.round(media * 0.5);
-                    const statusSpan = (t) => {
+                    const statusSpan = (t, mediaRef) => {
+                        const limAlto = Math.round(mediaRef * 1.25);
+                        const limBaixo = Math.round(mediaRef * 0.5);
                         if (t === 0) return { rotulo: 'Sem span', bar: 'bg-slate-300 dark:bg-slate-600', badge: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400', icon: 'fa-circle-minus' };
-                        if (media > 0 && t > limiteAlto) return { rotulo: 'Sobrecarga', bar: 'bg-red-500', badge: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300', icon: 'fa-triangle-exclamation' };
-                        if (media > 0 && t < limiteBaixo) return { rotulo: 'Subutilizado', bar: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', icon: 'fa-arrow-trend-down' };
+                        if (mediaRef > 0 && t > limAlto) return { rotulo: 'Sobrecarga', bar: 'bg-red-500', badge: 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300', icon: 'fa-triangle-exclamation' };
+                        if (mediaRef > 0 && t < limBaixo) return { rotulo: 'Subutilizado', bar: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300', icon: 'fa-arrow-trend-down' };
                         return { rotulo: 'Equilibrado', bar: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', icon: 'fa-circle-check' };
                     };
-                    const sobrecarregados = spansQual.filter(s => statusSpan(s.total).rotulo === 'Sobrecarga').length;
+
+                    // Dash de Exclusivos vs Compartilhados (Nome + Operações)
+                    const listaExclusivos = spans
+                        .map(s => ({ ...s, opsLista: (s.sp.exclusivas || []) }))
+                        .filter(x => x.opsLista.length > 0);
+                    const listaCompartilhados = spans
+                        .map(s => ({ ...s, opsLista: (s.sp.compartilhadas || []) }))
+                        .filter(x => x.opsLista.length > 0);
+                    const totalAlocExclusivas = listaExclusivos.reduce((a, x) => a + x.opsLista.length, 0);
+                    const totalAlocCompartilhadas = listaCompartilhados.reduce((a, x) => a + x.opsLista.length, 0);
 
                     const kpi = (icon, label, valor, sub, alerta) => `
                         <div class="rounded-2xl border ${alerta ? 'border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} p-4">
@@ -31674,36 +31865,65 @@ storage: {
                             <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${sub}</div>
                         </div>`;
 
-                    const alertaCobertura = semCobertura.length === 0
-                        ? `<div class="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-900/10 text-sm text-emerald-700 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i>${isGestor ? 'Todas as operações da sua equipe possuem monitor responsável.' : 'Todas as operações do setorial possuem ao menos um monitor responsável.'}</div>`
-                        : `<div class="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10">
-                            <div class="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-300 mb-3"><i class="fa-solid fa-triangle-exclamation"></i>${semCobertura.length} operação(ões) sem monitor — ${hcDescoberto} operadores descobertos</div>
-                            <div class="flex flex-wrap gap-2">${semCobertura.map(o => `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(o.nome)}<span class="text-red-500 tabular-nums">${o.hc}</span></span>`).join('')}</div>
+                    const renderAlertaFrente = (titulo, semList, hcDesc, rotuloSem) => semList.length === 0
+                        ? `<div class="flex items-center gap-2.5 px-4 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/60 dark:bg-emerald-900/10 text-xs font-bold text-emerald-700 dark:text-emerald-300"><i class="fa-solid fa-circle-check"></i><span>${titulo}: 100% das operações cobertas</span></div>`
+                        : `<div class="p-3.5 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/10">
+                            <div class="flex items-center gap-2 text-xs font-bold text-red-600 dark:text-red-300 mb-2"><i class="fa-solid fa-triangle-exclamation"></i>${titulo}: ${semList.length} operação(ões) ${rotuloSem} (${hcDesc} op. descobertos)</div>
+                            <div class="flex flex-wrap gap-1.5">${semList.map(o => `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 text-[11px] font-semibold text-slate-700 dark:text-slate-200">${esc(o.nome)}<span class="text-red-500 tabular-nums font-bold">${o.hc}</span></span>`).join('')}</div>
                            </div>`;
 
+                    const renderRoleBadge = (s) => s.isTrein
+                        ? `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">Treinamento${s.u.subclasse ? ' · ' + esc(s.u.subclasse) : ''}</span>`
+                        : `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">Qualidade</span>`;
+
+                    const renderDashGrupoExclComp = (item, tipoCard) => {
+                        const searchMeta = `${item.nome} ${item.u.matricula} ${item.frente} ${item.opsLista.map(d => d.nome).join(' ')}`;
+                        const opsChips = item.opsLista.map(d => {
+                            const dNome = esc(app.utils.fixEncoding(d.nome));
+                            if (tipoCard === 'excl') {
+                                return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200/80 dark:border-emerald-800/60 text-[11px] font-bold">${dNome}<span class="text-emerald-600 dark:text-emerald-400 tabular-nums font-black">${d.hc} op.</span></span>`;
+                            }
+                            const comQuem = (d.compartilhadoCom || []).length > 0 ? ` • com ${esc(d.compartilhadoCom.map(n => n.split(' ')[0]).join(', '))}` : '';
+                            return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-200 border border-indigo-200/80 dark:border-indigo-800/60 text-[11px] font-bold" title="${dNome} (÷${d.qtdNaFrente}${comQuem})">${dNome}<span class="px-1.5 py-0.2 rounded bg-indigo-600 text-white text-[9px] font-black">÷${d.qtdNaFrente}</span><span class="text-indigo-600 dark:text-indigo-300 tabular-nums font-black">${d.hc}/${d.hcOriginal}</span>${comQuem ? `<span class="text-[10px] font-medium opacity-80">${comQuem}</span>` : ''}</span>`;
+                        }).join('');
+
+                        return `
+                            <div data-span-search="${esc(searchMeta)}" class="span-filterable-row p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2 min-w-0 flex-wrap">
+                                        <span class="font-extrabold text-xs text-slate-800 dark:text-white truncate">${esc(item.nome)}</span>
+                                        ${renderRoleBadge(item)}
+                                    </div>
+                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${esc(item.u.matricula)}')" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 cursor-pointer">Editar</button>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">${opsChips}</div>
+                            </div>
+                        `;
+                    };
+
                     const linhaMonitor = (s) => {
-                        const st = statusSpan(s.total);
+                        const mediaRef = s.isTrein ? mediaTrein : mediaQual;
+                        const st = statusSpan(s.total, mediaRef);
                         const pct = Math.round((s.total / maxSpan) * 100);
                         const nomesOps = (s.sp.detalhes || []).map(d => {
                             const nome = app.utils.fixEncoding(d.nome);
-                            return (s.isQual && d.compartilhado)
-                                ? `${nome} (div. ${d.qtdMonitores})`
-                                : nome;
+                            return d.compartilhado
+                                ? `${nome} (div. ${d.qtdNaFrente})`
+                                : `${nome} (excl.)`;
                         });
                         const opsTexto = nomesOps.length === 0
                             ? '<span class="text-slate-400">Sem operações</span>'
                             : esc(nomesOps.slice(0, 3).join(' · ')) + (nomesOps.length > 3 ? ` <span class="text-slate-400">+${nomesOps.length - 3}</span>` : '');
-                        const roleBadge = s.isTrein
-                            ? `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">Treinamento${s.u.subclasse ? ' · ' + esc(s.u.subclasse) : ''}</span>`
-                            : `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">Qualidade</span>`;
+                        const searchMeta = `${s.nome} ${s.u.matricula} ${s.frente} ${(s.sp.detalhes || []).map(d => d.nome).join(' ')}`;
+
                         return `
-                            <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors bg-white dark:bg-slate-900">
+                            <div data-span-search="${esc(searchMeta)}" class="span-filterable-row p-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors bg-white dark:bg-slate-900">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0 flex-1">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <span class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(s.nome)}">${esc(s.nome)}</span>
-                                            <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">#${s.u.matricula}</span>
-                                            ${roleBadge}
+                                            <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">#${esc(s.u.matricula)}</span>
+                                            ${renderRoleBadge(s)}
                                             <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${st.badge} shrink-0"><i class="fa-solid ${st.icon} text-[9px]"></i>${st.rotulo}</span>
                                         </div>
                                         <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate" title="${esc(nomesOps.join(', '))}">${opsTexto}</div>
@@ -31718,35 +31938,42 @@ storage: {
                                         <div class="h-full rounded-full ${st.bar} transition-all duration-500" style="width: ${Math.max(4, pct)}%"></div>
                                     </div>
                                     <div class="flex items-center justify-between text-[11px] text-slate-400 mt-1">
-                                        <span>${s.nOps} operação(ões)</span>
+                                        <span>${s.nOps} operação(ões) · ${(s.sp.exclusivas || []).length} excl. · ${(s.sp.compartilhadas || []).length} comp.</span>
                                         <span class="tabular-nums">${pct}% do maior span</span>
                                     </div>
                                 </div>
                                 <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-                                    <span class="text-[11px] text-slate-400 font-medium">${s.isQual ? `Meta mensal estimada: <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.sp.totalMonitoriasEsperadas || 0} mon.</strong>` : `Treinamento · Responsável por <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.nOps} op.</strong>`}</span>
-                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${s.u.matricula}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"><i class="fa-solid fa-pen-to-square mr-1"></i>Editar Operações</button>
+                                    <span class="text-[11px] text-slate-400 font-medium">${s.isQual ? `Meta mensal estimada: <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.sp.totalMonitoriasEsperadas || 0} mon.</strong>` : `Span Treinamento · <strong class="text-slate-700 dark:text-slate-300 tabular-nums">${s.nOps} op.</strong>`}</span>
+                                    <button type="button" onclick="app.ui.abrirModalOperacoesMonitor('${esc(s.u.matricula)}')" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"><i class="fa-solid fa-pen-to-square mr-1"></i>Editar Operações</button>
                                 </div>
                             </div>`;
                     };
 
                     const linhaOp = (o) => {
-                        const n = o.resp.length;
-                        const nomesQual = o.resp.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]);
-                        const nomesTrein = o.respTrein.map(r => `${app.utils.fixEncoding(r.nome).split(' ')[0]} (Trein.)`);
-                        const todosNomes = [...nomesQual, ...nomesTrein].join(', ');
-                        const badge = n === 0
-                            ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Sem monitor</span>'
-                            : n === 1
-                            ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">1 monitor</span>'
-                            : `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">${n} monitores (dividido)</span>`;
+                        const nQual = o.respQual.length;
+                        const nTrein = o.respTrein.length;
+                        const nomesQual = o.respQual.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]);
+                        const nomesTrein = o.respTrein.map(r => app.utils.fixEncoding(r.nome).split(' ')[0]);
+                        const qualBadge = nQual === 0
+                            ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">Qual: Sem monitor</span>'
+                            : (nQual === 1
+                                ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Qual: ${esc(nomesQual[0])} (excl.)</span>`
+                                : `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">Qual: ÷${nQual} (${esc(nomesQual.join(', '))})</span>`);
+                        const treinBadge = nTrein === 0
+                            ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">Trein: Sem cobertura</span>'
+                            : (nTrein === 1
+                                ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Trein: ${esc(nomesTrein[0])} (excl.)</span>`
+                                : `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">Trein: ÷${nTrein} (${esc(nomesTrein.join(', '))})</span>`);
+                        const searchMeta = `${o.nome} ${nomesQual.join(' ')} ${nomesTrein.join(' ')}`;
+
                         return `
-                            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3">
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex items-center gap-2">
-                                        <span class="font-extrabold text-xs text-slate-800 dark:text-white uppercase truncate" title="${esc(o.nome)}">${esc(o.nome)}</span>
-                                        ${badge}
+                            <div data-span-search="${esc(searchMeta)}" class="span-filterable-row p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3">
+                                <div class="min-w-0 flex-1 space-y-1.5">
+                                    <div class="font-extrabold text-xs text-slate-800 dark:text-white uppercase truncate" title="${esc(o.nome)}">${esc(o.nome)}</div>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${qualBadge}
+                                        ${treinBadge}
                                     </div>
-                                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" title="${esc(todosNomes)}">${todosNomes ? esc(todosNomes) : '<span class="italic text-slate-400">Ninguém cuidando</span>'}</div>
                                 </div>
                                 <div class="text-right shrink-0">
                                     <div class="text-base font-black text-slate-800 dark:text-white tabular-nums">${o.hc}</div>
@@ -31754,6 +31981,8 @@ storage: {
                                 </div>
                             </div>`;
                     };
+
+                    const pillFrenteCls = (id) => `px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${filtroFrente === id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`;
 
                     container.innerHTML = `
                         <div class="space-y-6 animate-fade-in max-w-7xl mx-auto">
@@ -31765,30 +31994,77 @@ storage: {
                                         </span>
                                     </div>
                                     <h2 class="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">${isGestor ? 'Span & Cobertura da Minha Equipe' : 'Span & Cobertura de Operações'}</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">${isGestor ? 'Equilíbrio da carga operacional e cobertura de Qualidade & Treinamento.' : 'Monitore a carga de Qualidade e Treinamento e garanta 100% de cobertura das operações.'}</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Span independente por frente: Qualidade divide apenas entre Qualidade; Treinamento divide apenas entre Treinamento.</p>
                                 </div>
-                                <div class="flex flex-wrap gap-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <div class="flex items-center gap-1.5">
+                                        <button type="button" onclick="app.ui.setSpanFiltroFrente('todos')" class="${pillFrenteCls('todos')}">Todos (${spansAll.length})</button>
+                                        <button type="button" onclick="app.ui.setSpanFiltroFrente('qualidade')" class="${pillFrenteCls('qualidade')}">Qualidade (${spansQual.length})</button>
+                                        <button type="button" onclick="app.ui.setSpanFiltroFrente('treinamento')" class="${pillFrenteCls('treinamento')}">Treinamento (${spansTrein.length})</button>
+                                    </div>
+                                    <div class="relative">
+                                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input type="text" value="${esc(this._spanBusca || '')}" oninput="app.ui.setSpanBusca(this.value)" placeholder="Buscar nome ou operação..." class="pl-8 pr-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white w-48 sm:w-56">
+                                    </div>
                                     <button type="button" onclick="app.ui.renderTab('hierarquia', true)" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"><i class="fa-solid fa-sitemap mr-1.5"></i>Organograma</button>
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                ${kpi('fa-users', 'Qualidade & Treinamento', responsaveisSpan.length, `${monitoresQualidade.length} Qualidade · ${equipeTreinamento.length} Treinamento`, false)}
-                                ${kpi('fa-chart-line', 'Span Médio (Qualidade)', media, 'operadores / monitor', sobrecarregados > 0)}
-                                ${kpi('fa-layer-group', isGestor ? 'Operações da Equipe' : 'Operações Setoriais', linhasOps.length, `${compartilhadas.length} compartilhadas`, false)}
-                                ${kpi('fa-shield-halved', 'Cobertura Setorial', `${pctCobertura}%`, isGestor ? 'da carga da equipe' : `${semCobertura.length} operações descobertas`, semCobertura.length > 0)}
+                                ${kpi('fa-headset', 'Span Médio · Qualidade', mediaQual, `${monitoresQualidade.length} monitor(es) · ${pctCobQual}% cob. · ${compQualOps} comp.`, false)}
+                                ${kpi('fa-graduation-cap', 'Span Médio · Treinamento', mediaTrein, `${equipeTreinamento.length} integrante(s) · ${pctCobTrein}% cob. · ${compTreinOps} comp.`, false)}
+                                ${kpi('fa-user-check', 'Exclusivos (Na Frente)', totalAlocExclusivas, `${listaExclusivos.length} pessoa(s) sem divisão na frente`, false)}
+                                ${kpi('fa-users-between-lines', 'Compartilhados (Divididos)', totalAlocCompartilhadas, `${listaCompartilhados.length} pessoa(s) dividindo operação`, false)}
                             </div>
 
-                            ${alertaCobertura}
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                ${renderAlertaFrente('Qualidade', semCoberturaQual, hcDescobertoQual, 'sem monitor')}
+                                ${renderAlertaFrente('Treinamento', semCoberturaTrein, hcDescobertoTrein, 'sem analista/instrutor')}
+                            </div>
+
+                            <!-- DASH: EXCLUSIVOS VS COMPARTILHADOS (NOME + OPERAÇÃO) -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                                <section class="bg-white dark:bg-slate-900 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/50 p-4 sm:p-5 space-y-3 shadow-xs">
+                                    <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-sm"><i class="fa-solid fa-user-shield"></i></span>
+                                            <div>
+                                                <h3 class="text-sm font-extrabold text-slate-800 dark:text-white">Exclusivos (100% da Frente)</h3>
+                                                <p class="text-[11px] text-slate-400">Responsáveis únicos pela operação dentro de sua frente</p>
+                                            </div>
+                                        </div>
+                                        <span class="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-black tabular-nums">${listaExclusivos.length} nomes · ${totalAlocExclusivas} op.</span>
+                                    </div>
+                                    <div class="space-y-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                                        ${listaExclusivos.length ? listaExclusivos.map(item => renderDashGrupoExclComp(item, 'excl')).join('') : '<div class="p-6 text-center text-xs text-slate-400 italic">Nenhum colaborador com operação exclusiva neste filtro.</div>'}
+                                    </div>
+                                </section>
+
+                                <section class="bg-white dark:bg-slate-900 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/50 p-4 sm:p-5 space-y-3 shadow-xs">
+                                    <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                                        <div class="flex items-center gap-2.5">
+                                            <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm"><i class="fa-solid fa-people-arrows"></i></span>
+                                            <div>
+                                                <h3 class="text-sm font-extrabold text-slate-800 dark:text-white">Compartilhados (Divididos na Frente)</h3>
+                                                <p class="text-[11px] text-slate-400">Operações divididas proporcionalmente entre pares da mesma frente</p>
+                                            </div>
+                                        </div>
+                                        <span class="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-black tabular-nums">${listaCompartilhados.length} nomes · ${totalAlocCompartilhadas} op.</span>
+                                    </div>
+                                    <div class="space-y-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                                        ${listaCompartilhados.length ? listaCompartilhados.map(item => renderDashGrupoExclComp(item, 'comp')).join('') : '<div class="p-6 text-center text-xs text-slate-400 italic">Nenhuma operação compartilhada na mesma frente neste filtro.</div>'}
+                                    </div>
+                                </section>
+                            </div>
 
                             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                                 <div class="lg:col-span-2 space-y-4">
-                                    <div class="flex items-center justify-between">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
                                         <h3 class="text-sm font-extrabold text-slate-800 dark:text-white uppercase tracking-wider"><i class="fa-solid fa-scale-balanced mr-2 text-indigo-500"></i>Responsabilidade & Span — Qualidade e Treinamento (${spans.length})</h3>
-                                        <span class="text-xs text-slate-400 font-medium">Equilíbrio Qualidade: ~${limiteBaixo} a ${limiteAlto} op.</span>
+                                        <span class="text-xs text-slate-400 font-medium">Média Qualidade: ${mediaQual} op. · Média Treinamento: ${mediaTrein} op.</span>
                                     </div>
                                     <div class="space-y-3">
-                                        ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhum colaborador de Qualidade ou Treinamento cadastrado.</div>'}
+                                        ${spans.length ? spans.map(linhaMonitor).join('') : '<div class="p-8 text-center text-slate-400 italic bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">Nenhum colaborador de Qualidade ou Treinamento cadastrado neste filtro.</div>'}
                                     </div>
                                 </div>
 
@@ -31804,6 +32080,9 @@ storage: {
                             </div>
                         </div>
                     `;
+                    if (this._spanBusca && this._spanBusca.trim()) {
+                        this.setSpanBusca(this._spanBusca);
+                    }
                 },
 
                 _iaViewMode: 'gantt',
@@ -41311,23 +41590,43 @@ storage: {
                             <p class="text-sm max-w-md mx-auto">Buscando os relatórios processados anteriormente no banco de dados local do seu navegador.</p>
                         </div>`;
                         
-                        localforage.getItem('soft_analise_data').then(savedData => {
-                            this.hasTriedToFetchAnaliseData = true; // Trava mágica: Só tenta buscar na memória 1x!
-                            if (savedData) {
-                                app.analiseCSVDinamicoData = savedData;
-                                app.admin.gerarInteligenciaCSV(); 
-                            }
+                        if (typeof localforage !== 'undefined') {
+                            localforage.getItem('soft_analise_data').then(savedData => {
+                                this.hasTriedToFetchAnaliseData = true; // Trava mágica: Só tenta buscar na memória 1x!
+                                if (savedData && typeof savedData === 'object') {
+                                    app.analiseCSVDinamicoData = savedData;
+                                    try {
+                                        if (Array.isArray(savedData.relatorios) && savedData.relatorios.length > 0) {
+                                            app.admin.gerarInteligenciaCSV();
+                                        }
+                                    } catch (eCache) {
+                                        console.warn('Cache local de apresentação inválido, ignorando reconstrução:', eCache);
+                                        if (!savedData.consolidado) {
+                                            app.analiseCSVDinamicoData = null;
+                                            localforage.removeItem('soft_analise_data').catch(() => {});
+                                        }
+                                    }
+                                }
+                                this.isFetchingAnaliseData = false;
+                                app.ui.renderTab('analise_csv_dinamico', true);
+                            }).catch(e => {
+                                this.hasTriedToFetchAnaliseData = true; // Trava acionada também em caso de erro
+                                this.isFetchingAnaliseData = false;
+                                app.ui.renderTab('analise_csv_dinamico', true);
+                            });
+                        } else {
+                            this.hasTriedToFetchAnaliseData = true;
                             this.isFetchingAnaliseData = false;
                             app.ui.renderTab('analise_csv_dinamico', true);
-                        }).catch(e => {
-                            this.hasTriedToFetchAnaliseData = true; // Trava acionada também em caso de erro
-                            this.isFetchingAnaliseData = false;
-                            app.ui.renderTab('analise_csv_dinamico', true);
-                        });
+                        }
                         return; // Pausa a renderização até os dados voltarem do HD
                     }
         
+                    const _toArr = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
                     let mainData = app.analiseCSVDinamicoData || null;
+                    if (mainData && mainData.relatorios && !Array.isArray(mainData.relatorios)) {
+                        mainData.relatorios = _toArr(mainData.relatorios);
+                    }
                     if (mainData && Array.isArray(mainData.relatorios) && mainData.relatorios.length > 0 && (!mainData.consolidado || !Array.isArray(mainData.consolidado.evolutivoMesLabels))) {
                         const rhSnapBackup = mainData.consolidado ? mainData.consolidado.rhSnapshot : null;
                         try { app.admin.gerarInteligenciaCSV(); } catch (eGen) { console.warn('Aviso ao atualizar consolidado:', eGen); }
@@ -41335,24 +41634,26 @@ storage: {
                             mainData.consolidado.rhSnapshot = rhSnapBackup;
                         }
                     }
-                    let data = mainData ? mainData.consolidado : null;
+                    let data = (mainData && mainData.consolidado && typeof mainData.consolidado === 'object') ? mainData.consolidado : null;
                     if (data) {
-                        if (!data.operadores) data.operadores = {};
+                        if (!data.operadores || typeof data.operadores !== 'object') data.operadores = {};
                         if (!Array.isArray(data.rankOperadores)) data.rankOperadores = Object.values(data.operadores);
-                        if (!Array.isArray(data.rankMonitores)) data.rankMonitores = [];
-                        if (!Array.isArray(data.falhasComunsArray)) data.falhasComunsArray = [];
-                        if (!Array.isArray(data.falhasCriticasArray)) data.falhasCriticasArray = [];
+                        if (!Array.isArray(data.rankMonitores)) data.rankMonitores = _toArr(data.rankMonitores);
+                        if (!Array.isArray(data.falhasComunsArray)) data.falhasComunsArray = _toArr(data.falhasComunsArray);
+                        if (!Array.isArray(data.falhasCriticasArray)) data.falhasCriticasArray = _toArr(data.falhasCriticasArray);
                         if (!data.feedbacksGlobais) data.feedbacksGlobais = { aplicado: 0, nao_aplicado: 0, monitorado: 0 };
-                        if (!Array.isArray(data.mesesDisponiveis)) data.mesesDisponiveis = [];
-                        if (!Array.isArray(data.ciclosDisponiveis)) data.ciclosDisponiveis = [];
+                        if (!Array.isArray(data.mesesDisponiveis)) data.mesesDisponiveis = _toArr(data.mesesDisponiveis);
+                        if (!Array.isArray(data.ciclosDisponiveis)) data.ciclosDisponiveis = _toArr(data.ciclosDisponiveis);
+                        if (!Array.isArray(data.assuntosDisponiveis)) data.assuntosDisponiveis = _toArr(data.assuntosDisponiveis);
+                        if (data.acoesSelecionadas && !Array.isArray(data.acoesSelecionadas)) data.acoesSelecionadas = _toArr(data.acoesSelecionadas);
                         if (!Array.isArray(data.evolutivoMesLabels)) data.evolutivoMesLabels = data.mesesDisponiveis.map(m => app.ui.formatMonthLabel(m));
-                        if (!Array.isArray(data.evolutivoMesData)) data.evolutivoMesData = Array.isArray(data.evolutivoChartData) ? data.evolutivoChartData : [];
-                        if (!Array.isArray(data.evolutivoCicloLabels)) data.evolutivoCicloLabels = [];
-                        if (!Array.isArray(data.evolutivoCicloData)) data.evolutivoCicloData = [];
+                        if (!Array.isArray(data.evolutivoMesData)) data.evolutivoMesData = Array.isArray(data.evolutivoChartData) ? data.evolutivoChartData : _toArr(data.evolutivoMesData);
+                        if (!Array.isArray(data.evolutivoCicloLabels)) data.evolutivoCicloLabels = _toArr(data.evolutivoCicloLabels);
+                        if (!Array.isArray(data.evolutivoCicloData)) data.evolutivoCicloData = _toArr(data.evolutivoCicloData);
                         if (!Array.isArray(data.evolutivoChartLabels)) data.evolutivoChartLabels = data.evolutivoMesLabels;
                         if (!Array.isArray(data.evolutivoChartData)) data.evolutivoChartData = data.evolutivoMesData;
-                        if (!Array.isArray(data.evolutivoPioresIniciais)) data.evolutivoPioresIniciais = [];
-                        if (!Array.isArray(data.evolutivoQuedas)) data.evolutivoQuedas = [];
+                        if (!Array.isArray(data.evolutivoPioresIniciais)) data.evolutivoPioresIniciais = _toArr(data.evolutivoPioresIniciais);
+                        if (!Array.isArray(data.evolutivoQuedas)) data.evolutivoQuedas = _toArr(data.evolutivoQuedas);
                         if (!data.mesesEvolutivo) data.mesesEvolutivo = {};
                         if (!data.operadoresEvolutivo) data.operadoresEvolutivo = {};
                     }
@@ -41447,7 +41748,7 @@ storage: {
 
                         return `
                             <div class="w-full flex flex-col items-center justify-center text-center mt-20 mb-12 relative z-10 chapter-marker">
-                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_0_20px_rgba(0,0,0,0.2)] border${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl ${t.bg} ${t.text} mb-4 shadow-[0_0_20px_rgba(0,0,0,0.2)] border ${t.border} transform -rotate-3 hover:rotate-0 transition-transform duration-300">
                                     <i class="fa-solid ${icon} text-3xl drop-shadow-md"></i>
                                 </div>
                                 <div class="flex items-center gap-3 mb-2 opacity-80">
@@ -41570,7 +41871,7 @@ storage: {
                                             Apresentação de Resultados • Analytics IA
                                         </div>
                                         <div class="flex flex-wrap items-center gap-3">
-                                            <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-sm outline-none focus:border-b-2 focus:border-white/70 px-1.5 -mx-1.5 rounded-lg hover:bg-white/10 transition-all truncate max-w-2xl" title="Clique para editar o título">${data ? (data.customTitle || data.infoOperacao) : 'Apresentação de Resultados'}</h2>
+                                            <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; if(typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {}); }" class="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-sm outline-none focus:border-b-2 focus:border-white/70 px-1.5 -mx-1.5 rounded-lg hover:bg-white/10 transition-all truncate max-w-2xl" title="Clique para editar o título">${data ? (data.customTitle || data.infoOperacao) : 'Apresentação de Resultados'}</h2>
                                             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 border border-white/20 text-[11px] font-semibold text-white/95 whitespace-nowrap shrink-0">
                                                 <i class="fa-regular fa-calendar text-[11px] opacity-80"></i>
                                                 <span>Base Ref: <strong class="font-extrabold text-white">${data ? data.infoData : 'Aguardando Arquivo...'}</strong></span>
@@ -41585,13 +41886,13 @@ storage: {
                                         <label class="inline-flex items-center gap-1.5 text-[10px] font-bold text-white/90 uppercase tracking-wider cursor-pointer">
                                             <i class="fa-solid fa-heading opacity-80"></i>
                                             <span>Título</span>
-                                            <input type="color" value="${data.titleColor || '#ffffff'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
+                                            <input type="color" value="${data.titleColor || '#ffffff'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; if(typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {}); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
                                         </label>
                                         <span class="w-px h-4 bg-white/25"></span>
                                         <label class="inline-flex items-center gap-1.5 text-[10px] font-bold text-white/90 uppercase tracking-wider cursor-pointer">
                                             <i class="fa-solid fa-fill-drip opacity-80"></i>
                                             <span>Fundo</span>
-                                            <input type="color" value="${userBg}" onchange="app.analiseCSVDinamicoData.consolidado.bgColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
+                                            <input type="color" value="${userBg}" onchange="app.analiseCSVDinamicoData.consolidado.bgColor = this.value; if(typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {}); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
                                         </label>
                                     </div>` : ''}
                                     ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
@@ -42688,27 +42989,29 @@ storage: {
                     `;
 
                     let acoesDinamicasHtml = '';
-                        if (data.acoesSelecionadas && data.acoesSelecionadas.length > 0) {
-                            let totalAcoes = data.acoesSelecionadas.length;
+                        const acoesSelArr = Array.isArray(data.acoesSelecionadas) ? data.acoesSelecionadas : (data.acoesSelecionadas && typeof data.acoesSelecionadas === 'object' ? Object.values(data.acoesSelecionadas) : []);
+                        if (acoesSelArr.length > 0) {
+                            let totalAcoes = acoesSelArr.length;
                             let opsImpactados = 0;
                             let monitoresAcaoMap = {};
                             let todasFotos = [];
 
-                            data.acoesSelecionadas.forEach(idAct => {
+                            acoesSelArr.forEach(idAct => {
                                 const act = app.actionsList ? app.actionsList[idAct] : null;
                                 if(act) {
                                     opsImpactados += parseInt(act.operadores) || 0;
                                     if(!monitoresAcaoMap[act.matricula]) {
                                         const u = (app.users || []).find(x => x.matricula === act.matricula);
                                         monitoresAcaoMap[act.matricula] = {
-                                            nome: u ? u.nome.split(' ')[0] : act.nome,
-                                            foto: u && u.foto ? u.foto : `https://ui-avatars.com/api/?name=${encodeURIComponent(act.nome)}&background=cbd5e1&color=ffffff`
+                                            nome: u && u.nome ? String(u.nome).split(' ')[0] : (act.nome || 'Monitor'),
+                                            foto: u && u.foto ? u.foto : `https://ui-avatars.com/api/?name=${encodeURIComponent(act.nome || 'M')}&background=cbd5e1&color=ffffff`
                                         };
                                     }
-                                    let fotos = act.photos || (act.photo ? [act.photo] : []);
+                                    const rawFotos = act.photos || (act.photo ? [act.photo] : []);
+                                    const fotos = Array.isArray(rawFotos) ? rawFotos : (rawFotos && typeof rawFotos === 'object' ? Object.values(rawFotos) : []);
                                     fotos.forEach(f => {
-                                        if(f && !f.startsWith('data:application/pdf')) {
-                                            todasFotos.push({ src: f, tema: act.objetivo, id: act.id });
+                                        if(f && typeof f === 'string' && !f.startsWith('data:application/pdf')) {
+                                            todasFotos.push({ src: f, tema: act.objetivo || 'Ação Presencial', id: act.id });
                                         }
                                     });
                                 }
@@ -45139,9 +45442,12 @@ storage: {
 
                                 htmlLobby += `
                                     <div class="glass-card p-6 rounded-3xl shadow-sm hover:shadow-md border-t-4 border-t-blue-500 hover:border-blue-400 transition-all cursor-pointer group flex flex-col relative" onclick="app.admin.kantarAbrirProjeto('${p.id}')">
-                                        ${canManageKantar ? `<button onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="absolute top-5 right-5 text-slate-300 hover:text-red-500 transition-colors z-10" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
+                                        <div class="absolute top-5 right-5 flex items-center gap-2 z-10">
+                                            <button type="button" onclick="event.stopPropagation(); app.admin.openExportKantarGestoresModal('${p.id}', false)" class="text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors p-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20" title="Exportar Relatório para Gestores"><i class="fa-solid fa-file-export"></i></button>
+                                            ${canManageKantar ? `<button type="button" onclick="event.stopPropagation(); app.admin.kantarExcluirProjeto('${p.id}')" class="text-slate-300 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Apagar Projeto"><i class="fa-solid fa-trash"></i></button>` : ''}
+                                        </div>
                                         <div class="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center text-xl mb-4 border border-blue-100 dark:border-blue-800/50 group-hover:bg-blue-500 group-hover:text-white transition-colors"><i class="fa-solid fa-chart-pie"></i></div>
-                                        <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-6" title="${p.nome}">${p.nome}</h3>
+                                        <h3 class="font-black text-lg text-slate-800 dark:text-white mb-1 truncate pr-14" title="${p.nome}">${p.nome}</h3>
                                         <p class="text-xs text-slate-500 font-bold tracking-widest uppercase mb-3">Pesquisas Base: <span class="text-blue-500">${qReals}</span></p>
                                         
                                         <div class="mt-auto border-t border-slate-100 dark:border-slate-700 pt-3 flex flex-col gap-2 relative z-10">
@@ -45230,10 +45536,10 @@ storage: {
                             </div>
                     `;
 
-                    // Painel Exclusivo ADM
-                    if(canManageKantar) {
+                    // Painel de Ações (Gestores + ADM)
+                    html += `<div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">`;
+                    if (canManageKantar) {
                         html += `
-                            <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 w-full xl:w-auto">
                                 <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl shadow-sm">
                                     <label class="text-[10px] font-bold text-slate-500 uppercase">Meta Global (%):</label>
                                     <input type="number" value="${metaProj}" onchange="app.admin.kantarAtualizarMeta(this.value)" class="w-16 p-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-sm font-black text-blue-600 text-center outline-none focus:ring-2 focus:ring-blue-500 transition-all">
@@ -45247,7 +45553,6 @@ storage: {
                                     <i class="fa-solid fa-file-excel"></i> Importar Relatórios Padrão
                                     <input type="file" accept=".xlsx, .xls, .csv" multiple class="hidden" onchange="app.admin.processarKantarPadrao(this)" onclick="this.value = null">
                                 </label>
-                            </div>
                         `;
                     } else {
                         // Visão do usuário padrão (Mostra a meta apenas como leitura)
@@ -45258,7 +45563,12 @@ storage: {
                             </div>
                         `;
                     }
-                    html += `</div>`;
+                    html += `
+                            <button type="button" onclick="app.admin.openExportKantarGestoresModal()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2 text-sm whitespace-nowrap">
+                                <i class="fa-solid fa-briefcase"></i> Exportar para Gestores
+                            </button>
+                        </div>
+                    </div>`;
                     
                     if (reg.length === 0 && canc.length === 0) {
                         html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">${canManageKantar ? 'Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.' : 'Nenhuma planilha importada neste projeto ainda. Somente o perfil Dev pode editar e importar dados.'}</p></div>`;
@@ -45385,7 +45695,10 @@ storage: {
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-6">
                             <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador ${selectedCamp ? `<span class="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-black normal-case">${selectedCamp}</span>` : ''}</h3>
-                                <button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-download"></i> Extrair Tabela</button>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button type="button" onclick="app.admin.openExportKantarGestoresModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-briefcase"></i> Exportar p/ Gestores</button>
+                                    <button type="button" onclick="app.admin.exportKantarDetalhado()" class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-download"></i> Extrair Tabela</button>
+                                </div>
                             </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
@@ -46402,55 +46715,573 @@ storage: {
                     input.value = '';
                 },
 
-                exportKantarDetalhado() {
-                    if(!app.anatelData.projetoAtivo) return;
-                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
-                    const metaProj = proj.meta || 10;
-                    const selectedCamp = app.ui?.anatelCampanhaFilter || null;
+                _buildKantarExportData(projId = null, applyCampFilter = true) {
+                    const targetId = projId || app.anatelData?.projetoAtivo;
+                    const proj = targetId ? app.anatelData?.projetos?.[targetId] : null;
+                    if (!proj) return null;
+
+                    const metaProj = Number(proj.meta) || 10;
+                    const selectedCamp = applyCampFilter ? (app.ui?.anatelCampanhaFilter || null) : null;
                     const reg = (proj.registros || []).filter(r => !selectedCamp || r.campanha === selectedCamp);
                     const canc = (proj.canceladasNovas || []).filter(c => !selectedCamp || c.campanha === selectedCamp);
-                    if(reg.length === 0) return app.ui.showAlert("Erro", "Sem dados para exportar.", "error");
+                    if (reg.length === 0 && canc.length === 0) return { empty: true, proj, selectedCamp, metaProj };
+
+                    let totalRealizadas = 0;
+                    let totalEscuta = 0;
+                    let totalNovasCanc = 0;
+                    let totalCancFor = 0;
+                    let totalCancCq = 0;
 
                     const operadoresMap = {};
+                    const campanhasMap = {};
+                    const motivosMap = {};
+
+                    const ensureOp = (nome) => {
+                        const key = String(nome || 'Sem Nome').trim() || 'Sem Nome';
+                        if (!operadoresMap[key]) {
+                            operadoresMap[key] = { nome: key, campanhasSet: new Set(), realizadas: 0, escuta: 0, novasCanc: 0, cancFor: 0, cancCq: 0 };
+                        }
+                        return operadoresMap[key];
+                    };
+                    const ensureCamp = (camp) => {
+                        const key = String(camp || 'Geral').trim() || 'Geral';
+                        if (!campanhasMap[key]) {
+                            campanhasMap[key] = { campanha: key, realizadas: 0, escuta: 0, novasCanc: 0, cancFor: 0, cancCq: 0, opsSet: new Set() };
+                        }
+                        return campanhasMap[key];
+                    };
 
                     reg.forEach(r => {
-                        if(!operadoresMap[r.entrevistador]) operadoresMap[r.entrevistador] = { nome: r.entrevistador, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
-                        operadoresMap[r.entrevistador].realizadas += r.realizadas;
-                        operadoresMap[r.entrevistador].escuta += r.escuta;
-                        operadoresMap[r.entrevistador].cancFor += r.cancFor;
-                        operadoresMap[r.entrevistador].cancCq += r.cancCq;
+                        const rl = Number(r.realizadas) || 0;
+                        const es = Number(r.escuta) || 0;
+                        const cf = Number(r.cancFor) || 0;
+                        const cc = Number(r.cancCq) || 0;
+                        totalRealizadas += rl;
+                        totalEscuta += es;
+                        totalCancFor += cf;
+                        totalCancCq += cc;
+
+                        const op = ensureOp(r.entrevistador);
+                        op.realizadas += rl;
+                        op.escuta += es;
+                        op.cancFor += cf;
+                        op.cancCq += cc;
+                        if (r.campanha) op.campanhasSet.add(String(r.campanha));
+
+                        const cp = ensureCamp(r.campanha);
+                        cp.realizadas += rl;
+                        cp.escuta += es;
+                        cp.cancFor += cf;
+                        cp.cancCq += cc;
+                        if (r.entrevistador) cp.opsSet.add(op.nome);
                     });
 
                     canc.forEach(c => {
-                        if(!operadoresMap[c.entrevistador]) operadoresMap[c.entrevistador] = { nome: c.entrevistador, realizadas: 0, escuta: 0, cancFor: 0, cancCq: 0, novasCanc: 0 };
-                        operadoresMap[c.entrevistador].novasCanc += c.qtd;
+                        const q = Number(c.qtd) || 0;
+                        totalNovasCanc += q;
+
+                        const op = ensureOp(c.entrevistador);
+                        op.novasCanc += q;
+                        if (c.campanha) op.campanhasSet.add(String(c.campanha));
+
+                        const cp = ensureCamp(c.campanha);
+                        cp.novasCanc += q;
+                        if (c.entrevistador) cp.opsSet.add(op.nome);
+
+                        const motivoNome = String(c.motivo || 'Não Informado').trim() || 'Não Informado';
+                        const campNome = String(c.campanha || 'Geral').trim() || 'Geral';
+                        const mKey = `${motivoNome}|||${campNome}`;
+                        if (!motivosMap[mKey]) motivosMap[mKey] = { motivo: motivoNome, campanha: campNome, qtd: 0 };
+                        motivosMap[mKey].qtd += q;
                     });
 
-                    const rows = Object.values(operadoresMap).map(o => {
-                        let pct = 0; let falta = 0;
-                        if (o.realizadas > 0) {
-                            pct = (((o.escuta + o.novasCanc) / o.realizadas) * 100).toFixed(2);
-                            let metaValidadas = Math.ceil(o.realizadas * (metaProj / 100));
-                            falta = Math.max(0, metaValidadas - (o.escuta + o.novasCanc));
-                        }
+                    const totalMonitoriasRealizadas = totalEscuta + totalNovasCanc;
+                    const totalCancGeral = totalCancFor + totalCancCq;
+                    const metaAbsoluta = Math.ceil(totalRealizadas * (metaProj / 100));
+                    const faltaTotal = Math.max(0, metaAbsoluta - totalMonitoriasRealizadas);
+                    const pctValidadas = totalRealizadas > 0 ? Number(((totalEscuta / totalRealizadas) * 100).toFixed(2)) : 0;
+                    const pctMonitorado = totalRealizadas > 0 ? Number(((totalMonitoriasRealizadas / totalRealizadas) * 100).toFixed(2)) : 0;
+
+                    const calcStats = (realizadas, escuta, novasCanc) => {
+                        const totMon = escuta + novasCanc;
+                        const pctMon = realizadas > 0 ? Number(((totMon / realizadas) * 100).toFixed(2)) : 0;
+                        const pctVal = realizadas > 0 ? Number(((escuta / realizadas) * 100).toFixed(2)) : 0;
+                        const metaAbs = realizadas > 0 ? Math.ceil(realizadas * (metaProj / 100)) : 0;
+                        const falta = Math.max(0, metaAbs - totMon);
+                        let status = 'META ATINGIDA';
+                        if (realizadas === 0) status = 'SEM REALIZADAS';
+                        else if (totMon === 0) status = 'ZERADO (0%)';
+                        else if (pctMon < metaProj) status = pctMon < (metaProj / 2) ? 'CRÍTICO' : 'ABAIXO DA META';
+                        return { totMon, pctMon, pctVal, metaAbs, falta, status };
+                    };
+
+                    const campanhasList = Object.values(campanhasMap).map(cp => {
+                        const st = calcStats(cp.realizadas, cp.escuta, cp.novasCanc);
                         return {
+                            campanha: cp.campanha,
+                            qtdOperadores: cp.opsSet.size,
+                            realizadas: cp.realizadas,
+                            escuta: cp.escuta,
+                            novasCanc: cp.novasCanc,
+                            monitoriasTotais: st.totMon,
+                            cancFor: cp.cancFor,
+                            cancCq: cp.cancCq,
+                            metaAbsoluta: st.metaAbs,
+                            falta: st.falta,
+                            pctValidadas: st.pctVal,
+                            pctMonitorado: st.pctMon,
+                            status: st.status
+                        };
+                    }).sort((a, b) => b.falta - a.falta || b.realizadas - a.realizadas);
+
+                    const operadoresList = Object.values(operadoresMap).map(op => {
+                        const st = calcStats(op.realizadas, op.escuta, op.novasCanc);
+                        return {
+                            nome: op.nome,
+                            campanhas: Array.from(op.campanhasSet).sort().join(', ') || '-',
+                            realizadas: op.realizadas,
+                            escuta: op.escuta,
+                            novasCanc: op.novasCanc,
+                            monitoriasTotais: st.totMon,
+                            cancFor: op.cancFor,
+                            cancCq: op.cancCq,
+                            metaAbsoluta: st.metaAbs,
+                            falta: st.falta,
+                            pctValidadas: st.pctVal,
+                            pctMonitorado: st.pctMon,
+                            status: st.status
+                        };
+                    }).sort((a, b) => b.falta - a.falta || a.pctMonitorado - b.pctMonitorado || b.realizadas - a.realizadas);
+
+                    const motivosList = Object.values(motivosMap).map(m => ({
+                        ...m,
+                        pctSobreCanc: totalNovasCanc > 0 ? Number(((m.qtd / totalNovasCanc) * 100).toFixed(2)) : 0
+                    })).sort((a, b) => b.qtd - a.qtd || a.motivo.localeCompare(b.motivo));
+
+                    const opsZerados = operadoresList.filter(o => o.realizadas > 0 && o.monitoriasTotais === 0).length;
+                    const opsAbaixo = operadoresList.filter(o => o.realizadas > 0 && o.monitoriasTotais > 0 && o.pctMonitorado < metaProj).length;
+                    const opsAtingidos = operadoresList.filter(o => o.realizadas > 0 && o.pctMonitorado >= metaProj).length;
+
+                    const escopoLabel = selectedCamp ? `Campanha: ${selectedCamp}` : `Projeto Completo (${campanhasList.length} campanha${campanhasList.length === 1 ? '' : 's'})`;
+                    const statusGeral = pctMonitorado >= metaProj ? `META ATINGIDA (${pctMonitorado}% / ${metaProj}%)` : `ABAIXO DA META (${pctMonitorado}% / ${metaProj}% — faltam ${faltaTotal} monitorias)`;
+
+                    const topCampsCriticas = campanhasList.filter(c => c.falta > 0).slice(0, 3);
+                    const topMotivos = motivosList.slice(0, 3);
+                    const agoraStr = new Date().toLocaleString('pt-BR');
+
+                    const linhasTexto = [
+                        `📊 *KANTAR — POSIÇÃO EXECUTIVA PARA GESTORES*`,
+                        `📁 *Projeto:* ${proj.nome}`,
+                        `🔎 *Escopo:* ${escopoLabel}`,
+                        `🕒 *Atualizado em:* ${agoraStr}`,
+                        ``,
+                        `*1. Indicadores Principais:*`,
+                        `• Pesquisas Realizadas (Base): *${totalRealizadas}*`,
+                        `• Monitorias Totais (Escuta + Canc. S/ Valid.): *${totalMonitoriasRealizadas}* (${escopoLabel ? `${totalEscuta} escutas + ${totalNovasCanc} canc. s/ valid.` : ''})`,
+                        `• % Monitorado Geral: *${pctMonitorado}%* (Meta: *${metaProj}%* | Meta absoluta: *${metaAbsoluta}*)`,
+                        `• Status Geral: *${statusGeral}*`,
+                        `• Cancelamentos Totais (FOR + CQ): *${totalCancGeral}* (${totalCancFor} FOR / ${totalCancCq} CQ)`,
+                        ``,
+                        `*2. Cobertura da Equipe (${operadoresList.length} entrevistadores):*`,
+                        `• Na Meta (>= ${metaProj}%): *${opsAtingidos}*`,
+                        `• Abaixo da Meta: *${opsAbaixo}*`,
+                        `• Zerados (0%): *${opsZerados}*`
+                    ];
+                    if (topCampsCriticas.length > 0) {
+                        linhasTexto.push(``, `*3. Campanhas com Maior Gap p/ Meta:*`);
+                        topCampsCriticas.forEach((c, idx) => {
+                            linhasTexto.push(`${idx + 1}. ${c.campanha}: *${c.pctMonitorado}%* (${c.monitoriasTotais}/${c.realizadas}) — faltam *${c.falta}*`);
+                        });
+                    }
+                    if (topMotivos.length > 0) {
+                        linhasTexto.push(``, `*4. Principais Motivos de Cancelamento S/ Validação:*`);
+                        topMotivos.forEach((m, idx) => {
+                            linhasTexto.push(`${idx + 1}. ${m.motivo} (${m.campanha}): *${m.qtd}* (${m.pctSobreCanc}%)`);
+                        });
+                    }
+
+                    return {
+                        empty: false,
+                        proj,
+                        projId: proj.id || targetId,
+                        selectedCamp,
+                        escopoLabel,
+                        metaProj,
+                        totalRealizadas,
+                        totalEscuta,
+                        totalNovasCanc,
+                        totalMonitoriasRealizadas,
+                        totalCancFor,
+                        totalCancCq,
+                        totalCancGeral,
+                        metaAbsoluta,
+                        faltaTotal,
+                        pctValidadas,
+                        pctMonitorado,
+                        statusGeral,
+                        campanhasList,
+                        operadoresList,
+                        motivosList,
+                        opsZerados,
+                        opsAbaixo,
+                        opsAtingidos,
+                        agoraStr,
+                        textoGestores: linhasTexto.join('\n')
+                    };
+                },
+
+                exportKantarDetalhado() {
+                    const data = this._buildKantarExportData(null, true);
+                    if (!data) return;
+                    if (data.empty) return app.ui.showAlert("Erro", "Sem dados para exportar.", "error");
+
+                    const rows = [...data.operadoresList]
+                        .sort((a, b) => b.realizadas - a.realizadas)
+                        .map(o => ({
                             "Operador": o.nome,
                             "Total Realizadas": o.realizadas,
                             "Validadas (Escuta)": o.escuta,
                             "Canceladas S/ Valid.": o.novasCanc,
                             "Canceladas FOR": o.cancFor,
                             "Canceladas CQ": o.cancCq,
-                            "Falta p/ Meta": falta,
-                            "% Monitorado": pct + "%"
-                        };
-                    });
-
-                    rows.sort((a,b) => b["Total Realizadas"] - a["Total Realizadas"]);
+                            "Falta p/ Meta": o.falta,
+                            "% Monitorado": o.pctMonitorado.toFixed(2) + "%"
+                        }));
 
                     const worksheet = XLSX.utils.json_to_sheet(rows);
                     const workbook = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(workbook, worksheet, "Detalhamento_Kantar");
-                    XLSX.writeFile(workbook, `Kantar_${proj.nome.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                    const safeName = String(data.proj.nome || 'Projeto').replace(/[\\/:*?"<>|\s]+/g, '_');
+                    XLSX.writeFile(workbook, `Kantar_${safeName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                },
+
+                openExportKantarGestoresModal(projId = null, applyCampFilter = true) {
+                    const data = this._buildKantarExportData(projId, applyCampFilter);
+                    if (!data) return app.ui.showAlert("Erro", "Projeto Kantar não encontrado.", "error");
+                    if (data.empty) return app.ui.showAlert("Sem Dados", "Este projeto ainda não possui registros importados para gerar o relatório de gestores.", "warning");
+
+                    const existing = document.getElementById('modal-kantar-export-gestores');
+                    if (existing) existing.remove();
+
+                    const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const argProj = data.projId ? `'${esc(data.projId)}'` : 'null';
+                    const argFilter = applyCampFilter ? 'true' : 'false';
+                    const statusBadgeClass = data.pctMonitorado >= data.metaProj
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
+
+                    const modal = document.createElement('div');
+                    modal.id = 'modal-kantar-export-gestores';
+                    modal.className = 'fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm';
+                    modal.onclick = (ev) => { if (ev.target === modal) modal.remove(); };
+                    modal.innerHTML = `
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in">
+                            <div class="px-6 py-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-start justify-between gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-widest text-emerald-400 mb-1">
+                                        <i class="fa-solid fa-briefcase"></i> Pacote Executivo Kantar
+                                    </div>
+                                    <h3 class="text-xl font-black tracking-tight">${esc(data.proj.nome)}</h3>
+                                    <p class="text-xs text-slate-300 mt-0.5">${esc(data.escopoLabel)} • Meta ${data.metaProj}%</p>
+                                </div>
+                                <button type="button" onclick="document.getElementById('modal-kantar-export-gestores')?.remove()" class="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors cursor-pointer" title="Fechar">
+                                    <i class="fa-solid fa-xmark text-lg"></i>
+                                </button>
+                            </div>
+
+                            <div class="p-6 space-y-5">
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-bold uppercase text-slate-500">Base Realizadas</div>
+                                        <div class="text-xl font-black text-slate-800 dark:text-white">${data.totalRealizadas}</div>
+                                    </div>
+                                    <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-bold uppercase text-slate-500">% Monitorado</div>
+                                        <div class="text-xl font-black ${data.pctMonitorado >= data.metaProj ? 'text-emerald-600' : 'text-red-500'}">${data.pctMonitorado}%</div>
+                                    </div>
+                                    <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-bold uppercase text-slate-500">Falta p/ Meta</div>
+                                        <div class="text-xl font-black text-slate-800 dark:text-white">${data.faltaTotal}</div>
+                                    </div>
+                                    <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                        <div class="text-[10px] font-bold uppercase text-slate-500">Operadores Alerta</div>
+                                        <div class="text-xl font-black text-amber-600">${data.opsZerados + data.opsAbaixo} <span class="text-[11px] font-bold text-slate-400">(${data.opsZerados} zer.)</span></div>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs">
+                                    <span class="font-bold text-slate-600 dark:text-slate-300">Diagnóstico Geral:</span>
+                                    <span class="px-2.5 py-1 rounded-full font-extrabold ${statusBadgeClass}">${esc(data.statusGeral)}</span>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <button type="button" onclick="app.admin.exportKantarGestoresXLSX(${argProj}, ${argFilter})" class="group p-4 rounded-2xl border-2 border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/20 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white text-left transition-all cursor-pointer">
+                                        <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white group-hover:bg-white group-hover:text-emerald-700 flex items-center justify-center text-lg mb-3 transition-colors">
+                                            <i class="fa-solid fa-file-excel"></i>
+                                        </div>
+                                        <div class="font-black text-sm text-slate-800 dark:text-white group-hover:text-white">Excel Executivo (.xlsx)</div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 group-hover:text-emerald-100 mt-1">4 abas: Resumo, Campanhas, Ranking Operadores e Motivos.</div>
+                                    </button>
+
+                                    <button type="button" onclick="app.admin.exportKantarGestoresPDF(${argProj}, ${argFilter})" class="group p-4 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/70 dark:bg-indigo-950/20 hover:bg-indigo-600 hover:border-indigo-600 hover:text-white text-left transition-all cursor-pointer">
+                                        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white group-hover:bg-white group-hover:text-indigo-700 flex items-center justify-center text-lg mb-3 transition-colors">
+                                            <i class="fa-solid fa-file-pdf"></i>
+                                        </div>
+                                        <div class="font-black text-sm text-slate-800 dark:text-white group-hover:text-white">Relatório PDF (.pdf)</div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 group-hover:text-indigo-100 mt-1">Layout gerencial pronto para envio por e-mail ou diretoria.</div>
+                                    </button>
+
+                                    <button type="button" onclick="app.admin.copiarResumoKantarGestores(${argProj}, ${argFilter})" class="group p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-800 hover:border-slate-800 hover:text-white text-left transition-all cursor-pointer">
+                                        <div class="w-10 h-10 rounded-xl bg-slate-800 text-white group-hover:bg-white group-hover:text-slate-900 flex items-center justify-center text-lg mb-3 transition-colors">
+                                            <i class="fa-regular fa-copy"></i>
+                                        </div>
+                                        <div class="font-black text-sm text-slate-800 dark:text-white group-hover:text-white">Copiar Mensagem</div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 group-hover:text-slate-200 mt-1">Texto estruturado para WhatsApp / Teams com gaps e ofensores.</div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                },
+
+                exportKantarGestoresXLSX(projId = null, applyCampFilter = true) {
+                    const data = this._buildKantarExportData(projId, applyCampFilter);
+                    if (!data) return app.ui.showAlert("Erro", "Projeto Kantar não encontrado.", "error");
+                    if (data.empty) return app.ui.showAlert("Sem Dados", "Sem dados para exportar.", "warning");
+                    if (typeof XLSX === 'undefined') return app.ui.showAlert("Erro", "Biblioteca XLSX indisponível.", "error");
+
+                    const wb = XLSX.utils.book_new();
+
+                    // Aba 1: Resumo Executivo
+                    const resumoRows = [
+                        { "Indicador": "Projeto Kantar", "Valor": data.proj.nome, "Observação": data.escopoLabel },
+                        { "Indicador": "Data/Hora da Extração", "Valor": data.agoraStr, "Observação": "Gerado via Portal Qualidade" },
+                        { "Indicador": "Meta Exigida (%)", "Valor": `${data.metaProj}%`, "Observação": `Meta absoluta: ${data.metaAbsoluta} monitorias` },
+                        { "Indicador": "Total Pesquisas Realizadas", "Valor": data.totalRealizadas, "Observação": "Base total de pesquisas" },
+                        { "Indicador": "Validadas (Escuta)", "Valor": data.totalEscuta, "Observação": `${data.pctValidadas}% sobre realizadas` },
+                        { "Indicador": "Canceladas S/ Validação", "Valor": data.totalNovasCanc, "Observação": "Computadas na cobertura de monitoria" },
+                        { "Indicador": "Total Monitorias Realizadas", "Valor": data.totalMonitoriasRealizadas, "Observação": "Escuta + Canceladas S/ Valid." },
+                        { "Indicador": "% Monitorado Alcançado", "Valor": `${data.pctMonitorado}%`, "Observação": data.statusGeral },
+                        { "Indicador": "Falta para Atingir a Meta", "Valor": data.faltaTotal, "Observação": data.faltaTotal === 0 ? "Meta cumprida" : "Pesquisas faltantes" },
+                        { "Indicador": "Cancelamentos FOR / CQ", "Valor": data.totalCancGeral, "Observação": `${data.totalCancFor} FOR | ${data.totalCancCq} CQ` },
+                        { "Indicador": "Operadores na Meta", "Valor": data.opsAtingidos, "Observação": `De ${data.operadoresList.length} entrevistadores` },
+                        { "Indicador": "Operadores Abaixo da Meta", "Valor": data.opsAbaixo, "Observação": "Necessitam reforço na monitoria" },
+                        { "Indicador": "Operadores Zerados (0%)", "Valor": data.opsZerados, "Observação": "Prioridade crítica" }
+                    ];
+                    const wsResumo = XLSX.utils.json_to_sheet(resumoRows);
+                    wsResumo['!cols'] = [{ wch: 30 }, { wch: 24 }, { wch: 44 }];
+                    XLSX.utils.book_append_sheet(wb, wsResumo, "1_Resumo_Executivo");
+
+                    // Aba 2: Campanhas
+                    const campRows = data.campanhasList.map(c => ({
+                        "Campanha": c.campanha,
+                        "Entrevistadores": c.qtdOperadores,
+                        "Realizadas": c.realizadas,
+                        "Escuta": c.escuta,
+                        "Canc. S/ Valid.": c.novasCanc,
+                        "Total Monitorado": c.monitoriasTotais,
+                        "Meta Abs.": c.metaAbsoluta,
+                        "Falta p/ Meta": c.falta,
+                        "% Monitorado": `${c.pctMonitorado}%`,
+                        "Canc. FOR": c.cancFor,
+                        "Canc. CQ": c.cancCq,
+                        "Status": c.status
+                    }));
+                    const wsCamp = XLSX.utils.json_to_sheet(campRows.length ? campRows : [{ "Campanha": "Sem campanhas" }]);
+                    wsCamp['!cols'] = [{ wch: 28 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 16 }, { wch: 12 }, { wch: 13 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 18 }];
+                    XLSX.utils.book_append_sheet(wb, wsCamp, "2_Por_Campanha");
+
+                    // Aba 3: Ranking Operadores (prioridade para gaps/zerados)
+                    const opRows = data.operadoresList.map(o => ({
+                        "Operador": o.nome,
+                        "Campanha(s)": o.campanhas,
+                        "Status": o.status,
+                        "Realizadas": o.realizadas,
+                        "Validadas (Escuta)": o.escuta,
+                        "Canc. S/ Valid.": o.novasCanc,
+                        "Total Monitorado": o.monitoriasTotais,
+                        "Meta Abs.": o.metaAbsoluta,
+                        "Falta p/ Meta": o.falta,
+                        "% Monitorado": `${o.pctMonitorado}%`,
+                        "Canc. FOR": o.cancFor,
+                        "Canc. CQ": o.cancCq
+                    }));
+                    const wsOps = XLSX.utils.json_to_sheet(opRows.length ? opRows : [{ "Operador": "Sem operadores" }]);
+                    wsOps['!cols'] = [{ wch: 30 }, { wch: 26 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 15 }, { wch: 16 }, { wch: 11 }, { wch: 13 }, { wch: 14 }, { wch: 11 }, { wch: 11 }];
+                    XLSX.utils.book_append_sheet(wb, wsOps, "3_Operadores_Ranking");
+
+                    // Aba 4: Motivos de Cancelamento
+                    const motRows = data.motivosList.map(m => ({
+                        "Campanha": m.campanha,
+                        "Motivo de Cancelamento S/ Valid.": m.motivo,
+                        "Quantidade": m.qtd,
+                        "% sobre Canc. S/ Valid.": `${m.pctSobreCanc}%`
+                    }));
+                    const wsMot = XLSX.utils.json_to_sheet(motRows.length ? motRows : [{ "Informação": "Nenhum cancelamento sem validação importado neste escopo." }]);
+                    wsMot['!cols'] = [{ wch: 26 }, { wch: 42 }, { wch: 14 }, { wch: 22 }];
+                    XLSX.utils.book_append_sheet(wb, wsMot, "4_Motivos_Cancelamento");
+
+                    const safeName = String(data.proj.nome || 'Projeto').replace(/[\\/:*?"<>|\s]+/g, '_');
+                    const campSuffix = data.selectedCamp ? `_${String(data.selectedCamp).replace(/[\\/:*?"<>|\s]+/g, '_')}` : '';
+                    XLSX.writeFile(wb, `Kantar_Gestores_${safeName}${campSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                    app.ui.showAlert("Exportado!", "Planilha executiva para gestores baixada com 4 abas.", "success");
+                },
+
+                exportKantarGestoresPDF(projId = null, applyCampFilter = true) {
+                    const data = this._buildKantarExportData(projId, applyCampFilter);
+                    if (!data) return app.ui.showAlert("Erro", "Projeto Kantar não encontrado.", "error");
+                    if (data.empty) return app.ui.showAlert("Sem Dados", "Sem dados para exportar.", "warning");
+                    if (!window.jspdf || !window.jspdf.jsPDF) return app.ui.showAlert("Erro", "Biblioteca de PDF (jsPDF) não carregada.", "error");
+
+                    const cleanTxt = (str) => String(str ?? '')
+                        .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+                        .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                    const pageWidth = doc.internal.pageSize.getWidth();
+                    const pageHeight = doc.internal.pageSize.getHeight();
+
+                    // Banner Executivo
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, pageWidth, 28, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(13);
+                    doc.text("RELATÓRIO EXECUTIVO KANTAR — GESTORES", 14, 12);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(203, 213, 225);
+                    doc.text(cleanTxt(`Projeto: ${data.proj.nome}  |  ${data.escopoLabel}  |  Emissão: ${data.agoraStr}`), 14, 20);
+
+                    const baseStyles = { fontSize: 8, cellPadding: 2, textColor: [30, 41, 59], lineColor: [226, 232, 240], lineWidth: 0.1 };
+
+                    // 1. Síntese Executiva
+                    doc.autoTable({
+                        startY: 32,
+                        head: [['1. SÍNTESE EXECUTIVA DE MONITORIA', 'INDICADOR / DIAGNÓSTICO']],
+                        body: [
+                            ['Status Geral vs Meta', cleanTxt(data.statusGeral)],
+                            ['Base de Pesquisas Realizadas', `${data.totalRealizadas} pesquisas`],
+                            ['Monitorias Computadas', `${data.totalMonitoriasRealizadas} (${data.totalEscuta} escutas validadas + ${data.totalNovasCanc} canc. s/ validação)`],
+                            ['Percentual Monitorado', `${data.pctMonitorado}% realizado (Escuta pura: ${data.pctValidadas}%) | Meta: ${data.metaProj}% (${data.metaAbsoluta})`],
+                            ['Gap para Cumprimento da Meta', data.faltaTotal > 0 ? `${data.faltaTotal} monitorias faltantes` : 'Meta 100% cumprida'],
+                            ['Cancelamentos (FOR + CQ)', `${data.totalCancGeral} no total (${data.totalCancFor} FOR / ${data.totalCancCq} CQ)`],
+                            ['Panorama dos Entrevistadores', `${data.operadoresList.length} ativos: ${data.opsAtingidos} na meta | ${data.opsAbaixo} abaixo da meta | ${data.opsZerados} zerados (0%)`]
+                        ],
+                        theme: 'grid',
+                        headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold' },
+                        styles: baseStyles,
+                        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 62, fillColor: [248, 250, 252] } }
+                    });
+
+                    // 2. Quebra por Campanha
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['2. CAMPANHA', 'OPS', 'REALIZ.', 'ESCUTA', 'CANC. S/V', 'MONIT.', 'FALTA', '% MON.', 'STATUS']],
+                        body: data.campanhasList.map(c => [
+                            cleanTxt(c.campanha),
+                            c.qtdOperadores,
+                            c.realizadas,
+                            c.escuta,
+                            c.novasCanc,
+                            c.monitoriasTotais,
+                            c.falta,
+                            `${c.pctMonitorado}%`,
+                            cleanTxt(c.status)
+                        ]),
+                        theme: 'grid',
+                        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+                        styles: { ...baseStyles, fontSize: 7.5 },
+                        columnStyles: {
+                            0: { fontStyle: 'bold' },
+                            1: { halign: 'center' },
+                            2: { halign: 'center' },
+                            3: { halign: 'center' },
+                            4: { halign: 'center' },
+                            5: { halign: 'center' },
+                            6: { halign: 'center', fontStyle: 'bold' },
+                            7: { halign: 'center', fontStyle: 'bold' },
+                            8: { halign: 'center' }
+                        }
+                    });
+
+                    // 3. Ranking de Operadores
+                    doc.autoTable({
+                        startY: doc.lastAutoTable.finalY + 5,
+                        head: [['3. ENTREVISTADOR', 'CAMPANHA(S)', 'REALIZ.', 'MONIT.', 'FALTA', '% MON.', 'STATUS']],
+                        body: data.operadoresList.map(o => [
+                            cleanTxt(o.nome),
+                            cleanTxt(o.campanhas),
+                            o.realizadas,
+                            o.monitoriasTotais,
+                            o.falta,
+                            `${o.pctMonitorado}%`,
+                            cleanTxt(o.status)
+                        ]),
+                        theme: 'grid',
+                        headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+                        styles: { ...baseStyles, fontSize: 7.5 },
+                        columnStyles: {
+                            0: { fontStyle: 'bold' },
+                            2: { halign: 'center' },
+                            3: { halign: 'center' },
+                            4: { halign: 'center', fontStyle: 'bold' },
+                            5: { halign: 'center', fontStyle: 'bold' },
+                            6: { halign: 'center' }
+                        }
+                    });
+
+                    // 4. Motivos de Cancelamento S/ Validação
+                    if (data.motivosList.length > 0) {
+                        doc.autoTable({
+                            startY: doc.lastAutoTable.finalY + 5,
+                            head: [['4. MOTIVO DE CANCELAMENTO S/ VALIDAÇÃO', 'CAMPANHA', 'QTD', '% S/ CANC.']],
+                            body: data.motivosList.map(m => [
+                                cleanTxt(m.motivo),
+                                cleanTxt(m.campanha),
+                                m.qtd,
+                                `${m.pctSobreCanc}%`
+                            ]),
+                            theme: 'grid',
+                            headStyles: { fillColor: [217, 119, 6], textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+                            styles: { ...baseStyles, fontSize: 7.5 },
+                            columnStyles: {
+                                0: { fontStyle: 'bold' },
+                                2: { halign: 'center', fontStyle: 'bold' },
+                                3: { halign: 'center' }
+                            }
+                        });
+                    }
+
+                    const pageCount = doc.internal.getNumberOfPages();
+                    for (let i = 1; i <= pageCount; i++) {
+                        doc.setPage(i);
+                        doc.setFontSize(7.5);
+                        doc.setTextColor(148, 163, 184);
+                        doc.text(`Portal Qualidade & Treinamento — Relatório Kantar para Gestores | Página ${i} de ${pageCount}`, 14, pageHeight - 8);
+                    }
+
+                    const safeName = String(data.proj.nome || 'Projeto').replace(/[\\/:*?"<>|\s]+/g, '_');
+                    const campSuffix = data.selectedCamp ? `_${String(data.selectedCamp).replace(/[\\/:*?"<>|\s]+/g, '_')}` : '';
+                    doc.save(`Kantar_Gestores_${safeName}${campSuffix}_${new Date().toISOString().split('T')[0]}.pdf`);
+                    app.ui.showAlert("PDF Gerado!", "Relatório executivo em PDF baixado com sucesso.", "success");
+                },
+
+                copiarResumoKantarGestores(projId = null, applyCampFilter = true) {
+                    const data = this._buildKantarExportData(projId, applyCampFilter);
+                    if (!data || data.empty) return app.ui.showAlert("Sem Dados", "Sem dados para copiar.", "warning");
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(data.textoGestores).then(() => {
+                            app.ui.showAlert("Copiado!", "Resumo executivo para gestores copiado para a área de transferência.", "success");
+                        }).catch(() => {
+                            app.ui.showAlert("Aviso", "Não foi possível acessar a área de transferência automaticamente.", "warning");
+                        });
+                    } else {
+                        app.ui.showAlert("Aviso", "Área de transferência indisponível neste navegador.", "warning");
+                    }
                 },
 
                 processarKantarPadrao(input, updateCampanhaNome = null) {
@@ -51046,13 +51877,20 @@ storage: {
                         return app.ui.solicitarTrocarApresentacao(id);
                     }
                     try {
+                        const rawPayload = String(apr.payloadData || '');
+                        if (!rawPayload) {
+                            throw new Error('Apresentação sem payloadData carregado.');
+                        }
                         // Verifica se os dados estão no formato antigo (texto puro começando com '{') ou no novo (compactado)
-                        const isCompressed = !apr.payloadData.trim().startsWith('{');
-                        const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
+                        const isCompressed = !rawPayload.trim().startsWith('{');
+                        const jsonDescompactado = isCompressed ? LZString.decompressFromBase64(rawPayload) : rawPayload;
                         
                         app.analiseCSVDinamicoData = JSON.parse(jsonDescompactado);
                         if (app.ui && typeof app.ui._resetAnaliseFiltrosEEstado === 'function') {
                             app.ui._resetAnaliseFiltrosEEstado();
+                        }
+                        if (app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.relatorios && !Array.isArray(app.analiseCSVDinamicoData.relatorios)) {
+                            app.analiseCSVDinamicoData.relatorios = Object.values(app.analiseCSVDinamicoData.relatorios || {});
                         }
                         if (app.analiseCSVDinamicoData && Array.isArray(app.analiseCSVDinamicoData.relatorios) && app.analiseCSVDinamicoData.relatorios.length > 0 && (!app.analiseCSVDinamicoData.consolidado || !Array.isArray(app.analiseCSVDinamicoData.consolidado.evolutivoMesLabels))) {
                             try { app.admin.gerarInteligenciaCSV(); } catch (errG) {}
@@ -51066,7 +51904,7 @@ storage: {
                         }
                         const modal = document.getElementById('global-modal');
                         if (modal) modal.classList.add('hidden');
-                        localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); // Salva no local HD
+                        if (typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {}); // Salva no local HD
                         app.ui.renderTab('analise_csv_dinamico', true);
                         app.ui.showAlert("Restaurado", "Apresentação recuperada, descompactada e montada na tela com sucesso!", "success");
                     } catch(e) {
@@ -51080,7 +51918,7 @@ storage: {
                     app.analiseCSVDinamicoData.relatorios = app.analiseCSVDinamicoData.relatorios.filter(r => r.id !== id);
                     
                     if (app.analiseCSVDinamicoData.relatorios.length === 0) {
-                        localforage.removeItem('soft_analise_data');
+                        if (typeof localforage !== 'undefined') localforage.removeItem('soft_analise_data').catch(() => {});
                         app.analiseCSVDinamicoData = null;
                         app.ui.analiseFiltroRelatorio = [];
                         document.getElementById('global-modal').classList.add('hidden');
@@ -51089,7 +51927,10 @@ storage: {
                     }
                     
                     app.analiseCSVDinamicoData._unsaved = true;
-                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).then(() => {
+                    const persistDel = (typeof localforage !== 'undefined')
+                        ? localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {})
+                        : Promise.resolve();
+                    persistDel.then(() => {
                         app.admin.gerarInteligenciaCSV();
                         app.ui.openGerenciarBasesModal(); // Mantém o modal aberto e atualizado
                         app.ui._refreshComMemoriaDeScroll(); // Atualiza a tela de fundo sorrateiramente
@@ -51147,7 +51988,10 @@ storage: {
                         });
                         return;
                     }
-                    if (!app.analiseCSVDinamicoData.consolidado.acoesSelecionadas) app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = [];
+                    if (!Array.isArray(app.analiseCSVDinamicoData.consolidado.acoesSelecionadas)) {
+                        const prevSel = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas;
+                        app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = (prevSel && typeof prevSel === 'object') ? Object.values(prevSel) : [];
+                    }
                     
                     const acoesAprovadas = Object.values(app.actionsList || {})
                         .filter(a => a && a.status === 'aprovado')
@@ -51221,6 +52065,10 @@ storage: {
                 },
 
                 toggleAcaoApresentacao(id, el) {
+                    if (!Array.isArray(app.analiseCSVDinamicoData.consolidado.acoesSelecionadas)) {
+                        const prevSel = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas;
+                        app.analiseCSVDinamicoData.consolidado.acoesSelecionadas = (prevSel && typeof prevSel === 'object') ? Object.values(prevSel) : [];
+                    }
                     let acoes = app.analiseCSVDinamicoData.consolidado.acoesSelecionadas;
                     let isSelected = false;
                     
@@ -51231,7 +52079,7 @@ storage: {
                         isSelected = true;
                     }
                     
-                    localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData);
+                    if (typeof localforage !== 'undefined') localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
                     app.ui._refreshComMemoriaDeScroll(); // Atualiza a tela de trás (sem fechar modal e mantendo filtros intactos)
                     
                     // Troca classes do card Clicado sem fechar/resetar o modal
@@ -51690,7 +52538,10 @@ storage: {
                     if (!Array.isArray(filtrosMes)) filtrosMes = [filtrosMes];
 
                     let monitorFiltro = app.ui.analiseFiltroMonitor || ''; 
-                    let relatoriosAtivos = app.analiseCSVDinamicoData.relatorios;
+                    let relatoriosAtivos = Array.isArray(app.analiseCSVDinamicoData.relatorios)
+                        ? app.analiseCSVDinamicoData.relatorios
+                        : Object.values(app.analiseCSVDinamicoData.relatorios || {});
+                    relatoriosAtivos = relatoriosAtivos.filter(r => r && Array.isArray(r.rows) && r.rows.length > 0);
                     
                     if(filtrosRelatorio.length > 0 && filtrosRelatorio[0] !== "") {
                         relatoriosAtivos = relatoriosAtivos.filter(r => filtrosRelatorio.includes(r.nome));
@@ -52937,11 +53788,13 @@ storage: {
                                          </div>`;
                             }
                         } else if (g.type === 'calibracao') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Editável)</span></label>
-                                     <input type="number" id="input-${g.id}-val" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
+                            const initCalibVal = String((v.val !== undefined && v.val !== null && v.val !== '') ? v.val : '0');
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Qtd. Sessões <span class="text-blue-500">(Editável)</span> ${v.manualOverride ? '<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[9px] font-black">MANUAL</span>' : ''}</label>
+                                     <input type="number" id="input-${g.id}-val" data-initial-val="${app.utils.escapeHtml(initCalibVal)}" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${app.utils.escapeHtml(initCalibVal)}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'actions') {
-                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Editável)</span></label>
-                                     <input type="number" id="input-${g.id}-val" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${v.val||'0'}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
+                            const initActVal = String((v.val !== undefined && v.val !== null && v.val !== '') ? v.val : '0');
+                            html += `<label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">Ações Validadas <span class="text-blue-500">(Editável)</span> ${v.manualOverride ? '<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[9px] font-black">MANUAL</span>' : ''}</label>
+                                     <input type="number" id="input-${g.id}-val" data-initial-val="${app.utils.escapeHtml(initActVal)}" oninput="app.admin.updateLiveScorePreview()" onchange="app.admin.updateLiveScorePreview()" value="${app.utils.escapeHtml(initActVal)}" ${isLocked?'disabled':''} title="Valor somado automaticamente, mas você pode forçar um ajuste." class="w-full p-2.5 rounded-lg border bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-green-500 text-sm font-bold text-slate-700 dark:text-white transition-all shadow-inner">`;
                         } else if (g.type === 'gestor') {
                             html += `<label class="block text-[10px] uppercase font-bold text-green-600 mb-1">Impacto Final (%)</label>
                                      <select id="input-${g.id}-val" onchange="app.admin.updateLiveScorePreview()" ${isLocked?'disabled':''} class="w-full p-2.5 rounded-lg border bg-green-50 dark:bg-green-900/20 focus:ring-2 focus:ring-green-500 outline-none text-sm font-bold text-green-700 dark:text-green-300">
@@ -53287,16 +54140,24 @@ storage: {
 
                 collectResultsFromDOM(dadosAtuaisDoBanco = {}) {
                     const res = {};
-                    app.config.goals.forEach(g => {
+                    const goals = (app.config && Array.isArray(app.config.goals)) ? app.config.goals : [];
+                    goals.forEach(g => {
+                        const prev = (dadosAtuaisDoBanco && dadosAtuaisDoBanco[g.id] && typeof dadosAtuaisDoBanco[g.id] === 'object') ? dadosAtuaisDoBanco[g.id] : {};
                         if (g.type === 'percent') {
                             const metaEl = document.getElementById(`input-${g.id}-meta`);
                             const realEl = document.getElementById(`input-${g.id}-real`);
-                            const meta = g.id === 'g1' ? 400 : ((metaEl && metaEl.value) || 0);
-                            const real = (realEl && realEl.value) || 0;
+                            const meta = g.id === 'g1' ? 400 : (metaEl ? (metaEl.value !== '' ? metaEl.value : 0) : (prev.meta ?? 0));
+                            const real = realEl ? (realEl.value !== '' ? realEl.value : 0) : (prev.real ?? 0);
                             res[g.id] = { meta, real };
+                        } else if (g.type === 'calibracao' || g.type === 'actions') {
+                            const valEl = document.getElementById(`input-${g.id}-val`);
+                            const val = valEl ? String(valEl.value !== '' ? valEl.value : '0').trim() : String(prev.val ?? '0');
+                            const changedFromInitial = Boolean(valEl && valEl.dataset && valEl.dataset.initialVal !== undefined && String(valEl.dataset.initialVal) !== val);
+                            const wasManual = Boolean(prev.manualOverride) || changedFromInitial;
+                            res[g.id] = wasManual ? { val, manualOverride: true } : { val };
                         } else {
                             const valEl = document.getElementById(`input-${g.id}-val`);
-                            const val = (valEl && valEl.value) || '';
+                            const val = valEl ? (valEl.value || '') : (prev.val || '');
                             res[g.id] = { val };
                         }
                     });
@@ -53304,8 +54165,9 @@ storage: {
                 },
 
                 checkEditsAndSave(isScheduling) {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = (selectEl && selectEl.value) || window.selectedAdminEditUser;
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(mat || '').trim());
                     if(idx === -1) return;
 
                     let scheduleData = null;
@@ -53322,20 +54184,32 @@ storage: {
 
                     let changes = [];
                     app.config.goals.forEach(g => {
-                        // Ignora campos automáticos pois eles têm fluxos de auditoria próprios nas Atas
-                        if (g.type === 'calibracao' || g.type === 'actions') return;
-
                         if (g.type === 'percent') {
                             const oldReal = prevMonthData[g.id] ? prevMonthData[g.id].real : null;
                             const newReal = newData[g.id].real;
-                            // Registra apenas se já existia um valor prévio e ele foi alterado
-                            if (oldReal !== null && String(oldReal) !== String(newReal)) {
+                            if (oldReal !== null && oldReal !== undefined && String(oldReal) !== String(newReal)) {
                                 changes.push({ goalTitle: g.title, old: oldReal, new: newReal });
+                            }
+                            if (g.id !== 'g1') {
+                                const oldMeta = prevMonthData[g.id] ? prevMonthData[g.id].meta : null;
+                                const newMeta = newData[g.id].meta;
+                                if (oldMeta !== null && oldMeta !== undefined && String(oldMeta) !== String(newMeta)) {
+                                    changes.push({ goalTitle: `${g.title} (Meta)`, old: oldMeta, new: newMeta });
+                                }
+                            }
+                        } else if (g.type === 'calibracao' || g.type === 'actions') {
+                            const valEl = document.getElementById(`input-${g.id}-val`);
+                            const oldVal = (prevMonthData[g.id] && prevMonthData[g.id].val !== undefined)
+                                ? prevMonthData[g.id].val
+                                : (valEl && valEl.dataset ? valEl.dataset.initialVal : null);
+                            const newVal = newData[g.id].val;
+                            if (oldVal !== null && oldVal !== undefined && String(oldVal) !== String(newVal)) {
+                                changes.push({ goalTitle: `${g.title} (Ajuste Manual)`, old: oldVal, new: newVal });
                             }
                         } else {
                             const oldVal = prevMonthData[g.id] ? prevMonthData[g.id].val : null;
                             const newVal = newData[g.id].val;
-                            if (oldVal !== null && String(oldVal) !== String(newVal)) {
+                            if (oldVal !== null && oldVal !== undefined && String(oldVal) !== String(newVal)) {
                                 changes.push({ goalTitle: g.title, old: oldVal, new: newVal });
                             }
                         }
@@ -53425,6 +54299,9 @@ storage: {
                         app.ui.showAlert("Sucesso", isScheduling ? "Notas salvas e feedback agendado na plataforma." : "Notas salvas com sucesso.", "success");
                         this.renderCadastrosUserList();
                         this.loadUserEditor();
+                    }).catch(err => {
+                        console.error("Erro ao salvar notas do colaborador:", err);
+                        app.ui.showAlert("Erro ao Salvar", "Não foi possível gravar as notas na nuvem. Verifique sua conexão e tente novamente.", "error");
                     });
                 },
 
@@ -53550,16 +54427,21 @@ storage: {
                         app.ui.showAlert("Validado com Sucesso!", `Bonificação de <strong>${u.nome}</strong> assinada digitalmente com a senha do colaborador e travada.`, "success");
                         this.renderCadastrosUserList();
                         this.loadUserEditor();
+                    }).catch(err => {
+                        console.error("Erro ao validar bonificação:", err);
+                        app.ui.showAlert("Erro ao Salvar", "Não foi possível gravar a validação na nuvem. Tente novamente.", "error");
                     });
                 },
 
                 unlockResults() {
-                    const mat = document.getElementById('adm-user-select').value;
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = (selectEl && selectEl.value) || window.selectedAdminEditUser;
+                    if (!mat) return;
                     app.ui.showConfirm("Aviso", "Desbloquear vai exigir que o colaborador assine a bonificação novamente com a senha dele. Continuar?", `app.admin.execUnlock('${mat}')`, true);
                 },
 
                 execUnlock(mat) {
-                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(mat || '').trim());
                     if(idx > -1 && app.users[idx].results[app.currentMonth]) {
                         app.users[idx].results[app.currentMonth].status = 'pendente';
                         delete app.users[idx].results[app.currentMonth].fbDate;
@@ -53570,13 +54452,17 @@ storage: {
                             app.ui.showAlert("Feito", "Resultados desbloqueados. Edite e valide novamente com o colaborador.", "info");
                             this.renderCadastrosUserList();
                             this.loadUserEditor();
+                        }).catch(err => {
+                            console.error("Erro ao desbloquear notas:", err);
+                            app.ui.showAlert("Erro ao Desbloquear", "Não foi possível sincronizar o desbloqueio na nuvem.", "error");
                         });
                     }
                 },
 
                 cancelSchedule() {
-                    const mat = document.getElementById('adm-user-select').value;
-                    const idx = app.users.findIndex(u => u.matricula === mat);
+                    const selectEl = document.getElementById('adm-user-select');
+                    const mat = (selectEl && selectEl.value) || window.selectedAdminEditUser;
+                    const idx = app.users.findIndex(u => String(u.matricula).trim() === String(mat || '').trim());
                     if(idx > -1 && app.users[idx].results[app.currentMonth]) {
                         app.users[idx].results[app.currentMonth].status = 'pendente';
                         delete app.users[idx].results[app.currentMonth].fbDate;
@@ -53584,6 +54470,9 @@ storage: {
                         app.storage.saveUsers().then(() => {
                             this.renderCadastrosUserList();
                             this.loadUserEditor();
+                        }).catch(err => {
+                            console.error("Erro ao cancelar agenda:", err);
+                            app.ui.showAlert("Erro", "Não foi possível cancelar o agendamento na nuvem.", "error");
                         });
                     }
                 },
@@ -54579,13 +55468,13 @@ storage: {
 
                         if (!Array.isArray(app.users)) app.users = [];
 
-                        // 2. Zera todas as Atas e Ações na memória dos usuários para evitar sobra de duplicados
+                        // 2. Zera todas as Atas e Ações na memória dos usuários (preservando ajustes manuais explícitos)
                         app.users.forEach(u => {
                             if (u && u.results) {
                                 Object.keys(u.results).forEach(mes => {
                                     if (u.results[mes]) {
-                                        if (u.results[mes][g3Id]) u.results[mes][g3Id].val = '0';
-                                        if (u.results[mes][g4Id]) u.results[mes][g4Id].val = '0';
+                                        if (u.results[mes][g3Id] && !u.results[mes][g3Id].manualOverride) u.results[mes][g3Id].val = '0';
+                                        if (u.results[mes][g4Id] && !u.results[mes][g4Id].manualOverride) u.results[mes][g4Id].val = '0';
                                     }
                                 });
                             }
@@ -54621,9 +55510,10 @@ storage: {
                                         if (!userEncontrado.results) userEncontrado.results = {};
                                         if (!userEncontrado.results[mesRef]) userEncontrado.results[mesRef] = { status: 'pendente' };
                                         if (!userEncontrado.results[mesRef][g3Id]) userEncontrado.results[mesRef][g3Id] = { val: '0' };
-
-                                        let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
-                                        userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
+                                        if (!userEncontrado.results[mesRef][g3Id].manualOverride) {
+                                            let atual = parseInt(userEncontrado.results[mesRef][g3Id].val) || 0;
+                                            userEncontrado.results[mesRef][g3Id].val = (atual + 1).toString();
+                                        }
                                         countPontosCalib++;
                                     });
                                 }
@@ -54646,9 +55536,10 @@ storage: {
                                     if (!u.results) u.results = {};
                                     if (!u.results[mesRef]) u.results[mesRef] = { status: 'pendente' };
                                     if (!u.results[mesRef][g4Id]) u.results[mesRef][g4Id] = { val: '0' };
-
-                                    let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
-                                    u.results[mesRef][g4Id].val = (atual + 1).toString();
+                                    if (!u.results[mesRef][g4Id].manualOverride) {
+                                        let atual = parseInt(u.results[mesRef][g4Id].val) || 0;
+                                        u.results[mesRef][g4Id].val = (atual + 1).toString();
+                                    }
                                     countAcoesAprovadas++;
                                     countPontosAcoes++;
                                 }
@@ -71107,6 +71998,9 @@ app.pdcaTeste = {
     _syncingAuto: false,
     _lastCloudFetchTs: 0,
     _lastCloudSyncLabel: '',
+    _consolidadoCache: null,
+    _autoSyncedAprStamps: null,
+    _stageLimits: null,
 
     _stages: [
         { key: 'P', num: '1', title: 'Identificar', hint: 'Gaps identificados', accent: 'blue', badgeBg: 'bg-blue-500', softBg: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-300/60 dark:border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', icon: 'fa-bullseye' },
@@ -71209,9 +72103,13 @@ app.pdcaTeste = {
             this._loadedCloud = true;
             this._lastCloudFetchTs = Date.now();
             this._stampSyncTime();
-            // Auto-importa TODOS os gaps das apresentações disponíveis sem exigir clique
+            // Auto-importa em background cedendo o frame ao navegador (evita travar a UI)
             const targetOp = this.filtroOperacao && this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : null;
-            await this.syncGapsOperacao(targetOp, { silent: true, renderAfter: false });
+            setTimeout(() => {
+                if (app.currentTab === 'pdca_teste') {
+                    this.syncGapsOperacao(targetOp, { silent: true, renderAfter: true, skipAlreadySynced: true }).catch(() => {});
+                }
+            }, 60);
         } catch (e) {
             console.warn('[PDCA] Fallback local:', e);
         } finally {
@@ -71290,23 +72188,43 @@ app.pdcaTeste = {
         }
     },
 
-    _readConsolidadoFromApr(aprId, aprObjOverride = null) {
+    _readConsolidadoFromApr(aprId, aprObjOverride = null, cacheOnly = false) {
         if (!aprObjOverride && (!aprId || aprId === '__atual__')) {
             return app.analiseCSVDinamicoData?.consolidado || null;
         }
         const apr = aprObjOverride || (app.apresentacoesList || {})[aprId];
         if (!apr) return null;
         if (apr.consolidado) return apr.consolidado;
-        if (!apr.payloadData) return null;
+
+        if (!this._consolidadoCache) this._consolidadoCache = new Map();
+        const verTag = `${apr.atualizadoEm || ''}|${apr.timestamp || ''}|${typeof apr.payloadData === 'string' ? apr.payloadData.length : 'obj'}`;
+        const cacheKey = `${aprId || 'tmp'}::${verTag}`;
+        if (this._consolidadoCache.has(cacheKey)) {
+            return this._consolidadoCache.get(cacheKey);
+        }
+        if (cacheOnly || !apr.payloadData) return null;
+
         try {
+            let consolidado = null;
             if (typeof apr.payloadData === 'object') {
-                return apr.payloadData?.consolidado || null;
+                consolidado = apr.payloadData?.consolidado || null;
+            } else {
+                const rawStr = String(apr.payloadData);
+                const isCompressed = !rawStr.trim().startsWith('{');
+                const jsonStr = isCompressed ? LZString.decompressFromBase64(rawStr) : rawStr;
+                if (jsonStr) {
+                    const parsed = JSON.parse(jsonStr);
+                    consolidado = parsed?.consolidado || null;
+                }
             }
-            const isCompressed = !String(apr.payloadData).trim().startsWith('{');
-            const jsonStr = isCompressed ? LZString.decompressFromBase64(apr.payloadData) : apr.payloadData;
-            const parsed = JSON.parse(jsonStr);
-            return parsed?.consolidado || null;
+            if (this._consolidadoCache.size > 40) {
+                const firstKey = this._consolidadoCache.keys().next().value;
+                this._consolidadoCache.delete(firstKey);
+            }
+            this._consolidadoCache.set(cacheKey, consolidado);
+            return consolidado;
         } catch (e) {
+            this._consolidadoCache.set(cacheKey, null);
             return null;
         }
     },
@@ -71782,7 +72700,7 @@ app.pdcaTeste = {
     },
 
     async syncGapsOperacao(opTarget = null, options = {}) {
-        const { sourceIds = null, ignoreOcultos = false, silent = false, renderAfter = true } = options || {};
+        const { sourceIds = null, ignoreOcultos = false, silent = false, renderAfter = true, skipAlreadySynced = false } = options || {};
         if (this._syncingAuto && !ignoreOcultos) return 0;
         this._syncingAuto = true;
         try {
@@ -71792,6 +72710,14 @@ app.pdcaTeste = {
                 sources = sourceIds.map(id => allSrc.find(s => s.id === id)).filter(Boolean);
             } else {
                 sources = this._findLatestSourcesForSync(opTarget);
+            }
+            if (!this._autoSyncedAprStamps) this._autoSyncedAprStamps = new Map();
+            if (skipAlreadySynced && !ignoreOcultos) {
+                sources = sources.filter(src => {
+                    if (src.isAtual) return true;
+                    const stamp = `${src.timestamp || 0}|${src.tratCount || 0}`;
+                    return this._autoSyncedAprStamps.get(src.id) !== stamp;
+                });
             }
             if (sources.length === 0) {
                 if (!silent) app.ui?.showToast?.('Nenhuma Apresentação de Resultados encontrada para esta operação.', 'info');
@@ -71829,26 +72755,34 @@ app.pdcaTeste = {
 
             const novos = [];
             const batchSeenKeys = new Set();
-            sources.forEach(src => {
+            for (let si = 0; si < sources.length; si++) {
+                const src = sources[si];
                 const consolidado = this._readConsolidadoFromApr(src.id);
-                if (!consolidado) return;
-                const tratMap = this._getTratMapForApr(src.id);
-                const forcedOp = (opTarget && opTarget !== 'TODAS' && this._sourceMatchesOperacao(src, opTarget)) ? opTarget : null;
-                const candidateGaps = this._extractAllGapsFromSource(src, consolidado, tratMap, forcedOp);
-                candidateGaps.forEach(gap => {
-                    const kLower = String(gap.origemKey).toLowerCase();
-                    const hKey = this._hashKey(gap.origemKey);
-                    const opK = this._normTxt(gap.operacao);
-                    const semKey = `${opK}|${gap.criterioTipo}|${this._normTxt(gap.titulo)}`;
-                    if (existingByKey.has(kLower) || existingBySemantic.has(semKey) || batchSeenKeys.has(kLower)) return;
-                    if (this.ciclos[gap.id]) return;
-                    if (!ignoreOcultos && this.ocultos && this.ocultos[hKey]) return;
-                    batchSeenKeys.add(kLower);
-                    existingByKey.add(kLower);
-                    existingBySemantic.add(semKey);
-                    novos.push(gap);
-                });
-            });
+                if (!src.isAtual) {
+                    this._autoSyncedAprStamps.set(src.id, `${src.timestamp || 0}|${src.tratCount || 0}`);
+                }
+                if (consolidado) {
+                    const tratMap = this._getTratMapForApr(src.id);
+                    const forcedOp = (opTarget && opTarget !== 'TODAS' && this._sourceMatchesOperacao(src, opTarget)) ? opTarget : null;
+                    const candidateGaps = this._extractAllGapsFromSource(src, consolidado, tratMap, forcedOp);
+                    candidateGaps.forEach(gap => {
+                        const kLower = String(gap.origemKey).toLowerCase();
+                        const hKey = this._hashKey(gap.origemKey);
+                        const opK = this._normTxt(gap.operacao);
+                        const semKey = `${opK}|${gap.criterioTipo}|${this._normTxt(gap.titulo)}`;
+                        if (existingByKey.has(kLower) || existingBySemantic.has(semKey) || batchSeenKeys.has(kLower)) return;
+                        if (this.ciclos[gap.id]) return;
+                        if (!ignoreOcultos && this.ocultos && this.ocultos[hKey]) return;
+                        batchSeenKeys.add(kLower);
+                        existingByKey.add(kLower);
+                        existingBySemantic.add(semKey);
+                        novos.push(gap);
+                    });
+                }
+                if (si < sources.length - 1) {
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
 
             if (novos.length === 0) {
                 if (!silent) app.ui?.showToast?.('Todos os gaps disponíveis já estão sincronizados na nuvem.', 'info');
@@ -72240,7 +73174,7 @@ app.pdcaTeste = {
         `;
     },
 
-    _resolveAprContextForCard(c) {
+    _resolveAprContextForCard(c, precomputed = null, cacheOnly = true) {
         const opCiclo = this._resolveOperacaoCiclo(c);
         const aprMap = app.apresentacoesList || {};
         if (c?.aprId && aprMap[c.aprId]) {
@@ -72248,7 +73182,7 @@ app.pdcaTeste = {
             return {
                 aprId: c.aprId,
                 label: apr.nome || c.origemApres || opCiclo || 'Apresentação',
-                consolidado: this._readConsolidadoFromApr(c.aprId, apr),
+                consolidado: this._readConsolidadoFromApr(c.aprId, apr, cacheOnly),
                 isAtual: false
             };
         }
@@ -72261,15 +73195,28 @@ app.pdcaTeste = {
                 isAtual: !activeId
             };
         }
-        const latest = this._findLatestSourcesForSync(opCiclo);
-        if (latest.length > 0) {
-            const pick = latest[0];
-            return {
-                aprId: pick.id,
-                label: c?.origemApres || pick.label || pick.nome || 'Apresentação',
-                consolidado: pick.isAtual ? app.analiseCSVDinamicoData?.consolidado : this._readConsolidadoFromApr(pick.id),
-                isAtual: Boolean(pick.isAtual)
-            };
+        if (precomputed && precomputed.latestByOp) {
+            const opK = this._normTxt(opCiclo);
+            const pick = precomputed.latestByOp.get(opK) || null;
+            if (pick) {
+                return {
+                    aprId: pick.id,
+                    label: c?.origemApres || pick.label || pick.nome || 'Apresentação',
+                    consolidado: pick.isAtual ? app.analiseCSVDinamicoData?.consolidado : this._readConsolidadoFromApr(pick.id, null, cacheOnly),
+                    isAtual: Boolean(pick.isAtual)
+                };
+            }
+        } else {
+            const latest = this._findLatestSourcesForSync(opCiclo);
+            if (latest.length > 0) {
+                const pick = latest[0];
+                return {
+                    aprId: pick.id,
+                    label: c?.origemApres || pick.label || pick.nome || 'Apresentação',
+                    consolidado: pick.isAtual ? app.analiseCSVDinamicoData?.consolidado : this._readConsolidadoFromApr(pick.id, null, cacheOnly),
+                    isAtual: Boolean(pick.isAtual)
+                };
+            }
         }
         return {
             aprId: c?.aprId || '',
@@ -72368,7 +73315,7 @@ app.pdcaTeste = {
     abrirApresentacaoDoCard(cicloId) {
         const c = this.ciclos?.[cicloId];
         if (!c) return;
-        const ctx = this._resolveAprContextForCard(c);
+        const ctx = this._resolveAprContextForCard(c, null, false);
         const impacto = this._getImpactoGeralApresentacao(c, ctx);
         const aprId = ctx.aprId;
 
@@ -72412,7 +73359,7 @@ app.pdcaTeste = {
         }
     },
 
-    _renderCard(c, stageKey) {
+    _renderCard(c, stageKey, renderCtx = null) {
         const esc = app.utils.escapeHtml;
         const antes = Number(c.antesValor || 0);
         const meta = Number(c.metaValor || 85);
@@ -72487,12 +73434,12 @@ app.pdcaTeste = {
         })();
 
         const respNome = (stageKey !== 'P' || c.executadoEm) ? String(c.responsavel || '').trim() : '';
-        const aprCtx = this._resolveAprContextForCard(c);
+        const aprCtx = this._resolveAprContextForCard(c, renderCtx, true);
         const impacto = this._getImpactoGeralApresentacao(c, aprCtx);
         const aprShortLabel = String(aprCtx.label || 'Apresentação de Resultados').replace(/^\[[^\]]+\]\s*/, '').trim() || 'Apresentação';
 
         return `
-            <div class="group relative rounded-2xl bg-white/85 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.1)] hover:shadow-[0_12px_26px_-8px_rgba(15,23,42,0.16)] p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
+            <div class="group relative rounded-2xl bg-white/95 dark:bg-slate-900/90 border border-slate-200/75 dark:border-white/10 shadow-sm hover:shadow-md p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="flex flex-wrap items-center gap-1.5 min-w-0">
                         <span title="Equipe responsável bloqueada para alteração" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 select-none shrink-0 ${areaMeta.cls}">
@@ -72735,11 +73682,21 @@ app.pdcaTeste = {
         });
 
         const sources = this._getAvailableSources();
+        const latestByOp = new Map();
+        sources.forEach(s => {
+            if (s.isAtual) return;
+            [s.operacao, s.pasta].forEach(rawK => {
+                const k = this._normTxt(rawK);
+                if (k && !latestByOp.has(k)) latestByOp.set(k, s);
+            });
+        });
+        const pdcaRenderCtx = { latestByOp };
+        if (!this._stageLimits) this._stageLimits = {};
         if (this.selectedAprId === '__atual__' && !sources.some(s => s.id === '__atual__') && sources.length > 0) {
             this.selectedAprId = sources[0].id;
         }
         const qt = this._getQTContextStats();
-        const consolidadoAtivo = this._readConsolidadoFromApr(this.selectedAprId);
+        const consolidadoAtivo = this._readConsolidadoFromApr(this.selectedAprId, null, true);
         const mediaAtiva = consolidadoAtivo?.mediaTotal ? this._formatNum(consolidadoAtivo.mediaTotal) : '—';
         const selectedSourceObj = sources.find(s => s.id === this.selectedAprId) || null;
         const cloudStatusText = this._loadingCloud || this._syncingAuto
@@ -72959,12 +73916,24 @@ app.pdcaTeste = {
 
                                 <!-- Lista de Cards -->
                                 <div class="space-y-3 flex-1">
-                                    ${cards.length === 0 ? `
-                                        <div class="h-44 rounded-2xl border-2 border-dashed border-slate-300/60 dark:border-slate-700/60 flex flex-col items-center justify-center text-center p-4 opacity-75">
-                                            <i class="fa-solid ${st.icon} text-xl ${st.text} mb-2 opacity-60"></i>
-                                            <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Nenhum item em ${st.key}</span>
-                                        </div>
-                                    ` : cards.map(c => this._renderCard(c, st.key)).join('')}
+                                    ${(() => {
+                                        if (cards.length === 0) {
+                                            return `
+                                                <div class="h-44 rounded-2xl border-2 border-dashed border-slate-300/60 dark:border-slate-700/60 flex flex-col items-center justify-center text-center p-4 opacity-75">
+                                                    <i class="fa-solid ${st.icon} text-xl ${st.text} mb-2 opacity-60"></i>
+                                                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Nenhum item em ${st.key}</span>
+                                                </div>
+                                            `;
+                                        }
+                                        const limit = (this._stageLimits && this._stageLimits[st.key]) ? this._stageLimits[st.key] : 50;
+                                        const visibleCards = cards.slice(0, limit);
+                                        const rest = cards.length - visibleCards.length;
+                                        return visibleCards.map(c => this._renderCard(c, st.key, pdcaRenderCtx)).join('') + (rest > 0 ? `
+                                            <button type="button" onclick="app.pdcaTeste._stageLimits['${st.key}']=(app.pdcaTeste._stageLimits['${st.key}']||50)+50; app.pdcaTeste.renderView()" class="w-full py-2.5 px-3 rounded-xl bg-white/90 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-white/10 text-xs font-black text-slate-700 dark:text-slate-200 shadow-xs transition-all cursor-pointer">
+                                                Mostrar mais (+${Math.min(50, rest)} de ${rest} restantes)
+                                            </button>
+                                        ` : '');
+                                    })()}
                                 </div>
                             </div>
                         `;
