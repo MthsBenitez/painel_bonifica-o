@@ -924,22 +924,53 @@
     </div>
     
     <!-- TELA AMIGÁVEL DE CARREGAMENTO (F5 / SESSÃO ATIVA) -->
-    <div id="session-wait-screen" class="hidden fixed inset-0 z-[9999] bg-slate-50 dark:bg-dark-bg flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-        <div class="relative flex items-center justify-center mb-6">
-            <div class="w-20 h-20 rounded-full border-4 border-emerald-200 dark:border-emerald-950/60 border-t-emerald-500 animate-spin"></div>
-            <div class="absolute w-11 h-11 rounded-full bg-emerald-500/15 dark:bg-emerald-500/25 flex items-center justify-center text-emerald-600 dark:text-emerald-400 text-xl animate-pulse">
-                <i class="fa-solid fa-sparkles"></i>
-            </div>
+    <div id="session-wait-screen" class="hidden fixed inset-0 z-[9999] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-hidden animate-fade-in">
+        <!-- Fundo Atmosférico Tematizado -->
+        <div id="wait-ambient-bg" class="absolute inset-0 pointer-events-none transition-all duration-500 bg-gradient-to-br from-indigo-50 via-slate-50 to-sky-50 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-950">
+            <div id="wait-orb-1" class="absolute -top-32 -left-32 w-[30rem] h-[30rem] rounded-full bg-indigo-500/18 blur-3xl"></div>
+            <div id="wait-orb-2" class="absolute -bottom-32 -right-32 w-[30rem] h-[30rem] rounded-full bg-sky-500/15 blur-3xl"></div>
+            <div class="absolute inset-0 opacity-[0.22] dark:opacity-[0.1]" style="background-image: radial-gradient(rgba(100,116,139,0.35) 1px, transparent 1px); background-size: 22px 22px;"></div>
         </div>
-        <div class="space-y-1.5 max-w-sm">
-            <h2 class="text-2xl font-black text-slate-800 dark:text-white tracking-wider uppercase">AGUARDE</h2>
-            <p class="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium">
-                Carregando sua sess&atilde;o e sincronizando seus dados...
-            </p>
-            <div class="pt-4">
-                <button type="button" onclick="window.emergencyDismissWaitScreen ? window.emergencyDismissWaitScreen() : (function(){ try { localStorage.removeItem('soft_session_mat'); localStorage.removeItem('soft_session_date'); localStorage.removeItem('soft_session_admin'); } catch(e){} document.getElementById('session-wait-screen') && document.getElementById('session-wait-screen').classList.add('hidden'); document.getElementById('view-login') && document.getElementById('view-login').classList.remove('hidden'); })()" class="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-2 mx-auto cursor-pointer shadow-sm">
-                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Voltar para a Tela de Login
-                </button>
+
+        <!-- Card Central Glassmorphism -->
+        <div class="relative z-10 max-w-md w-full rounded-[2rem] bg-white/80 dark:bg-slate-900/75 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_24px_70px_-15px_rgba(15,23,42,0.28)] p-8 sm:p-10 overflow-hidden">
+            <div class="absolute inset-x-0 top-0 h-1.5 opacity-90" style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));"></div>
+
+            <!-- Selo Superior -->
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 dark:bg-white/10 border border-slate-200/80 dark:border-white/15 backdrop-blur-md text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-600 dark:text-slate-200 mb-6 shadow-xs">
+                <span class="relative flex h-2 w-2 shrink-0">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background-color: var(--theme-color, #4f46e5);"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2" style="background-color: var(--theme-color, #4f46e5);"></span>
+                </span>
+                <span>Portal de Qualidade &amp; Treinamento</span>
+            </div>
+
+            <!-- Orbital Spinner Tematizado -->
+            <div class="relative flex items-center justify-center mx-auto w-24 h-24 mb-6">
+                <div class="absolute inset-0 rounded-full border-[3px] border-slate-200/70 dark:border-slate-700/70 animate-spin" style="border-top-color: var(--theme-color, #4f46e5);"></div>
+                <div class="absolute inset-2 rounded-full border-2 border-transparent animate-spin" style="animation-direction: reverse; animation-duration: 2.2s; border-bottom-color: var(--theme-color, #4f46e5); opacity: 0.45;"></div>
+                <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg animate-pulse" style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%)); box-shadow: 0 10px 25px -5px rgba(var(--theme-r, 79), var(--theme-g, 70), var(--theme-b, 229), 0.45);">
+                    <i class="fa-solid fa-sparkles"></i>
+                </div>
+            </div>
+
+            <!-- Título e Barra Animada -->
+            <div class="space-y-2">
+                <h2 id="wait-title-text" class="text-2xl sm:text-3xl font-black tracking-[0.14em] uppercase bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-sky-500 to-emerald-500 dark:from-indigo-300 dark:via-sky-200 dark:to-emerald-300">AGUARDE</h2>
+                <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+                    Carregando sua sess&atilde;o e sincronizando seus dados...
+                </p>
+
+                <!-- Barra de progresso contínua sutil -->
+                <div class="w-48 h-1.5 mx-auto mt-4 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
+                    <div class="h-full w-1/2 rounded-full animate-pulse" style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));"></div>
+                </div>
+
+                <div class="pt-5">
+                    <button type="button" onclick="window.emergencyDismissWaitScreen ? window.emergencyDismissWaitScreen() : (function(){ try { localStorage.removeItem('soft_session_mat'); localStorage.removeItem('soft_session_date'); localStorage.removeItem('soft_session_admin'); } catch(e){} document.getElementById('session-wait-screen') && document.getElementById('session-wait-screen').classList.add('hidden'); document.getElementById('view-login') && document.getElementById('view-login').classList.remove('hidden'); })()" class="px-4 py-2 rounded-xl bg-white/80 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-2 mx-auto cursor-pointer shadow-sm">
+                        <i class="fa-solid fa-arrow-right-to-bracket" style="color: var(--theme-color, #4f46e5);"></i> Voltar para a Tela de Login
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -958,9 +989,42 @@
 
         (function() {
             try {
+                if (localStorage.getItem("theme") === "dark" || (!("theme" in localStorage) && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+                    document.documentElement.classList.add("dark");
+                }
                 const sMat = localStorage.getItem("soft_session_mat");
                 const sDate = localStorage.getItem("soft_session_date");
                 const todayStr = new Date().toLocaleDateString("pt-BR");
+                const themeId = (sMat && localStorage.getItem("soft_home_theme_" + String(sMat).trim()))
+                    || localStorage.getItem("soft_login_theme")
+                    || "indigo";
+                const waitThemes = {
+                    indigo: { accent: "#4f46e5", rgb: [79, 70, 229], grad: "linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%)", canvas: "from-indigo-50 via-slate-50 to-sky-50 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-950", orb1: "bg-indigo-500/18", orb2: "bg-sky-500/15", titleLight: "linear-gradient(90deg, #312e81, #0284c7, #059669)", titleDark: "linear-gradient(90deg, #a5b4fc, #bae6fd, #6ee7b7)" },
+                    ocean: { accent: "#0891b2", rgb: [8, 145, 178], grad: "linear-gradient(135deg, #020617 0%, #155e75 55%, #075985 100%)", canvas: "from-cyan-50 via-sky-50 to-slate-50 dark:from-slate-950 dark:via-cyan-950/55 dark:to-slate-950", orb1: "bg-cyan-400/20", orb2: "bg-sky-400/18", titleLight: "linear-gradient(90deg, #0e7490, #0284c7, #0d9488)", titleDark: "linear-gradient(90deg, #67e8f9, #bae6fd, #99f6e4)" },
+                    emerald: { accent: "#059669", rgb: [5, 150, 105], grad: "linear-gradient(135deg, #022c22 0%, #065f46 55%, #0f172a 100%)", canvas: "from-emerald-50 via-teal-50/80 to-slate-50 dark:from-slate-950 dark:via-emerald-950/55 dark:to-slate-950", orb1: "bg-emerald-400/20", orb2: "bg-teal-400/15", titleLight: "linear-gradient(90deg, #047857, #0d9488, #16a34a)", titleDark: "linear-gradient(90deg, #6ee7b7, #99f6e4, #bef264)" },
+                    aurora: { accent: "#a21caf", rgb: [162, 28, 175], grad: "linear-gradient(135deg, #3b0764 0%, #86198f 55%, #312e81 100%)", canvas: "from-purple-50 via-fuchsia-50/70 to-indigo-50 dark:from-slate-950 dark:via-purple-950/55 dark:to-slate-950", orb1: "bg-fuchsia-500/18", orb2: "bg-violet-400/18", titleLight: "linear-gradient(90deg, #7e22ce, #c026d3, #4f46e5)", titleDark: "linear-gradient(90deg, #f0abfc, #fbcfe8, #c7d2fe)" },
+                    sunset: { accent: "#e11d48", rgb: [225, 29, 72], grad: "linear-gradient(135deg, #0f172a 0%, #9f1239 55%, #b45309 100%)", canvas: "from-amber-50 via-rose-50/75 to-slate-50 dark:from-slate-950 dark:via-rose-950/50 dark:to-slate-950", orb1: "bg-rose-400/18", orb2: "bg-amber-400/18", titleLight: "linear-gradient(90deg, #be123c, #ea580c, #d97706)", titleDark: "linear-gradient(90deg, #fcd34d, #fed7aa, #fecdd3)" },
+                    royal: { accent: "#2563eb", rgb: [37, 99, 235], grad: "linear-gradient(135deg, #172554 0%, #1d4ed8 55%, #312e81 100%)", canvas: "from-blue-50 via-indigo-50/75 to-slate-50 dark:from-slate-950 dark:via-blue-950/55 dark:to-slate-950", orb1: "bg-blue-400/20", orb2: "bg-indigo-400/18", titleLight: "linear-gradient(90deg, #1d4ed8, #0284c7, #4338ca)", titleDark: "linear-gradient(90deg, #bfdbfe, #bae6fd, #a5f3fc)" },
+                    graphite: { accent: "#52525b", rgb: [82, 82, 91], grad: "linear-gradient(135deg, #09090b 0%, #27272a 55%, #18181b 100%)", canvas: "from-zinc-100 via-slate-50 to-stone-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-950", orb1: "bg-zinc-400/15", orb2: "bg-stone-400/15", titleLight: "linear-gradient(90deg, #18181b, #3f3f46, #52525b)", titleDark: "linear-gradient(90deg, #ffffff, #e4e4e7, #94a3b8)" },
+                    tropical_sunset: { accent: "#ec4899", rgb: [236, 72, 153], grad: "linear-gradient(135deg, #120726 0%, #831843 52%, #0e7490 100%)", canvas: "from-rose-50 via-fuchsia-50/70 to-cyan-50/85 dark:from-[#09061a] dark:via-[#240b36] dark:to-[#07212b]", orb1: "bg-pink-500/22 dark:bg-pink-500/18", orb2: "bg-cyan-400/22 dark:bg-cyan-400/16", titleLight: "linear-gradient(90deg, #be185d, #d97706, #0891b2)", titleDark: "linear-gradient(90deg, #f9a8d4, #fde68a, #a5f3fc)" },
+                    daylight: { accent: "#0284c7", rgb: [2, 132, 199], grad: "linear-gradient(135deg, #0369a1 0%, #0284c7 55%, #0d9488 100%)", canvas: "from-sky-50 via-white to-emerald-50/80 dark:from-slate-950 dark:via-[#071525] dark:to-[#041b1a]", orb1: "bg-sky-300/25 dark:bg-sky-600/14", orb2: "bg-emerald-300/20 dark:bg-emerald-600/12", titleLight: "linear-gradient(90deg, #2563eb, #4f46e5, #059669)", titleDark: "linear-gradient(90deg, #7dd3fc, #a5f3fc, #6ee7b7)" }
+                };
+                const wt = waitThemes[themeId] || waitThemes.indigo;
+                const isDarkWait = document.documentElement.classList.contains("dark");
+                document.documentElement.style.setProperty("--theme-color", wt.accent);
+                document.documentElement.style.setProperty("--theme-r", wt.rgb[0]);
+                document.documentElement.style.setProperty("--theme-g", wt.rgb[1]);
+                document.documentElement.style.setProperty("--theme-b", wt.rgb[2]);
+                document.documentElement.style.setProperty("--portal-modal-header", wt.grad);
+                const wBg = document.getElementById("wait-ambient-bg");
+                if (wBg) wBg.className = "absolute inset-0 pointer-events-none transition-all duration-500 bg-gradient-to-br " + wt.canvas;
+                const wOrb1 = document.getElementById("wait-orb-1");
+                if (wOrb1) wOrb1.className = "absolute -top-32 -left-32 w-[30rem] h-[30rem] rounded-full blur-3xl " + wt.orb1;
+                const wOrb2 = document.getElementById("wait-orb-2");
+                if (wOrb2) wOrb2.className = "absolute -bottom-32 -right-32 w-[30rem] h-[30rem] rounded-full blur-3xl " + wt.orb2;
+                const wTitle = document.getElementById("wait-title-text");
+                if (wTitle) wTitle.style.backgroundImage = isDarkWait ? wt.titleDark : wt.titleLight;
+
                 if (sMat && sDate === todayStr) {
                     const lView = document.getElementById("view-login");
                     if (lView) lView.classList.add("hidden");
@@ -969,12 +1033,12 @@
                 }
             } catch (e) {}
 
-            // Trava de seguranca global: Se a tela ficar presa em AGUARDE por mais de 3.5 segundos, restaura automaticamente a tela de login
+            // Trava de seguranca global: Se a tela ficar presa em AGUARDE por mais de 12 segundos, restaura automaticamente a tela de login
             setTimeout(function() {
                 var ws = document.getElementById("session-wait-screen");
                 var vApp = document.getElementById("view-app");
                 if (ws && !ws.classList.contains("hidden") && (!vApp || vApp.classList.contains("hidden"))) {
-                    console.warn("[Softmarketing] Timeout do AGUARDE atingido (3.5s). Restaurando tela de login.");
+                    console.warn("[Softmarketing] Timeout do AGUARDE atingido. Restaurando tela de login.");
                     window.emergencyDismissWaitScreen();
                 }
             }, 12000);
@@ -982,69 +1046,151 @@
     </script>
 
     <!-- VIEW LOGIN -->
-    <div id="view-login" class="flex-1 flex items-center justify-center p-4 relative overflow-hidden z-10 bg-slate-50 dark:bg-dark-bg">
-        <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-gray-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        
-        <div class="glass-card max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center relative z-10">
-            <div class="w-full mx-auto mb-8 bg-transparent flex flex-col items-center justify-center">
-                <div class="logo-font text-[2.4rem] font-bold text-[#333] dark:text-white leading-none mt-1">
-                    soft<span class="text-[#16a34a]">marketing</span>
+    <div id="view-login" class="min-h-screen flex-1 flex items-center justify-center p-4 sm:p-6 relative overflow-hidden z-10 bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+        <!-- Fundo Atmosférico Dinâmico (sincronizado com os temas do portal) -->
+        <div id="login-ambient-bg" class="absolute inset-0 pointer-events-none transition-all duration-500 bg-gradient-to-br from-indigo-50 via-slate-50 to-sky-50 dark:from-slate-950 dark:via-indigo-950/60 dark:to-slate-950">
+            <div id="login-orb-1" class="absolute -top-32 -left-32 w-[30rem] h-[30rem] rounded-full bg-indigo-500/18 blur-3xl"></div>
+            <div id="login-orb-2" class="absolute -bottom-32 -right-32 w-[30rem] h-[30rem] rounded-full bg-sky-500/15 blur-3xl"></div>
+            <div id="login-orb-3" class="hidden lg:block absolute top-1/3 right-1/4 w-72 h-72 rounded-full bg-indigo-500/18 blur-3xl opacity-60"></div>
+            <div class="absolute inset-0 opacity-[0.22] dark:opacity-[0.1]" style="background-image: radial-gradient(rgba(100,116,139,0.35) 1px, transparent 1px); background-size: 22px 22px;"></div>
+        </div>
+
+        <!-- Barra Superior Flutuante (Identidade + Seletor Rápido de Tema & Modo Claro/Escuro) -->
+        <div class="absolute top-4 left-4 right-4 sm:top-6 sm:left-6 sm:right-6 z-20 flex items-center justify-between gap-3 pointer-events-none">
+            <div class="pointer-events-auto hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-white/10 shadow-sm text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                <span class="relative flex h-2 w-2 shrink-0">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background-color: var(--theme-color);"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2" style="background-color: var(--theme-color);"></span>
+                </span>
+                <span>Portal de Qualidade &amp; Treinamento</span>
+            </div>
+
+            <div class="pointer-events-auto ml-auto inline-flex items-center gap-2 p-1.5 rounded-full bg-white/85 dark:bg-slate-900/80 backdrop-blur-xl border border-white/85 dark:border-white/10 shadow-lg">
+                <div id="login-theme-dots" class="flex items-center gap-1 px-1.5" title="Visualizar temas do portal"></div>
+                <div class="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                <button id="login-darkmode-btn" type="button" onclick="app.ui.toggleTheme()" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer" title="Alternar modo claro/escuro">
+                    <i id="login-darkmode-icon" class="fa-solid fa-moon text-[11px]"></i>
+                    <span id="login-darkmode-label">Escuro</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Card Principal Glassmorphism (Showcase + Formulário) -->
+        <div class="relative z-10 w-full max-w-md lg:max-w-[920px] rounded-[2rem] bg-white/80 dark:bg-slate-900/75 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_24px_70px_-15px_rgba(15,23,42,0.28)] overflow-hidden grid grid-cols-1 lg:grid-cols-12 my-14 sm:my-10 transition-all duration-300">
+            
+            <!-- Coluna Esquerda: Showcase Institucional -->
+            <div id="login-hero-panel" class="hidden lg:flex lg:col-span-6 relative p-9 flex-col justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-r border-slate-800/40 overflow-hidden transition-all duration-500">
+                <div id="login-hero-orb-1" class="absolute -right-14 -bottom-14 w-72 h-72 bg-indigo-500/18 rounded-full blur-3xl pointer-events-none"></div>
+                <div id="login-hero-orb-2" class="absolute -left-10 -top-12 w-56 h-56 bg-sky-500/15 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="relative z-10 space-y-5">
+                    <div class="flex items-center justify-between gap-2">
+                        <div>
+                            <div class="logo-font text-[2rem] font-bold leading-none tracking-tight">
+                                soft<span class="text-emerald-400">marketing</span>
+                            </div>
+                            <div class="logo-sub text-[8.5px] opacity-75 mt-1.5 tracking-[0.22em] uppercase">
+                                Soluções em Comunicação
+                            </div>
+                        </div>
+                        <span id="login-hero-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 backdrop-blur-md text-[10px] font-bold uppercase tracking-wider">
+                            <i class="fa-solid fa-sparkles text-[9px]"></i> Novo Visual
+                        </span>
+                    </div>
+
+                    <div class="pt-4">
+                        <h1 class="text-[1.75rem] font-extrabold tracking-tight leading-snug">
+                            Seja bem-vindo ao
+                            <span id="login-hero-title-grad" class="block mt-1 font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-sky-200 to-emerald-300">
+                                Portal de Qualidade &amp; Treinamento
+                            </span>
+                        </h1>
+                        <p id="login-hero-sub" class="text-xs leading-relaxed opacity-80 mt-3 max-w-sm">
+                            Acompanhe suas monitorias, feedbacks, trilhas de aprendizagem e indicadores operacionais em um só lugar.
+                        </p>
+                    </div>
                 </div>
-                <div class="logo-sub text-[9px] text-[#222] dark:text-slate-300 mt-2 w-full text-center tracking-[0.2em] uppercase">
-                    Soluções em Comunicação
+
+                <div class="relative z-10 space-y-2.5 pt-6">
+                    <div class="flex items-center justify-between text-[10px] opacity-70 pt-2 border-t border-white/10">
+                        <span>Softmarketing Corporativo</span>
+                        <span><i class="fa-solid fa-shield-halved mr-1"></i>Ambiente Seguro</span>
+                    </div>
                 </div>
             </div>
 
-            <h1 class="text-xl font-extrabold text-slate-800 dark:text-white mb-2 tracking-tight">Qualidade & Treinamento</h1>
-            <p class="text-slate-500 dark:text-slate-400 mb-8 text-sm">Qualidade & Treinamento | Softmarketing</p>
-            
-            <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-5">
-                
-                <!-- Campo Matrícula -->
-                <div class="text-left">
-                    <!-- CORREÇÃO: Adicionado for="login-mat" -->
-                    <label for="login-mat" class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
-                    <div class="relative">
-                        <i class="fa-solid fa-user absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="login-mat" name="username" autocomplete="username" required class="w-full pl-10 pr-4 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="Sua matrícula corporativa">
+            <!-- Coluna Direita: Formulário de Login -->
+            <div class="lg:col-span-6 p-7 sm:p-10 flex flex-col justify-center text-center relative">
+                <!-- Cabeçalho Compacto no Mobile -->
+                <div class="lg:hidden mb-6 flex flex-col items-center">
+                    <div class="logo-font text-[2rem] font-bold text-[#333] dark:text-white leading-none">
+                        soft<span class="text-[#16a34a]">marketing</span>
+                    </div>
+                    <div class="logo-sub text-[8.5px] text-slate-500 dark:text-slate-300 mt-1.5 tracking-[0.2em] uppercase">
+                        Soluções em Comunicação
+                    </div>
+                    <div class="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-100/90 dark:bg-white/10 border border-slate-200/80 dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-100">
+                        <i class="fa-solid fa-award text-xs" style="color: var(--theme-color);"></i>
+                        <span>Seja bem-vindo ao <strong id="login-mobile-title-grad" class="font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-sky-500 to-emerald-500 dark:from-indigo-300 dark:via-sky-200 dark:to-emerald-300">Qualidade &amp; Treinamento</strong></span>
                     </div>
                 </div>
-            
-                <!-- Campo Senha -->
-                <div class="text-left">
-                    <!-- CORREÇÃO: Adicionado for="login-pwd" -->
-                    <label for="login-pwd" class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
-                    <div class="relative">
-                        <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                        <input type="password" id="login-pwd" name="password" autocomplete="current-password" required class="w-full pl-10 pr-12 py-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent dark:text-white transition-all outline-none" placeholder="••••••••">
-                        <button type="button" onclick="app.ui.togglePasswordVisibility('login-pwd', this)" class="pwd-toggle-btn absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-green-600 transition-colors p-1" title="Mostrar/Ocultar Senha">
-                            <i class="fa-solid fa-eye text-sm"></i>
+
+                <div class="text-left mb-6">
+                    <div class="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] mb-1.5" style="color: var(--theme-color);">
+                        <i class="fa-solid fa-right-to-bracket text-[10px]"></i>
+                        <span>Acesso Corporativo</span>
+                    </div>
+                    <h2 class="text-2xl font-black tracking-tight text-slate-800 dark:text-white leading-tight">Entrar no Portal</h2>
+                    <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Informe sua matrícula e senha de acesso.</p>
+                </div>
+
+                <form onsubmit="event.preventDefault(); app.auth.login();" class="space-y-4 sm:space-y-5">
+                    
+                    <!-- Campo Matrícula -->
+                    <div class="text-left">
+                        <label for="login-mat" class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Matrícula (Login)</label>
+                        <div class="relative group">
+                            <i class="fa-solid fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-700 dark:group-focus-within:text-white transition-colors"></i>
+                            <input type="text" id="login-mat" name="username" autocomplete="username" required class="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/65 border border-slate-200/90 dark:border-slate-700/80 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:text-white text-sm font-medium transition-all outline-none shadow-inner" placeholder="Sua matrícula corporativa">
+                        </div>
+                    </div>
+                
+                    <!-- Campo Senha -->
+                    <div class="text-left">
+                        <label for="login-pwd" class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Senha de Acesso</label>
+                        <div class="relative group">
+                            <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-slate-700 dark:group-focus-within:text-white transition-colors"></i>
+                            <input type="password" id="login-pwd" name="password" autocomplete="current-password" required class="w-full pl-11 pr-12 py-3.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/65 border border-slate-200/90 dark:border-slate-700/80 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:text-white text-sm font-medium transition-all outline-none shadow-inner" placeholder="••••••••">
+                            <button type="button" onclick="app.ui.togglePasswordVisibility('login-pwd', this)" class="pwd-toggle-btn absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors p-1.5 rounded-lg" title="Mostrar/Ocultar Senha">
+                                <i class="fa-solid fa-eye text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                
+                    <!-- Linha do Checkbox e Esqueci a Senha -->
+                    <div class="flex items-center justify-between pt-1 px-0.5">
+                        <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+                            <input type="checkbox" id="login-remember" class="w-4 h-4 rounded border-slate-300 cursor-pointer" style="accent-color: var(--theme-color);">
+                            Lembrar minha matrícula
+                        </label>
+                        
+                        <button type="button" onclick="app.auth.forgotPassword()" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                            Esqueci a senha
                         </button>
                     </div>
-                </div>
-            
-                <!-- Linha do Checkbox e Esqueci a Senha -->
-                <div class="flex items-center justify-between mt-2 px-1">
-                    <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-green-600 transition-colors">
-                        <input type="checkbox" id="login-remember" class="accent-green-600 w-4 h-4 rounded border-slate-300 cursor-pointer">
-                        Lembrar minha matrícula
-                    </label>
-                    
-                    <!-- CORREÇÃO: O botão "Esqueci a senha" agora está DENTRO da div justify-between -->
-                    <button type="button" onclick="app.auth.forgotPassword()" class="text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors">
-                        Esqueci a senha
-                    </button>
-                </div>
-            
-                <!-- Botão de Submit -->
-                <button type="submit" class="w-full bg-gradient-to-r from-gray-700 to-gray-900 hover:from-gray-800 hover:to-black text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-gray-500/25 transition-all transform hover:-translate-y-0.5 mt-4">
-                    ENTRAR
-                </button>
                 
-            </form>
-            <div class="text-center mt-6">
-                <p class="text-[9px] text-slate-400 font-medium">softmarketing.com.br</p>
+                    <!-- Botão de Submit -->
+                    <button id="login-submit-btn" type="submit" style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));" class="w-full text-white font-extrabold tracking-wide py-3.5 px-5 rounded-2xl shadow-lg hover:shadow-xl hover:brightness-110 transition-all transform hover:-translate-y-0.5 mt-2 flex items-center justify-center gap-2.5 cursor-pointer">
+                        <span>ENTRAR</span>
+                        <i class="fa-solid fa-arrow-right text-xs"></i>
+                    </button>
+                    
+                </form>
+
+                <div class="flex items-center justify-between mt-7 pt-4 border-t border-slate-200/70 dark:border-slate-800/80 text-[10px] text-slate-400 font-medium">
+                    <span>softmarketing.com.br</span>
+                    <span class="hidden sm:inline-flex items-center gap-1"><i class="fa-solid fa-lock text-[9px]"></i> Sessão Protegida</span>
+                </div>
             </div>
         </div>
     </div>
@@ -1215,7 +1361,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261124_v179"></script>
+    <script src="script.js?v=20261124_v191"></script>
 </body>
 </html>
 

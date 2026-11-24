@@ -14686,6 +14686,9 @@ storage: {
                     if (app.ui && typeof app.ui.clearGlobalHomeTheme === 'function') {
                         app.ui.clearGlobalHomeTheme();
                     }
+                    if (app.ui && typeof app.ui.applyLoginTheme === 'function') {
+                        app.ui.applyLoginTheme();
+                    }
                     document.getElementById('terms-modal').classList.add('hidden');
                     document.getElementById('guidelines-modal').classList.add('hidden');
                     
@@ -18080,6 +18083,9 @@ storage: {
                         document.getElementById('login-mat').value = savedMat;
                         document.getElementById('login-remember').checked = true;
                     }
+                    if (typeof this.applyLoginTheme === 'function') {
+                        this.applyLoginTheme();
+                    }
                     
                     // Recupera o mês previamente selecionado para não perder o período no F5
                     const savedMonth = localStorage.getItem('soft_current_month');
@@ -18161,17 +18167,9 @@ storage: {
                     
                     const container = document.getElementById('theme-color-dropdown');
                     if(container) {
-                        const isRailActive = localStorage.getItem('soft_portal_layout_v2') !== 'classic';
                         container.innerHTML = themes.map(t => 
                             `<button onclick="app.ui.changeThemeColor('${t.hex}')" class="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-600 shadow-sm hover:scale-110 transition-transform" style="background-color: ${t.hex};" title="${t.name}"></button>`
-                        ).join('') + `
-                            <div class="col-span-5 pt-2 mt-1 border-t border-slate-100 dark:border-slate-700/80 flex flex-col gap-1.5">
-                                <button type="button" onclick="app.mintZenTeste && app.mintZenTeste.toggleGlobalPortalTheme()" class="w-full py-2 px-2.5 rounded-xl text-[11px] font-bold flex items-center justify-between transition-all cursor-pointer ${isRailActive ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700' : 'text-white shadow-sm'}" style="${isRailActive ? '' : 'background-color: var(--theme-color);'}">
-                                    <span>${isRailActive ? 'Usar Menu Superior Clássico' : 'Usar Barra Lateral Moderna'}</span>
-                                    <i class="fa-solid fa-table-columns text-[10px] opacity-80"></i>
-                                </button>
-                            </div>
-                        `;
+                        ).join('');
                     }
                 },
                 changeThemeColor(hex) {
@@ -18239,6 +18237,9 @@ storage: {
                     }
                     if (typeof this.applyGlobalHomeTheme === 'function') {
                         this.applyGlobalHomeTheme();
+                    }
+                    if (typeof this.applyLoginTheme === 'function') {
+                        this.applyLoginTheme();
                     }
                     this.refreshCurrentView(); 
                 },
@@ -25327,7 +25328,7 @@ storage: {
                             // MODO TABELA EXECUTIVA COMPACTA
                             const labelCargoRegra = cargoFilter === 'monitor' ? 'Mon/Op' : (cargoFilter === 'supervisor' ? 'Sup/Op' : 'Total/Op');
                             html += `
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-sm overflow-hidden">
                                     <div class="overflow-x-auto custom-scrollbar">
                                         <table class="w-full text-left border-collapse text-sm">
                                             <thead class="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-wider text-slate-400">
@@ -26369,7 +26370,7 @@ storage: {
                                     </div>
                                 ` : viewLayout === 'tabela' ? `
                                     <!-- Visualização em Lista Organizada -->
-                                    <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                    <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-sm overflow-hidden">
                                         <div class="overflow-x-auto">
                                             <table class="w-full text-left border-collapse text-xs">
                                                 <thead>
@@ -41259,9 +41260,9 @@ storage: {
                     // ADICIONADA TRAVA DE SEGURANÇA (!this.hasTriedToFetchAnaliseData) PARA EVITAR LOOP INFINITO
                     if (!app.analiseCSVDinamicoData && !this.isFetchingAnaliseData && !this.hasTriedToFetchAnaliseData) {
                         this.isFetchingAnaliseData = true;
-                        container.innerHTML = `<div class="p-16 text-center text-slate-400 glass-card rounded-3xl mt-8 border-dashed border-2 border-slate-300">
-                            <i class="fa-solid fa-spinner fa-spin text-5xl mb-4 text-blue-500"></i>
-                            <h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Restaurando Memória...</h3>
+                        container.innerHTML = `<div class="p-16 text-center text-slate-500 dark:text-slate-300 bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl mt-8 border-dashed border-2 border-slate-300/80 dark:border-slate-700 shadow-sm">
+                            <i class="fa-solid fa-spinner fa-spin text-5xl mb-4" style="color: var(--theme-color);"></i>
+                            <h3 class="font-extrabold text-xl text-slate-800 dark:text-white mb-2">Restaurando Memória...</h3>
                             <p class="text-sm max-w-md mx-auto">Buscando os relatórios processados anteriormente no banco de dados local do seu navegador.</p>
                         </div>`;
                         
@@ -41472,114 +41473,184 @@ storage: {
                             }
                             .animate-orb-1 { animation: floatOrb1 18s ease-in-out infinite; will-change: transform; }
                             .animate-orb-2 { animation: floatOrb2 22s ease-in-out infinite; will-change: transform; }
+                            ${!this.analiseEditMode ? `
+                            #view-container-analise_csv_dinamico .glass-card,
+                            #view-container-analise_csv_dinamico details.bg-white,
+                            #view-container-analise_csv_dinamico div.bg-white.rounded-2xl,
+                            #view-container-analise_csv_dinamico div.bg-white.rounded-3xl,
+                            #view-container-analise_csv_dinamico .analise-frosted-surface {
+                                background: rgba(255, 255, 255, 0.80) !important;
+                                backdrop-filter: blur(20px) !important;
+                                -webkit-backdrop-filter: blur(20px) !important;
+                                border-color: rgba(255, 255, 255, 0.78) !important;
+                            }
+                            .dark #view-container-analise_csv_dinamico .glass-card,
+                            .dark #view-container-analise_csv_dinamico details.bg-white,
+                            .dark #view-container-analise_csv_dinamico div.bg-white.rounded-2xl,
+                            .dark #view-container-analise_csv_dinamico div.bg-white.rounded-3xl,
+                            .dark #view-container-analise_csv_dinamico .analise-frosted-surface {
+                                background: rgba(15, 23, 42, 0.75) !important;
+                                border-color: rgba(255, 255, 255, 0.1) !important;
+                            }
+                            #view-container-analise_csv_dinamico details > summary.bg-white {
+                                background: transparent !important;
+                            }
+                            ` : ''}
                             @media print { .parallax-layer, #particles-js { display: none !important; } }
                         </style>
 
-                        <!-- ESTRUTURA PARALLAX COM PARTICLES.JS VERDE LEVE (VIEWPORT FIXO) -->
+                        <!-- ESTRUTURA PARALLAX TEMATIZADA (VIEWPORT FIXO) -->
                         <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="transform: translateZ(0);">
-                            <!-- Orbes suaves de fundo com aceleração por GPU sem blur pesado -->
-                            <div class="parallax-layer absolute top-[10%] left-[5%] w-[350px] h-[350px] rounded-full" style="background: radial-gradient(circle, rgba(52, 211, 153, 0.14) 0%, rgba(52, 211, 153, 0) 70%); transform: translateZ(0);"></div>
-                            <div class="parallax-layer absolute top-[60%] right-[5%] w-[400px] h-[400px] rounded-full" style="background: radial-gradient(circle, rgba(34, 197, 94, 0.14) 0%, rgba(34, 197, 94, 0) 70%); transform: translateZ(0);"></div>
-                            
-                            <!-- Container do Particles Fixo na Janela -->
-                            <div id="particles-js" class="absolute inset-0 w-full h-full opacity-50"></div>
+                            <div class="parallax-layer absolute top-[10%] left-[5%] w-[380px] h-[380px] rounded-full" style="background: radial-gradient(circle, ${data?.bgColor ? glowColor : 'rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.16)'} 0%, transparent 70%); transform: translateZ(0);"></div>
+                            <div class="parallax-layer absolute top-[60%] right-[5%] w-[420px] h-[420px] rounded-full" style="background: radial-gradient(circle, ${data?.bgColor ? glowSecondary : 'rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.10)'} 0%, transparent 70%); transform: translateZ(0);"></div>
+                            <div id="particles-js" class="absolute inset-0 w-full h-full opacity-40"></div>
                         </div>
 
-                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
-                            <div class="w-full ${this.analiseEditMode ? 'text-center mt-12' : 'xl:w-auto'}">
-                                <!-- TÍTULO MUITO MAIOR COM COR -->
-                                <div class="flex flex-col xl:flex-row items-center xl:justify-start gap-4">
-                                    <h2 contenteditable="${this.analiseEditMode ? 'false' : 'true'}" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="${this.analiseEditMode ? 'text-6xl md:text-8xl w-full block drop-shadow-lg' : 'text-4xl md:text-5xl'} font-black tracking-tight text-slate-800 dark:text-white outline-none focus:border-b-2 focus:border-blue-500 inline-block px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" style="${data?.titleColor ? 'color: ' + data.titleColor + ' !important;' : ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
-                                    ${!this.analiseEditMode && data ? `
-                                    <div class="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-                                        <div class="flex flex-col items-center" title="Cor da Fonte do Título">
-                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-heading"></i> Título</span>
-                                            <input type="color" value="${data.titleColor || '#1e293b'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0">
-                                        </div>
-                                        <div class="w-px h-6 bg-slate-200 dark:bg-slate-700"></div>
-                                        <div class="flex flex-col items-center" title="Cor Charmosa do Fundo">
-                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1"><i class="fa-solid fa-fill-drip"></i> Fundo</span>
-                                            <input type="color" value="${userBg}" onchange="app.analiseCSVDinamicoData.consolidado.bgColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent shrink-0">
-                                        </div>
-                                    </div>` : ''}
-                                </div>
-                                <p class="text-slate-500 dark:text-slate-400 text-sm mt-2 ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i> Base Ref: <strong class="text-slate-700 dark:text-slate-300">${data ? data.infoData : 'Aguardando Arquivo...'}</strong>
-                                </p>
+                        ${!this.analiseEditMode ? `
+                        <!-- HERO EXECUTIVO TEMATIZADO (2 LINHAS ORGANIZADAS & ALTO CONTRASTE) -->
+                        <div style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));" class="relative z-20 mb-6 rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-white/15">
+                            <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                                <div class="absolute -right-12 -bottom-16 w-80 h-80 rounded-full bg-white/10 blur-3xl"></div>
+                                <div class="absolute right-44 -top-14 w-56 h-56 rounded-full bg-white/10 blur-2xl"></div>
                             </div>
-                            
-                            <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-                                <!-- DROPDOWN IMPORTAÇÕES -->
-                                <div class="relative group ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold py-2.5 px-5 rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                        <i class="fa-solid fa-cloud-arrow-up text-blue-500"></i> Importações <i class="fa-solid fa-chevron-down text-[10px] opacity-50 ml-1"></i>
-                                    </button>
-                                    <div class="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden flex flex-col py-1">
-                                        <label class="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
-                                            <i class="fa-solid fa-file-csv text-blue-500 w-4 text-center"></i> <span>CSV / Excel Padrão</span>
-                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
-                                        </label>
-                                        <button onclick="app.admin.abrirModalImportacaoTripla()" class="px-4 py-3 text-left hover:bg-teal-50 dark:hover:bg-teal-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
-                                            <i class="fa-solid fa-cubes-stacked text-teal-500 w-4 text-center"></i> <span>Unir 3 Arquivos</span>
-                                        </button>
-                                        <label class="px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
-                                            <i class="fa-solid fa-user-clock text-emerald-500 w-4 text-center"></i> <span>Base de RH (Dias)</span>
-                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
-                                        </label>
-                                        <label class="px-4 py-3 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
-                                            <i class="fa-solid fa-stopwatch text-amber-500 w-4 text-center"></i> <span>Base TMA (Opcional)</span>
-                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarArquivoTMA(this)" onclick="this.value = null">
-                                        </label>
+
+                            <!-- Linha 1: Identidade em Alto Contraste + Base + Aparência / Apresentar -->
+                            <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3.5 min-w-0 flex-1">
+                                    <div class="w-11 h-11 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-md flex items-center justify-center text-white text-lg shrink-0 shadow-sm">
+                                        <i class="fa-solid fa-chart-line"></i>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-[10px] font-bold uppercase tracking-[0.16em] text-white/75 mb-0.5 whitespace-nowrap">
+                                            Apresentação de Resultados • Analytics IA
+                                        </div>
+                                        <div class="flex flex-wrap items-center gap-3">
+                                            <h2 contenteditable="true" onblur="if(app.analiseCSVDinamicoData && app.analiseCSVDinamicoData.consolidado) { app.analiseCSVDinamicoData.consolidado.customTitle = this.innerText; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); }" class="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-sm outline-none focus:border-b-2 focus:border-white/70 px-1.5 -mx-1.5 rounded-lg hover:bg-white/10 transition-all truncate max-w-2xl" title="Clique para editar o título">${data ? (data.customTitle || data.infoOperacao) : 'Apresentação de Resultados'}</h2>
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 border border-white/20 text-[11px] font-semibold text-white/95 whitespace-nowrap shrink-0">
+                                                <i class="fa-regular fa-calendar text-[11px] opacity-80"></i>
+                                                <span>Base Ref: <strong class="font-extrabold text-white">${data ? data.infoData : 'Aguardando Arquivo...'}</strong></span>
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <!-- DROPDOWN FERRAMENTAS -->
-                                <div class="relative group ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold py-2.5 px-5 rounded-xl shadow-sm hover:shadow-md transition-all flex items-center gap-2 text-sm whitespace-nowrap">
-                                        <i class="fa-solid fa-wrench text-slate-500"></i> Ferramentas <i class="fa-solid fa-chevron-down text-[10px] opacity-50 ml-1"></i>
-                                    </button>
-                                    <div class="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden flex flex-col py-1">
-                                        <label class="px-4 py-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? 'border-b border-slate-100 dark:border-slate-700/50' : ''}">
-                                            <i class="fa-solid fa-microscope text-purple-500 w-4 text-center"></i> <span>Raio-X (Debug)</span>
-                                            <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                                    ${data ? `
+                                    <div class="inline-flex items-center gap-2.5 bg-white/15 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-xs shrink-0 whitespace-nowrap" title="Cores do Título (Modo Apresentar) e Orbe de Fundo">
+                                        <label class="inline-flex items-center gap-1.5 text-[10px] font-bold text-white/90 uppercase tracking-wider cursor-pointer">
+                                            <i class="fa-solid fa-heading opacity-80"></i>
+                                            <span>Título</span>
+                                            <input type="color" value="${data.titleColor || '#ffffff'}" onchange="app.analiseCSVDinamicoData.consolidado.titleColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
                                         </label>
-                                        ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                        <button onclick="app.admin.gerarLinkCompartilhamento()" class="px-4 py-3 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
-                                            <i class="fa-solid fa-share-nodes text-indigo-500 w-4 text-center"></i> <span>Link Público (72h)</span>
+                                        <span class="w-px h-4 bg-white/25"></span>
+                                        <label class="inline-flex items-center gap-1.5 text-[10px] font-bold text-white/90 uppercase tracking-wider cursor-pointer">
+                                            <i class="fa-solid fa-fill-drip opacity-80"></i>
+                                            <span>Fundo</span>
+                                            <input type="color" value="${userBg}" onchange="app.analiseCSVDinamicoData.consolidado.bgColor = this.value; localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData); app.ui.renderTab('analise_csv_dinamico', true)" class="w-4 h-4 rounded cursor-pointer border border-white/40 p-0 bg-transparent shrink-0">
+                                        </label>
+                                    </div>` : ''}
+                                    ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                    <button onclick="app.ui.toggleEditModeAnalise()" class="bg-white text-slate-900 hover:bg-slate-100 font-black py-2 px-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 inline-flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer">
+                                        <i class="fa-solid fa-play"></i> Apresentar
+                                    </button>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Linha 2: Ações & Ferramentas Separadas com Espaçamento Limpo -->
+                            <div class="relative z-20 mt-4 pt-3.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <!-- DROPDOWN IMPORTAÇÕES -->
+                                    <div class="relative group">
+                                        <button class="bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur-md text-white font-bold py-2 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer">
+                                            <i class="fa-solid fa-cloud-arrow-up"></i> Importações <i class="fa-solid fa-chevron-down text-[10px] opacity-75"></i>
                                         </button>
-                                        <button onclick="app.admin.exportarAnalisePDF()" class="px-4 py-3 text-left hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
-                                            <i class="fa-solid fa-file-pdf text-red-500 w-4 text-center"></i> <span>Exportar PDF</span>
-                                        </button>
-                                        ` : ''}
+                                        <div class="absolute left-0 top-full mt-2 w-56 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden flex flex-col py-1">
+                                            <label class="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
+                                                <i class="fa-solid fa-file-csv text-blue-500 w-4 text-center"></i> <span>CSV / Excel Padrão</span>
+                                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarCSVAvancado(this)" onclick="this.value = null">
+                                            </label>
+                                            <button onclick="app.admin.abrirModalImportacaoTripla()" class="px-4 py-3 text-left hover:bg-teal-50 dark:hover:bg-teal-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
+                                                <i class="fa-solid fa-cubes-stacked text-teal-500 w-4 text-center"></i> <span>Unir 3 Arquivos</span>
+                                            </button>
+                                            <label class="px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
+                                                <i class="fa-solid fa-user-clock text-emerald-500 w-4 text-center"></i> <span>Base de RH (Dias)</span>
+                                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarTempoDeCasa(this)" onclick="this.value = null">
+                                            </label>
+                                            <label class="px-4 py-3 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
+                                                <i class="fa-solid fa-stopwatch text-amber-500 w-4 text-center"></i> <span>Base TMA (Opcional)</span>
+                                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarArquivoTMA(this)" onclick="this.value = null">
+                                            </label>
+                                        </div>
                                     </div>
+
+                                    <!-- DROPDOWN FERRAMENTAS -->
+                                    <div class="relative group">
+                                        <button class="bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur-md text-white font-bold py-2 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer">
+                                            <i class="fa-solid fa-wrench"></i> Ferramentas <i class="fa-solid fa-chevron-down text-[10px] opacity-75"></i>
+                                        </button>
+                                        <div class="absolute left-0 top-full mt-2 w-56 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden flex flex-col py-1">
+                                            <label class="px-4 py-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? 'border-b border-slate-100 dark:border-slate-700/50' : ''}">
+                                                <i class="fa-solid fa-microscope text-purple-500 w-4 text-center"></i> <span>Raio-X (Debug)</span>
+                                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.debugArquivoCSV(this)" onclick="this.value = null">
+                                            </label>
+                                            ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                            <button onclick="app.admin.gerarLinkCompartilhamento()" class="px-4 py-3 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors border-b border-slate-100 dark:border-slate-700/50">
+                                                <i class="fa-solid fa-share-nodes text-indigo-500 w-4 text-center"></i> <span>Link Público (72h)</span>
+                                            </button>
+                                            <button onclick="app.admin.exportarAnalisePDF()" class="px-4 py-3 text-left hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-3 transition-colors">
+                                                <i class="fa-solid fa-file-pdf text-red-500 w-4 text-center"></i> <span>Exportar PDF</span>
+                                            </button>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+
+                                    ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                    <button onclick="app.ui.openGerenciarCapitulosModal()" class="bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur-md text-white font-bold py-2 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer" title="Gerenciar quais capítulos serão exibidos na Apresentação">
+                                        <i class="fa-solid fa-layer-group"></i>
+                                        <span>Capítulos</span>
+                                        ${qtdCapitulosOcultos > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-400 text-slate-900 font-black">${qtdCapitulosOcultos}</span>` : ''}
+                                    </button>
+                                    ` : ''}
                                 </div>
 
-                                <!-- BOTÃO DE SALVAR NA NUVEM, RETROALIMENTAR Q&T E MODO APRESENTAÇÃO -->
                                 ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
-                                <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}">
-                                    <i class="fa-solid fa-cloud-arrow-up"></i> Salvar &amp; Retroalimentar Q&amp;T
-                                </button>
-                                <button onclick="app.ui.abrirQualidadeTreinamentoDaSessao('__sessao_atual__')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Abrir Prescrição Operacional, Onde Agir e Simulador What-If na aba Qualidade & Treinamento">
-                                    <i class="fa-solid fa-compass-drafting"></i> Backoffice Q&amp;T
-                                </button>
-                                <button onclick="app.ui.openGerenciarCapitulosModal()" class="bg-indigo-50 hover:bg-indigo-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-bold py-2.5 px-4 rounded-xl border border-indigo-200 dark:border-slate-700 shadow-sm transition-all flex items-center justify-center gap-2 text-sm whitespace-nowrap ${this.analiseEditMode ? 'hidden' : ''}" title="Gerenciar quais capítulos serão exibidos na Apresentação">
-                                    <i class="fa-solid fa-layer-group text-indigo-500"></i>
-                                    <span>Capítulos</span>
-                                    ${qtdCapitulosOcultos > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-black">${qtdCapitulosOcultos} oculto${qtdCapitulosOcultos > 1 ? 's' : ''}</span>` : ''}
-                                </button>
-                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px]">
-                                    <i class="fa-solid ${this.analiseEditMode ? 'fa-eye-slash' : 'fa-play'}"></i> ${this.analiseEditMode ? 'Sair da Apresentação' : 'Apresentar'}
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button onclick="app.ui.abrirQualidadeTreinamentoDaSessao('__sessao_atual__')" class="bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur-md text-white font-bold py-2 px-3.5 rounded-xl shadow-xs transition-all flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer" title="Abrir Prescrição Operacional, Onde Agir e Simulador What-If na aba Qualidade & Treinamento">
+                                        <i class="fa-solid fa-compass-drafting"></i> Backoffice Q&amp;T
+                                    </button>
+                                    <button onclick="app.admin.openSaveApresentacaoModal()" class="bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold py-2 px-4 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center gap-2 text-xs whitespace-nowrap cursor-pointer">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i> Salvar &amp; Retroalimentar Q&amp;T
+                                    </button>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        ` : `
+                        <!-- CABEÇALHO MODO APRESENTAÇÃO TELA CHEIA -->
+                        <div class="mb-8 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative z-10 pt-4">
+                            <div class="w-full text-center mt-12">
+                                <div class="flex flex-col items-center gap-4">
+                                    <h2 class="text-6xl md:text-8xl w-full block drop-shadow-lg font-black tracking-tight text-slate-800 dark:text-white" style="${data?.titleColor ? 'color: ' + data.titleColor + ' !important;' : ''}">${data ? (data.customTitle || data.infoOperacao) : 'Analítico de Operação'}</h2>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-center">
+                                ${!app.isGuest && mainData && mainData.relatorios && mainData.relatorios.length > 0 ? `
+                                <button onclick="app.ui.toggleEditModeAnalise()" class="bg-slate-800 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2 text-sm whitespace-nowrap min-w-[180px] cursor-pointer">
+                                    <i class="fa-solid fa-eye-slash"></i> Sair da Apresentação
                                 </button>
                                 ` : ''}
                             </div>
                         </div>
+                        `}
                     `;
 
                     if (!data) {
                         html += `
-                        <div class="p-8 sm:p-10 text-center glass-card rounded-3xl border-dashed border-2 border-blue-300 dark:bg-blue-900/10 mb-6">
-                            <i class="fa-solid fa-magnifying-glass-chart text-4xl text-blue-400 dark:text-blue-500 mb-3"></i>
-                            <h3 class="font-extrabold text-lg text-slate-700 dark:text-slate-200 mb-1">Importe uma planilha nova ou abra uma apresentação pronta abaixo</h3>
+                        <div class="relative z-10 p-8 sm:p-10 text-center bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border-dashed border-2 border-slate-300/90 dark:border-slate-700 shadow-sm mb-6">
+                            <div class="w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center text-3xl" style="background-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14); color: var(--theme-color);">
+                                <i class="fa-solid fa-magnifying-glass-chart"></i>
+                            </div>
+                            <h3 class="font-extrabold text-lg text-slate-800 dark:text-white mb-1">Importe uma planilha nova ou abra uma apresentação pronta abaixo</h3>
                             <p class="text-slate-500 dark:text-slate-400 text-xs max-w-md mx-auto leading-relaxed">O sistema lerá os pesos, mapeará falhas e compilará os formulários automaticamente.</p>
                         </div>
 
@@ -41629,7 +41700,7 @@ storage: {
                             { id: 'Q4', label: `Q4 · ${qcFiltroTop.nomeQ4 || 'Atenção'} (<${fmtLimFiltro(qcFiltroTop.q3)})`, activeCls: 'bg-red-600 text-white border-red-600 shadow-md transform -translate-y-0.5', hoverCls: 'hover:border-red-400 dark:hover:border-red-500' }
                         ];
                         html += `
-                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group/apres-filter' : 'mb-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hideable-box relative'}">
+                        <div class="${this.analiseEditMode ? 'fixed bottom-8 left-8 z-[9999] group/apres-filter' : 'mb-6 bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-5 rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-sm hideable-box relative'}">
                             
                             ${this.analiseEditMode ? `
                             <div class="w-14 h-14 bg-blue-600 text-white rounded-full shadow-[0_10px_25px_rgba(37,99,235,0.5)] flex items-center justify-center text-xl cursor-pointer transition-all duration-300 relative z-50 opacity-0 hover:opacity-100 group-hover/apres-filter:opacity-100">
@@ -50585,7 +50656,7 @@ storage: {
                             totalFiltrado: filtrada.length,
                             setoresLista,
                             html: `
-                                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-sm overflow-hidden">
                                     <div class="overflow-x-auto">
                                         <table class="w-full text-left border-collapse">
                                             <thead>
@@ -50623,16 +50694,16 @@ storage: {
                     const cardsHtml = pastaKeys.map(kPasta => {
                         const nomePasta = pastaLabels[kPasta];
                         return `
-                        <div class="glass-card p-0 rounded-3xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm flex flex-col h-full max-h-[420px]">
-                            <div class="bg-blue-50/90 dark:bg-blue-900/20 px-5 py-3.5 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
-                                <div class="w-9 h-9 rounded-xl bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                        <div class="glass-card analise-frosted-surface p-0 rounded-3xl border border-white/75 dark:border-slate-700/80 overflow-hidden shadow-sm flex flex-col h-full max-h-[420px]">
+                            <div style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));" class="px-5 py-3.5 text-white border-b border-white/15 flex items-center gap-3 shrink-0">
+                                <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 backdrop-blur-md text-white flex items-center justify-center shrink-0">
                                     <i class="fa-solid fa-folder-open text-base"></i>
                                 </div>
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Setor / Operação</div>
-                                    <h3 class="font-extrabold text-sm text-slate-800 dark:text-white truncate" title="${esc(nomePasta)}">${esc(nomePasta)}</h3>
+                                    <div class="text-[9px] font-black uppercase tracking-widest text-white/75">Setor / Operação</div>
+                                    <h3 class="font-extrabold text-sm text-white truncate" title="${esc(nomePasta)}">${esc(nomePasta)}</h3>
                                 </div>
-                                <span class="ml-auto bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-black tabular-nums">${pastas[kPasta].length}</span>
+                                <span class="ml-auto bg-white/15 border border-white/20 text-white text-[10px] px-2.5 py-0.5 rounded-full font-black tabular-nums">${pastas[kPasta].length}</span>
                             </div>
                             <div class="p-3.5 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                 ${pastas[kPasta].map(apr => {
@@ -50681,11 +50752,11 @@ storage: {
                         : `${payload.totalFiltrado} de ${payload.totalVisivel} encontrada${payload.totalFiltrado === 1 ? '' : 's'}`;
 
                     return `
-                        <section id="apr-nuvem-section" class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700/80 space-y-4">
-                            <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+                        <section id="apr-nuvem-section" class="relative z-10 mt-8 pt-6 border-t border-slate-200/70 dark:border-slate-700/80 space-y-4">
+                            <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl p-4 sm:p-5 border border-white/75 dark:border-slate-700/80 shadow-sm space-y-3">
                                 <div class="flex flex-wrap items-center justify-between gap-3">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style="background-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14); color: var(--theme-color);">
                                             <i class="fa-solid fa-folder-tree text-lg"></i>
                                         </div>
                                         <div>
@@ -58927,6 +58998,19 @@ Object.assign(app.ui, {
                             titleGrad: 'from-white via-zinc-200 to-slate-400',
                             isLightHero: false
                         },
+                        tropical_sunset: {
+                            id: 'tropical_sunset',
+                            name: 'Horizonte Neon',
+                            accentHex: '#ec4899',
+                            modalHeaderGrad: 'linear-gradient(135deg, #120726 0%, #831843 52%, #0e7490 100%)',
+                            swatch: 'bg-gradient-to-br from-fuchsia-600 via-rose-500 to-cyan-400',
+                            hero: 'bg-gradient-to-r from-[#120726] via-[#831843] to-[#0e7490] text-white border-pink-700/50',
+                            canvas: 'bg-gradient-to-br from-rose-50 via-fuchsia-50/70 to-cyan-50/85 dark:from-[#09061a] dark:via-[#240b36] dark:to-[#07212b]',
+                            orb1: 'bg-pink-500/22 dark:bg-pink-500/18',
+                            orb2: 'bg-cyan-400/22 dark:bg-cyan-400/16',
+                            titleGrad: 'from-pink-300 via-amber-200 to-cyan-200',
+                            isLightHero: false
+                        },
                         daylight: {
                             id: 'daylight',
                             name: 'Manhã Clara',
@@ -59113,7 +59197,10 @@ Object.assign(app.ui, {
                     setUserHomeTheme(themeId) {
                         if (!this.HOME_BG_THEMES[themeId]) return;
                         const mat = String(app.currentUser?.matricula || (app.isAdmin ? 'admin' : 'guest')).trim();
-                        try { localStorage.setItem('soft_home_theme_' + mat, themeId); } catch (e) {}
+                        try {
+                            localStorage.setItem('soft_home_theme_' + mat, themeId);
+                            localStorage.setItem('soft_login_theme', themeId);
+                        } catch (e) {}
                         if (app.currentUser && !app.isAdmin && mat && mat !== 'guest') {
                             app.currentUser.homeTheme = themeId;
                             if (app.storage && typeof app.storage.saveUserByMatricula === 'function') {
@@ -59121,9 +59208,103 @@ Object.assign(app.ui, {
                             }
                         }
                         this.applyGlobalHomeTheme(themeId);
+                        this.applyLoginTheme(themeId);
                         const container = document.getElementById('view-container-home');
                         if (container) this.renderView_Home(container);
                         this.showNotification(`Tema "${this.HOME_BG_THEMES[themeId].name}" aplicado em todo o portal!`, 'success', 2000);
+                    },
+
+                    setLoginTheme(themeId) {
+                        if (!this.HOME_BG_THEMES[themeId]) return;
+                        try { localStorage.setItem('soft_login_theme', themeId); } catch (e) {}
+                        this.applyLoginTheme(themeId);
+                    },
+
+                    applyLoginTheme(themeIdOverride = null) {
+                        const viewLogin = document.getElementById('view-login');
+                        if (!viewLogin) return;
+
+                        let resolvedId = themeIdOverride;
+                        if (!resolvedId || !this.HOME_BG_THEMES[resolvedId]) {
+                            let savedLogin = null;
+                            let savedMatTheme = null;
+                            try {
+                                savedLogin = localStorage.getItem('soft_login_theme');
+                                const rememberedMat = localStorage.getItem('soft_saved_mat');
+                                if (rememberedMat) savedMatTheme = localStorage.getItem('soft_home_theme_' + String(rememberedMat).trim());
+                            } catch (e) {}
+                            resolvedId = (savedLogin && this.HOME_BG_THEMES[savedLogin])
+                                ? savedLogin
+                                : ((savedMatTheme && this.HOME_BG_THEMES[savedMatTheme]) ? savedMatTheme : 'indigo');
+                        }
+                        const theme = this.HOME_BG_THEMES[resolvedId] || this.HOME_BG_THEMES.indigo;
+                        const isDarkMode = document.documentElement.classList.contains('dark');
+                        const isLight = !isDarkMode && Boolean(theme.isLightHero);
+
+                        if (theme.accentHex && typeof this.changeThemeColor === 'function') {
+                            this.changeThemeColor(theme.accentHex);
+                        }
+                        if (theme.modalHeaderGrad) {
+                            document.documentElement.style.setProperty('--portal-modal-header', theme.modalHeaderGrad);
+                        }
+
+                        const ambientEl = document.getElementById('login-ambient-bg');
+                        if (ambientEl) {
+                            ambientEl.className = `absolute inset-0 pointer-events-none transition-all duration-500 ${theme.canvas}`;
+                        }
+                        const orb1El = document.getElementById('login-orb-1');
+                        const orb2El = document.getElementById('login-orb-2');
+                        const orb3El = document.getElementById('login-orb-3');
+                        if (orb1El) orb1El.className = `absolute -top-32 -left-32 w-[30rem] h-[30rem] rounded-full ${theme.orb1} blur-3xl`;
+                        if (orb2El) orb2El.className = `absolute -bottom-32 -right-32 w-[30rem] h-[30rem] rounded-full ${theme.orb2} blur-3xl`;
+                        if (orb3El) orb3El.className = `hidden lg:block absolute top-1/3 right-1/4 w-72 h-72 rounded-full ${theme.orb1} blur-3xl opacity-60`;
+
+                        const heroPanel = document.getElementById('login-hero-panel');
+                        if (heroPanel) {
+                            heroPanel.className = `hidden lg:flex lg:col-span-6 relative p-9 flex-col justify-between ${theme.hero} border-r overflow-hidden transition-all duration-500`;
+                        }
+                        const hOrb1 = document.getElementById('login-hero-orb-1');
+                        const hOrb2 = document.getElementById('login-hero-orb-2');
+                        if (hOrb1) hOrb1.className = `absolute -right-14 -bottom-14 w-72 h-72 ${theme.orb1} rounded-full blur-3xl pointer-events-none`;
+                        if (hOrb2) hOrb2.className = `absolute -left-10 -top-12 w-56 h-56 ${theme.orb2} rounded-full blur-2xl pointer-events-none`;
+
+                        const titleGradEl = document.getElementById('login-hero-title-grad');
+                        if (titleGradEl) {
+                            titleGradEl.className = `block mt-1 font-black bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}`;
+                        }
+                        const mobTitleEl = document.getElementById('login-mobile-title-grad');
+                        if (mobTitleEl) {
+                            mobTitleEl.className = `font-black bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}`;
+                        }
+
+                        const pillCls = isLight
+                            ? 'bg-white/80 border-sky-200/80 text-sky-700 shadow-sm'
+                            : 'bg-white/10 border-white/15 text-white/95';
+                        const badgeEl = document.getElementById('login-hero-badge');
+                        if (badgeEl) badgeEl.className = `inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border backdrop-blur-md text-[10px] font-bold uppercase tracking-wider ${pillCls}`;
+
+                        const dotsEl = document.getElementById('login-theme-dots');
+                        if (dotsEl) {
+                            const esc = app.utils && typeof app.utils.escapeHtml === 'function' ? app.utils.escapeHtml : (s) => String(s || '');
+                            dotsEl.innerHTML = Object.values(this.HOME_BG_THEMES).map(t => {
+                                const active = t.id === theme.id;
+                                return `<button type="button" onclick="app.ui.setLoginTheme('${esc(t.id)}')" title="${esc(t.name)}"
+                                    class="w-4 h-4 rounded-full transition-all cursor-pointer ${t.swatch} ${active ? 'ring-2 ring-offset-1 ring-slate-900 dark:ring-white scale-110' : 'opacity-70 hover:opacity-100 hover:scale-110'}"
+                                    aria-label="Tema ${esc(t.name)}"></button>`;
+                            }).join('');
+                        }
+
+                        const dmIcon = document.getElementById('login-darkmode-icon');
+                        const dmLabel = document.getElementById('login-darkmode-label');
+                        if (dmIcon && dmLabel) {
+                            if (isDarkMode) {
+                                dmIcon.className = 'fa-solid fa-sun text-[11px] text-amber-300';
+                                dmLabel.textContent = 'Claro';
+                            } else {
+                                dmIcon.className = 'fa-solid fa-moon text-[11px] text-slate-600';
+                                dmLabel.textContent = 'Escuro';
+                            }
+                        }
                     },
 
                     _mapWeatherCodePt(code) {
@@ -59580,10 +59761,20 @@ Object.assign(app.ui, {
                                     <!-- Cabeçalho Hero Preservado + Busca ao Vivo -->
                                     <div class="relative rounded-3xl ${theme.hero} p-6 sm:p-8 shadow-xl border transition-all duration-300">
                                         <div class="relative z-10 flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-                                            <div class="max-w-3xl w-full flex-1 min-w-0">
-                                                <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
-                                                    Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}">${esc(currentUser.nome || 'Colaborador')}</span>
-                                                </h1>
+                                            <div class="max-w-5xl w-full flex-1 min-w-0">
+                                                <div class="flex flex-wrap items-center gap-x-4 gap-y-2.5 mb-4">
+                                                    <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">
+                                                        Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}">${esc(currentUser.nome || 'Colaborador')}</span>
+                                                    </h1>
+                                                    <div class="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl border backdrop-blur-md shadow-sm transition-all ${isLight ? 'bg-white/75 border-slate-200/80 text-slate-700 dark:bg-white/10 dark:border-white/15 dark:text-slate-100' : 'bg-white/[0.09] border-white/15 text-slate-100'}">
+                                                        <span class="w-6 h-6 rounded-xl flex items-center justify-center shrink-0 text-white shadow-sm" style="background: linear-gradient(135deg, var(--theme-color), rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.72));">
+                                                            <i class="fa-solid fa-award text-[11px]"></i>
+                                                        </span>
+                                                        <p class="text-xs sm:text-sm font-semibold tracking-tight leading-snug">
+                                                            Seja bem-vindo ao <span class="font-black bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}">Portal de Qualidade &amp; Treinamento</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
 
                                                 <!-- Campo de Busca em Tempo Real (abre primeira sugestão no Enter) -->
                                                 <div class="relative max-w-2xl">
@@ -59687,7 +59878,7 @@ Object.assign(app.ui, {
                                                 Ativo: <strong class="text-slate-900 dark:text-white">${esc(theme.name)}</strong>
                                             </span>
                                         </div>
-                                        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                                        <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2.5">
                                             ${Object.values(this.HOME_BG_THEMES).map(t => {
                                                 const active = t.id === themeId;
                                                 return `
@@ -62035,7 +62226,7 @@ Object.assign(app.ui, {
                         if (!container) return;
                         if (!app.hasAdminAccess('harmony')) {
                             container.innerHTML = `
-                                <div class="max-w-xl mx-auto my-12 p-10 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div class="max-w-xl mx-auto my-12 p-10 text-center bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-xl">
                                     <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center text-2xl">
                                         <i class="fa-solid fa-lock"></i>
                                     </div>
@@ -62386,47 +62577,47 @@ app.harmonyCtrl = {
         const st = this._calcStats(allProjetos);
         return `
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                        <span>Datalakes / Form.</span><i class="fa-solid fa-database text-indigo-500"></i>
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border border-white/75 dark:border-slate-700/80 shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Datalakes / Form.</span><i class="fa-solid fa-database" style="color: var(--theme-color);"></i>
                     </div>
-                    <div class="text-xl font-black text-slate-800 dark:text-white tabular-nums mt-1">${st.totalProjetos}</div>
-                    <div class="text-[10px] text-slate-400 tabular-nums">${st.totalPerguntas} pergunta(s)</div>
+                    <div class="text-2xl font-black text-slate-800 dark:text-white tabular-nums mt-1.5">${st.totalProjetos}</div>
+                    <div class="text-[10px] font-medium text-slate-400 tabular-nums mt-0.5">${st.totalPerguntas} pergunta(s)</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 shadow-xs">
-                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center justify-between">
                         <span>Inclusas Harmony</span><i class="fa-solid fa-circle-check text-emerald-500"></i>
                     </div>
-                    <div class="text-xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums mt-1">${st.inclusa} <span class="text-xs font-bold opacity-75">(${st.pctInclusa}%)</span></div>
-                    <div class="text-[10px] text-slate-400">Com prompt &amp; versão</div>
+                    <div class="text-2xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums mt-1.5">${st.inclusa} <span class="text-xs font-bold opacity-75">(${st.pctInclusa}%)</span></div>
+                    <div class="text-[10px] font-medium text-slate-400 mt-0.5">Com prompt &amp; versão</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-violet-200/80 dark:border-violet-800/60 shadow-xs">
-                    <div class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider flex items-center justify-between">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border border-violet-200/80 dark:border-violet-800/60 shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-wider flex items-center justify-between">
                         <span>Meta Dados</span><i class="fa-solid fa-tags text-violet-500"></i>
                     </div>
-                    <div class="text-xl font-black text-violet-700 dark:text-violet-300 tabular-nums mt-1">${st.metadados}</div>
-                    <div class="text-[10px] text-slate-400">Via metadado mapeado</div>
+                    <div class="text-2xl font-black text-violet-700 dark:text-violet-300 tabular-nums mt-1.5">${st.metadados}</div>
+                    <div class="text-[10px] font-medium text-slate-400 mt-0.5">Via metadado mapeado</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-sky-200/80 dark:border-sky-800/60 shadow-xs">
-                    <div class="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center justify-between">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border border-sky-200/80 dark:border-sky-800/60 shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center justify-between">
                         <span>Minutagem</span><i class="fa-solid fa-stopwatch text-sky-500"></i>
                     </div>
-                    <div class="text-xl font-black text-sky-700 dark:text-sky-300 tabular-nums mt-1">${st.minutagemResolvida}<span class="text-xs font-bold opacity-75">/${st.minutagem}</span></div>
-                    <div class="text-[10px] text-slate-400">Entregues pela Harmony</div>
+                    <div class="text-2xl font-black text-sky-700 dark:text-sky-300 tabular-nums mt-1.5">${st.minutagemResolvida}<span class="text-xs font-bold opacity-75">/${st.minutagem}</span></div>
+                    <div class="text-[10px] font-medium text-slate-400 mt-0.5">Entregues pela Harmony</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border border-rose-200/80 dark:border-rose-800/60 shadow-xs">
-                    <div class="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center justify-between">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border border-rose-200/80 dark:border-rose-800/60 shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center justify-between">
                         <span>Não Entrou</span><i class="fa-solid fa-ban text-rose-500"></i>
                     </div>
-                    <div class="text-xl font-black text-rose-700 dark:text-rose-300 tabular-nums mt-1">${st.naoEntrou}</div>
-                    <div class="text-[10px] text-slate-400">Com justificativa</div>
+                    <div class="text-2xl font-black text-rose-700 dark:text-rose-300 tabular-nums mt-1.5">${st.naoEntrou}</div>
+                    <div class="text-[10px] font-medium text-slate-400 mt-0.5">Com justificativa</div>
                 </div>
-                <div class="bg-white dark:bg-slate-800 p-3.5 rounded-2xl border ${st.errosPendentes > 0 ? 'border-amber-300 dark:border-amber-700' : 'border-slate-200 dark:border-slate-700'} shadow-xs">
-                    <div class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl p-4 rounded-2xl border ${st.errosPendentes > 0 ? 'border-amber-300 dark:border-amber-700' : 'border-white/75 dark:border-slate-700/80'} shadow-sm transition hover:shadow-md">
+                    <div class="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center justify-between">
                         <span>Erros Insight</span><i class="fa-solid fa-bug text-amber-500"></i>
                     </div>
-                    <div class="text-xl font-black ${st.errosPendentes > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200'} tabular-nums mt-1">${st.errosPendentes}</div>
-                    <div class="text-[10px] text-slate-400">Pendentes de ajuste</div>
+                    <div class="text-2xl font-black ${st.errosPendentes > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200'} tabular-nums mt-1.5">${st.errosPendentes}</div>
+                    <div class="text-[10px] font-medium text-slate-400 mt-0.5">Pendentes de ajuste</div>
                 </div>
             </div>
         `;
@@ -62571,9 +62762,10 @@ app.harmonyCtrl = {
             const errCount = Array.isArray(v.problemasInsight) ? v.problemasInsight.filter(pr => pr && !pr.resolvido).length : 0;
             return `
                 <button type="button" onclick="app.harmonyCtrl.selectViewVersion('${pid}', '${qid}', ${v.versao})"
+                    ${isViewing ? 'style="background-color: var(--theme-color); border-color: var(--theme-color);"' : ''}
                     class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1.5 cursor-pointer border ${isViewing
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-400'}">
+                        ? 'text-white shadow-xs'
+                        : 'bg-white/85 dark:bg-slate-900/75 text-slate-600 dark:text-slate-300 border-slate-200/80 dark:border-slate-700 hover:border-slate-400'}">
                     <span>V${v.versao}</span>
                     ${isCurrentActive ? `<span class="px-1 py-0.2 rounded text-[9px] font-black ${isViewing ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'}">ATIVA</span>` : ''}
                     ${errCount > 0 ? `<span class="px-1.5 py-0.2 rounded-full text-[9px] font-black tabular-nums ${isViewing ? 'bg-amber-300 text-slate-900' : 'bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300'}">${errCount}</span>` : ''}
@@ -62629,17 +62821,30 @@ app.harmonyCtrl = {
 
         return `
             <div class="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/15 border border-emerald-200/90 dark:border-emerald-800/60 space-y-3">
-                <!-- Como ficou na Harmony + Seleção de Versão (V1..V∞) -->
+                <!-- Título Harmony + Como ficou na Harmony + Seleção de Versão (V1..V∞) -->
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-                    <div class="lg:col-span-8">
-                        <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider mb-1">
-                            <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Como ficou na Harmony
-                        </label>
-                        <textarea rows="2"
-                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'comoFicouHarmony', this.value)"
-                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
-                            placeholder="Descreva como o critério/pergunta foi estruturado dentro da Harmony..."
-                            class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500 resize-y">${esc(q.comoFicouHarmony || '')}</textarea>
+                    <div class="lg:col-span-8 space-y-2.5">
+                        <div>
+                            <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider mb-1">
+                                <i class="fa-solid fa-heading mr-1"></i> Título Harmony
+                            </label>
+                            <input type="text"
+                                value="${esc(q.tituloHarmony || '')}"
+                                oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'tituloHarmony', this.value)"
+                                onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                placeholder="Ex: Saudação Padrão, Confirmação de Dados, Quebra de Script..."
+                                class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider mb-1">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Como ficou na Harmony
+                            </label>
+                            <textarea rows="2"
+                                oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'comoFicouHarmony', this.value)"
+                                onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                                placeholder="Descreva como o critério/pergunta foi estruturado dentro da Harmony..."
+                                class="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500 resize-y">${esc(q.comoFicouHarmony || '')}</textarea>
+                        </div>
                     </div>
                     <div class="lg:col-span-4 space-y-1.5">
                         <label class="block text-[11px] font-extrabold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
@@ -62652,7 +62857,8 @@ app.harmonyCtrl = {
                                 <option value="__custom__">Outra versão (digitar nº)...</option>
                             </select>
                             <button type="button" onclick="app.harmonyCtrl.evolveNextVersion('${pid}', '${qid}', ${vView})"
-                                class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shadow-xs transition flex items-center gap-1 shrink-0 cursor-pointer"
+                                style="background-color: var(--theme-color);"
+                                class="px-3 py-2 rounded-xl hover:brightness-110 text-white text-[11px] font-extrabold shadow-xs transition flex items-center gap-1 shrink-0 cursor-pointer"
                                 title="Criar V${maxV + 1} herdando o prompt atual para evoluir sem perder o histórico">
                                 <i class="fa-solid fa-plus"></i> V${maxV + 1}
                             </button>
@@ -62755,10 +62961,10 @@ app.harmonyCtrl = {
         const fMeta = this._getFlagMeta(flag);
 
         return `
-            <div id="hq-card-${pid}-${qid}" class="bg-white dark:bg-slate-800/95 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
-                <!-- Linha Principal: Ordem + Pergunta Soft + Peso + Flag -->
+            <div id="hq-card-${pid}-${qid}" class="bg-white/80 dark:bg-slate-900/70 backdrop-blur-lg rounded-2xl p-4 border border-white/75 dark:border-slate-700/80 shadow-xs space-y-3">
+                <!-- Linha Principal: Ordem + Pergunta Soft + Peso Soft + Peso Harmony + Flag -->
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-                    <div class="lg:col-span-6 space-y-1">
+                    <div class="lg:col-span-5 space-y-1">
                         <div class="flex items-center justify-between gap-2">
                             <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 tabular-nums">
                                 <i class="fa-solid fa-list-ol mr-1 text-indigo-500"></i>Pergunta #${idx + 1} (Formulário Soft)
@@ -62787,7 +62993,7 @@ app.harmonyCtrl = {
 
                     <div class="lg:col-span-2 space-y-1">
                         <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400">
-                            <i class="fa-solid fa-scale-balanced mr-1 text-amber-500"></i>Peso
+                            <i class="fa-solid fa-scale-balanced mr-1 text-amber-500"></i>Peso Soft
                         </label>
                         <input type="text"
                             value="${esc(q.peso || '')}"
@@ -62797,7 +63003,19 @@ app.harmonyCtrl = {
                             class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-extrabold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums">
                     </div>
 
-                    <div class="lg:col-span-4 space-y-1">
+                    <div class="lg:col-span-2 space-y-1">
+                        <label class="block text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                            <i class="fa-solid fa-weight-scale mr-1"></i>Peso Harmony
+                        </label>
+                        <input type="text"
+                            value="${esc(q.pesoHarmony || '')}"
+                            oninput="app.harmonyCtrl.updateQuestionField('${pid}', '${qid}', 'pesoHarmony', this.value)"
+                            onblur="app.harmonyCtrl._saveProjNow('${pid}')"
+                            placeholder="Ex: 10, Crítico..."
+                            class="w-full px-3 py-2.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/70 text-xs font-extrabold text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 tabular-nums">
+                    </div>
+
+                    <div class="lg:col-span-3 space-y-1">
                         <label class="block text-[10px] font-black uppercase tracking-wider text-slate-400">
                             <i class="fa-solid ${fMeta.icon} mr-1"></i>Flag / Situação Harmony
                         </label>
@@ -62833,7 +63051,7 @@ app.harmonyCtrl = {
             const versoesTxt = Array.isArray(q.versoes)
                 ? q.versoes.map(v => `v${v.versao} ${v.promptTexto || ''} ${(v.problemasInsight || []).map(pr => `${pr.idLigacao || ''} ${this._getProblemTypeMeta(pr.tipoProblema).label} ${pr.erroEncontrado || ''}`).join(' ')}`).join(' ')
                 : '';
-            const hay = this._normStr(`${q.perguntaSoft} ${q.peso} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`);
+            const hay = this._normStr(`${q.perguntaSoft} ${q.peso} ${q.pesoHarmony} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.tituloHarmony} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`);
             return hay.includes(qTerm);
         });
 
@@ -62898,7 +63116,7 @@ app.harmonyCtrl = {
                 const versoesTxt = Array.isArray(q.versoes)
                     ? q.versoes.map(v => `v${v.versao} ${v.promptTexto || ''} ${(v.problemasInsight || []).map(pr => `${pr.idLigacao || ''} ${this._getProblemTypeMeta(pr.tipoProblema).label} ${pr.erroEncontrado || ''}`).join(' ')}`).join(' ')
                     : '';
-                return this._normStr(`${q.perguntaSoft} ${q.peso} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`).includes(qTerm);
+                return this._normStr(`${q.perguntaSoft} ${q.peso} ${q.pesoHarmony} ${q.motivoNaoEntrou} ${q.qualMetadado} ${q.metadadoDetalhe} ${q.tituloHarmony} ${q.comoFicouHarmony} ${q.minutagemObservacao} ${versoesTxt}`).includes(qTerm);
             });
         });
 
@@ -62912,17 +63130,17 @@ app.harmonyCtrl = {
         const opsListRender = Object.keys(gruposOp).sort((a, b) => a.localeCompare(b));
 
         const opPillsHtml = [
-            `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('TODAS')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${opFiltro === 'TODAS' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">Todas (${allProjetos.length})</button>`,
+            `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('TODAS')" ${opFiltro === 'TODAS' ? 'style="background-color: var(--theme-color); border-color: var(--theme-color);"' : ''} class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer border ${opFiltro === 'TODAS' ? 'text-white shadow-sm' : 'bg-white/75 dark:bg-slate-800/75 border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}">Todas (${allProjetos.length})</button>`,
             ...opsDisponiveis.map(op => {
                 const count = allProjetos.filter(p => String(p.operacao || 'GERAL').trim().toUpperCase() === op).length;
-                return `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('${esc(op)}')" class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${opFiltro === op ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}">${esc(op)} (${count})</button>`;
+                return `<button type="button" onclick="app.harmonyCtrl.setFiltroOperacao('${esc(op)}')" ${opFiltro === op ? 'style="background-color: var(--theme-color); border-color: var(--theme-color);"' : ''} class="px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer border ${opFiltro === op ? 'text-white shadow-sm' : 'bg-white/75 dark:bg-slate-800/75 border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}">${esc(op)} (${count})</button>`;
             })
         ].join('');
 
         const gruposHtml = opsListRender.length === 0
             ? `
-                <div class="bg-white dark:bg-slate-800 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-700 shadow-sm space-y-4">
-                    <div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-2xl">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl p-12 text-center border border-white/75 dark:border-slate-700/80 shadow-sm space-y-4">
+                    <div class="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center text-2xl" style="background-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14); color: var(--theme-color);">
                         <i class="fa-solid fa-robot"></i>
                     </div>
                     <h3 class="text-base font-extrabold text-slate-800 dark:text-white">
@@ -62935,8 +63153,8 @@ app.harmonyCtrl = {
                     </p>
                     <div>
                         ${allProjetos.length === 0
-                            ? `<button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition inline-flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-plus"></i> Criar Primeiro Projeto / Datalake</button>`
-                            : `<button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">Limpar Filtros</button>`}
+                            ? `<button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" style="background-color: var(--theme-color);" class="px-5 py-2.5 rounded-xl hover:brightness-110 text-white text-xs font-extrabold shadow-sm transition inline-flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-plus"></i> Criar Primeiro Projeto / Datalake</button>`
+                            : `<button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition cursor-pointer">Limpar Filtros</button>`}
                     </div>
                 </div>
             `
@@ -62950,15 +63168,15 @@ app.harmonyCtrl = {
                     const isOpen = this.openProjects[proj.id] !== undefined ? !!this.openProjects[proj.id] : (allProjetos.length <= 3);
                     return `
                         <details data-hproj-details="${pid}" ${isOpen ? 'open' : ''} ontoggle="app.harmonyCtrl.onToggleProject('${pid}', this.open)"
-                            class="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                            <summary class="px-5 py-4 cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-900/40 hover:bg-slate-100/80 dark:hover:bg-slate-900/60 transition list-none">
+                            class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl border border-white/75 dark:border-slate-700/80 shadow-sm overflow-hidden transition-all">
+                            <summary class="px-5 py-4 cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 bg-white/50 dark:bg-slate-900/40 hover:bg-slate-50/90 dark:hover:bg-slate-800/60 transition list-none">
                                 <div class="flex items-center gap-3 min-w-0">
-                                    <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                                    <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background-color: rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.14); color: var(--theme-color);">
                                         <i class="fa-solid fa-database"></i>
                                     </div>
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
-                                            <span class="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase">${esc(proj.operacao || 'GERAL')}</span>
+                                            <span style="background-color: var(--theme-color);" class="px-2 py-0.5 rounded-md text-white text-[10px] font-black uppercase">${esc(proj.operacao || 'GERAL')}</span>
                                             <h4 class="text-sm font-black text-slate-800 dark:text-white truncate">${esc(proj.nomeProjeto || 'Projeto Harmony')}</h4>
                                         </div>
                                         <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate mt-0.5">
@@ -62974,19 +63192,19 @@ app.harmonyCtrl = {
                                     <span id="harmony-sync-badge-${pid}" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                                         <i class="fa-solid fa-cloud-check mr-1"></i>Salvo
                                     </span>
-                                    <button type="button" onclick="app.harmonyCtrl.exportarCSVProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Exportar CSV deste Datalake">
+                                    <button type="button" onclick="app.harmonyCtrl.exportarCSVProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white/85 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Exportar CSV deste Datalake">
                                         <i class="fa-solid fa-file-csv text-xs text-emerald-600"></i>
                                     </button>
-                                    <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Editar Operação / Projeto / Datalake">
+                                    <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white/85 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Editar Operação / Projeto / Datalake">
                                         <i class="fa-solid fa-pen-to-square text-xs"></i>
                                     </button>
-                                    <button type="button" onclick="app.harmonyCtrl.excluirProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer" title="Excluir Projeto / Datalake">
+                                    <button type="button" onclick="app.harmonyCtrl.excluirProjeto('${pid}')" class="w-8 h-8 rounded-xl bg-white/85 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200/80 dark:border-slate-700 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer" title="Excluir Projeto / Datalake">
                                         <i class="fa-solid fa-trash text-xs"></i>
                                     </button>
                                 </div>
                             </summary>
 
-                            <div id="harmony-proj-body-${pid}" class="p-4 sm:p-5 space-y-4 border-t border-slate-100 dark:border-slate-700/80">
+                            <div id="harmony-proj-body-${pid}" class="p-4 sm:p-5 space-y-4 border-t border-slate-200/60 dark:border-slate-700/80">
                                 ${this._renderProjectBodyHtml(proj)}
                             </div>
                         </details>
@@ -62995,13 +63213,13 @@ app.harmonyCtrl = {
 
                 return `
                     <details data-hop-details="${esc(op)}" ${opOpen ? 'open' : ''} ontoggle="app.harmonyCtrl.onToggleOp('${esc(op)}', this.open)" class="space-y-3">
-                        <summary class="px-4 py-3 rounded-2xl bg-gradient-to-r from-slate-800 via-indigo-900 to-slate-900 text-white shadow-sm cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 list-none">
+                        <summary style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));" class="px-5 py-3.5 rounded-2xl text-white shadow-md border border-white/15 cursor-pointer select-none flex flex-wrap items-center justify-between gap-3 list-none transition hover:brightness-105">
                             <div class="flex items-center gap-2.5">
-                                <i class="fa-solid fa-building-shield text-cyan-300"></i>
+                                <i class="fa-solid fa-building-shield text-white/85"></i>
                                 <span class="text-sm font-black uppercase tracking-wide">${esc(op)}</span>
-                                <span class="px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold tabular-nums">${projs.length} projeto(s) · ${totPergOp} pergunta(s)</span>
+                                <span class="px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold tabular-nums">${projs.length} projeto(s) · ${totPergOp} pergunta(s)</span>
                             </div>
-                            <span class="text-[11px] text-indigo-200 font-semibold"><i class="fa-solid fa-chevron-down mr-1"></i> Expandir / Recolher Operação</span>
+                            <span class="text-[11px] text-white/80 font-semibold"><i class="fa-solid fa-chevron-down mr-1"></i> Expandir / Recolher Operação</span>
                         </summary>
                         <div class="space-y-4 pt-2 pl-0 sm:pl-2">
                             ${projsCardsHtml}
@@ -63011,28 +63229,30 @@ app.harmonyCtrl = {
             }).join('');
 
         container.innerHTML = `
-            <div class="max-w-[1920px] mx-auto pb-20 space-y-4 animate-fade-in">
-                <!-- Cabeçalho Executivo -->
-                <div class="bg-gradient-to-r from-indigo-700 via-slate-800 to-cyan-800 rounded-3xl p-5 sm:p-6 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div class="flex items-start gap-3.5 min-w-0">
-                        <div class="w-11 h-11 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-cyan-200 text-xl shrink-0">
+            <div class="max-w-[1920px] mx-auto pb-20 space-y-5 animate-fade-in">
+                <!-- Cabeçalho Executivo Tematizado -->
+                <div style="background: var(--portal-modal-header, linear-gradient(135deg, #0f172a 0%, #312e81 55%, #1e1b4b 100%));" class="relative overflow-hidden rounded-3xl p-6 sm:p-7 text-white shadow-xl border border-white/15 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                    <div class="absolute -right-12 -bottom-16 w-72 h-72 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+                    <div class="absolute right-44 -top-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+                    <div class="relative z-10 flex items-start gap-4 min-w-0">
+                        <div class="w-12 h-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-md flex items-center justify-center text-white text-xl shrink-0 shadow-sm">
                             <i class="fa-solid fa-robot"></i>
                         </div>
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h2 class="text-xl sm:text-2xl font-black tracking-tight">Harmony — Governança de Perguntas &amp; Prompts</h2>
-                                <span class="px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold uppercase tracking-wider text-cyan-100">Controle Soft × Harmony</span>
+                                <span class="px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20 backdrop-blur-md text-[10px] font-extrabold uppercase tracking-wider text-white/95">Controle Soft × Harmony</span>
                             </div>
-                            <p class="text-xs text-indigo-100/90 mt-1 max-w-3xl">
+                            <p class="text-xs text-white/80 mt-1.5 max-w-3xl leading-relaxed">
                                 Organize projetos por operação e datalake (formulário Soft), controle pesos e flags, acompanhe prompts V1, V2, V3... e audite erros por ID de ligação antes de evoluir de versão.
                             </p>
                         </div>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2 shrink-0">
-                        <button type="button" onclick="app.harmonyCtrl.exportarCSVTodos()" class="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
+                    <div class="relative z-10 flex flex-wrap items-center gap-2.5 shrink-0">
+                        <button type="button" onclick="app.harmonyCtrl.exportarCSVTodos()" class="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 backdrop-blur-md text-white text-xs font-extrabold transition flex items-center gap-1.5 cursor-pointer">
                             <i class="fa-solid fa-file-csv"></i> Exportar Tudo CSV
                         </button>
-                        <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                        <button type="button" onclick="app.harmonyCtrl.abrirModalProjeto()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black shadow-lg transition flex items-center gap-1.5 cursor-pointer active:scale-95">
                             <i class="fa-solid fa-plus"></i> Novo Projeto / Datalake
                         </button>
                     </div>
@@ -63044,21 +63264,21 @@ app.harmonyCtrl = {
                 </div>
 
                 <!-- Filtros por Operação, Flag & Busca -->
-                <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+                <div class="bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl rounded-3xl p-4 sm:p-5 border border-white/75 dark:border-slate-700/80 shadow-sm space-y-3">
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-[11px] font-black uppercase tracking-wider text-slate-400 mr-1"><i class="fa-solid fa-layer-group mr-1"></i>Operação:</span>
+                        <span class="text-[11px] font-black uppercase tracking-wider text-slate-400 mr-1"><i class="fa-solid fa-layer-group mr-1" style="color: var(--theme-color);"></i>Operação:</span>
                         ${opPillsHtml}
                     </div>
-                    <div class="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <div class="flex flex-wrap items-center gap-2.5 pt-2.5 border-t border-slate-200/70 dark:border-slate-700/80">
                         <div class="relative flex-1 min-w-[220px]">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                             <input id="harmony-search-input" type="text" value="${esc(this.filtroBusca || '')}"
                                 oninput="app.harmonyCtrl.onSearchInput(this.value)"
                                 placeholder="Buscar por projeto, datalake, pergunta Soft, metadado, prompt ou ID da ligação..."
-                                class="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
+                                class="w-full pl-9 pr-3 py-2.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 text-xs text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/40">
                         </div>
                         <select onchange="app.harmonyCtrl.setFiltroFlag(this.value)"
-                            class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                            class="px-3.5 py-2.5 rounded-2xl bg-slate-50/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
                             <option value="TODAS" ${fFlag === 'TODAS' ? 'selected' : ''}>Todas as Flags</option>
                             <option value="nao_entrou" ${fFlag === 'nao_entrou' ? 'selected' : ''}>NÃO ENTROU NA HARMONY</option>
                             <option value="metadados" ${fFlag === 'metadados' ? 'selected' : ''}>META DADOS</option>
@@ -63066,7 +63286,7 @@ app.harmonyCtrl = {
                             <option value="minutagem" ${fFlag === 'minutagem' ? 'selected' : ''}>MINUTAGEM</option>
                         </select>
                         ${(opFiltro !== 'TODAS' || fFlag !== 'TODAS' || this.filtroBusca) ? `
-                            <button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <button type="button" onclick="app.harmonyCtrl.limparFiltros()" class="px-3.5 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
                                 Limpar
                             </button>
                         ` : ''}
@@ -63200,7 +63420,7 @@ app.harmonyCtrl = {
         `;
         actionsEl.innerHTML = `
             <button type="button" onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer">Cancelar</button>
-            <button type="button" onclick="app.harmonyCtrl.salvarModalProjeto('${this._esc(projId || '')}')" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer">
+            <button type="button" onclick="app.harmonyCtrl.salvarModalProjeto('${this._esc(projId || '')}')" style="background-color: var(--theme-color);" class="px-5 py-2 rounded-xl hover:brightness-110 text-white text-xs font-extrabold shadow-sm cursor-pointer">
                 <i class="fa-solid fa-floppy-disk mr-1"></i> ${proj ? 'Salvar Alterações' : 'Criar Projeto'}
             </button>
         `;
@@ -63267,10 +63487,12 @@ app.harmonyCtrl = {
             id: this._genId('hq'),
             perguntaSoft: perguntaSoft || '',
             peso: peso || '',
+            pesoHarmony: '',
             flag: 'inclusa',
             motivoNaoEntrou: '',
             qualMetadado: '',
             metadadoDetalhe: '',
+            tituloHarmony: '',
             comoFicouHarmony: '',
             versaoAtual: 1,
             versoes: [
@@ -63624,7 +63846,7 @@ app.harmonyCtrl = {
     _buildCsvRows(projetos) {
         const sep = ';';
         const csvCell = (v) => '"' + String(v == null ? '' : v).replace(/\r?\n/g, ' | ').replace(/"/g, '""') + '"';
-        const header = ['Operacao', 'Projeto', 'Datalake_Formulario', 'Ordem', 'Pergunta_Soft', 'Peso', 'Flag', 'Motivo_Nao_Entrou', 'Qual_Metadado', 'Como_Ficou_Harmony', 'Versao_Atual', 'Prompt_Atual', 'Erros_Registrados_Versoes', 'Minutagem_Resolvida', 'Minutagem_Obs'].map(csvCell).join(sep);
+        const header = ['Operacao', 'Projeto', 'Datalake_Formulario', 'Ordem', 'Pergunta_Soft', 'Peso_Soft', 'Peso_Harmony', 'Flag', 'Motivo_Nao_Entrou', 'Qual_Metadado', 'Titulo_Harmony', 'Como_Ficou_Harmony', 'Versao_Atual', 'Prompt_Atual', 'Erros_Registrados_Versoes', 'Minutagem_Resolvida', 'Minutagem_Obs'].map(csvCell).join(sep);
         const rows = [header];
 
         projetos.forEach(proj => {
@@ -63646,9 +63868,11 @@ app.harmonyCtrl = {
                     idx + 1,
                     q.perguntaSoft || '',
                     q.peso || '',
+                    q.pesoHarmony || '',
                     fMeta.label,
                     q.motivoNaoEntrou || '',
                     q.qualMetadado || '',
+                    q.tituloHarmony || '',
                     q.comoFicouHarmony || '',
                     q.flag === 'inclusa' ? `V${q.versaoAtual || 1}` : '',
                     q.flag === 'inclusa' ? (vAtualObj.promptTexto || '') : '',
@@ -72486,10 +72710,11 @@ app.mintZenTeste = {
             return false;
         }
         try {
-            return localStorage.getItem(this.STORAGE_KEY) !== 'classic';
-        } catch (e) {
-            return true;
-        }
+            if (localStorage.getItem(this.STORAGE_KEY) === 'classic') {
+                localStorage.removeItem(this.STORAGE_KEY);
+            }
+        } catch (e) {}
+        return true;
     },
 
     injectStylesOnce() {
@@ -72732,10 +72957,10 @@ app.mintZenTeste = {
         if (!this.isGlobalThemeEnabled()) return;
         if (this._loginSplashPlayed) return;
         this._loginSplashPlayed = true;
-        this.playSplashReveal('Bem-vindo ao Portal Softmarketing');
+        this.playSplashReveal('Seja bem-vindo ao Portal de Qualidade & Treinamento');
     },
 
-    playSplashReveal(subtitle = 'Softmarketing • Novo Layout (Teste)') {
+    playSplashReveal(subtitle = 'Seja bem-vindo ao Portal de Qualidade & Treinamento') {
         this.injectStylesOnce();
         const existing = document.getElementById('mz-splash-overlay');
         if (existing) existing.remove();
@@ -72749,7 +72974,7 @@ app.mintZenTeste = {
                 <div class="w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl mb-4" style="background-color: var(--theme-color); box-shadow: 0 0 48px rgba(var(--theme-r), var(--theme-g), var(--theme-b), 0.45); animation: mzSplashPulse 1s ease-in-out infinite;">
                     <i data-lucide="layers" class="w-8 h-8 text-white"></i>
                 </div>
-                <div class="text-xl font-extrabold tracking-tight text-white">Softmarketing <span class="font-normal text-slate-400 text-base">| Resultados</span></div>
+                <div class="text-xl font-extrabold tracking-tight text-white">Qualidade &amp; Treinamento <span class="font-normal text-slate-400 text-base">| Softmarketing</span></div>
                 <div class="text-xs font-medium text-slate-400 mt-1.5 tracking-wide">${subtitle}</div>
             </div>
         `;
@@ -72836,29 +73061,10 @@ app.mintZenTeste = {
         } catch (e) {}
     },
 
-    toggleGlobalPortalTheme(forceState = null) {
+    toggleGlobalPortalTheme() {
         if (!app || app.isGuest || (!app.isAdmin && !app.currentUser)) return;
-        const current = this.isGlobalThemeEnabled();
-        const next = forceState !== null ? !!forceState : !current;
-        try {
-            if (next) localStorage.setItem(this.STORAGE_KEY, 'rail');
-            else localStorage.setItem(this.STORAGE_KEY, 'classic');
-        } catch (e) {}
-
-        document.getElementById('theme-color-dropdown')?.classList.add('hidden');
-        this.playSplashReveal(next ? 'Ativando Barra Lateral Moderna' : 'Ativando Menu Superior Clássico');
-        setTimeout(() => {
-            this.syncGlobalPortalTheme();
-            if (app.ui && typeof app.ui.initThemeColors === 'function') {
-                try { app.ui.initThemeColors(); } catch (e) {}
-            }
-            if (app.ui && typeof app.ui.renderNav === 'function') app.ui.renderNav();
-            if (app.currentTab === 'mint_zen_teste') this.renderView(null, { skipSplash: true });
-            else if (app.currentTab) {
-                const container = document.getElementById('view-container-' + app.currentTab);
-                if (container && next) this.applyPortalTabAnimations(container);
-            }
-        }, 160);
+        try { localStorage.removeItem(this.STORAGE_KEY); } catch (e) {}
+        this.syncGlobalPortalTheme();
     },
 
     _getGroupMeta(groupName) {
@@ -73139,9 +73345,6 @@ app.mintZenTeste = {
                 </button>
                 <button type="button" onclick="app.ui.abrirModalHelp()" class="w-full px-2.5 py-1.5 rounded-xl text-left text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer">
                     <i data-lucide="help-circle" class="w-3.5 h-3.5 text-blue-500"></i> Central de Ajuda
-                </button>
-                <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme(false)" class="w-full mt-1 px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer">
-                    <i data-lucide="panel-top" class="w-3.5 h-3.5"></i> Usar Menu Superior Clássico
                 </button>
             </div>
         `;
@@ -73890,9 +74093,9 @@ app.mintZenTeste = {
                         <div>
                             <div class="text-xs font-extrabold text-slate-800 dark:text-white flex flex-wrap items-center gap-2">
                                 <span>Softmarketing • Novo Layout Experimental (DEV)</span>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isGlobalOn ? 'text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}" style="${isGlobalOn ? 'background-color: var(--theme-color);' : ''}">${isGlobalOn ? 'Aplicado em Todo o Portal' : 'Apenas Aba Lab'}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase text-white" style="background-color: var(--theme-color);">Visual Definitivo Ativo</span>
                             </div>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Com o modo global ativo: barra lateral completa com <strong>hover explicativo + subabas</strong>, Splash ao logar no portal, cascata nas telas e 0 abas perdidas — respeitando sua cor do tema.</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Barra lateral completa com <strong>hover explicativo + subabas</strong>, Splash ao logar no portal e transições suaves respeitando a cor e o tema escolhidos.</p>
                         </div>
                     </div>
 
@@ -73902,10 +74105,6 @@ app.mintZenTeste = {
                         </button>
                         <button type="button" onclick="app.mintZenTeste.toggleDataSourceMode()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer">
                             <i data-lucide="database" class="w-3.5 h-3.5"></i> ${this.dataSourceMode === 'live' ? 'Dados: Portal Ao Vivo' : 'Dados: Vitrine (10,4h / 49 / 83)'}
-                        </button>
-                        <button type="button" onclick="app.mintZenTeste.toggleGlobalPortalTheme()" class="px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 text-white shadow-sm transition-all cursor-pointer ${isGlobalOn ? 'bg-rose-600 hover:bg-rose-700' : ''}" style="${isGlobalOn ? '' : 'background-color: var(--theme-color);'}">
-                            <i data-lucide="${isGlobalOn ? 'rotate-ccw' : 'panel-left'}" class="w-3.5 h-3.5"></i>
-                            <span>${isGlobalOn ? 'Voltar ao Layout Padrão' : 'Aplicar no Portal Todo (Teste)'}</span>
                         </button>
                     </div>
                 </div>
