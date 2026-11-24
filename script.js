@@ -16959,12 +16959,18 @@ storage: {
                     document.querySelectorAll('.' + checkClass).forEach(cb => {
                         cb.checked = abasDoGrupo.includes(cb.value);
                     });
+                    if (checkClass === 'cad-aba-check') this.updateTabsChecklistCount('cad-abas-container', 'cad-aba-check', 'cad-abas-count');
+                    if (checkClass === 'edit-aba-check') this.updateTabsChecklistCount('edit-abas-container', 'edit-aba-check', 'edit-abas-count');
                 },
 
                 abrirModalPresetsGrupos(grupoAtivo = 'Qualidade') {
                     const presets = this.getPresetsGruposAcesso();
                     const abasAtivas = presets[grupoAtivo] || [];
-                    const todasAbas = this.getAllSystemTabs();
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-lg', 'max-w-sm', 'max-w-2xl');
+                        modalBox.classList.add('max-w-4xl');
+                    }
 
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-user-shield text-indigo-600"></i> Pré-selecionar Abas por Grupo de Acesso`;
                     document.getElementById('modal-content').innerHTML = `
@@ -16981,18 +16987,19 @@ storage: {
                             </div>
 
                             <div>
-                                <div class="flex justify-between items-center mb-2">
-                                    <span class="text-[11px] font-black uppercase text-indigo-600 dark:text-indigo-400">Abas Pré-selecionadas para "${grupoAtivo}"</span>
-                                    <button type="button" onclick="app.ui.toggleAllTabs('preset-grupo-aba-check')" class="text-[10px] font-bold text-blue-500 hover:underline"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                                <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[11px] font-black uppercase text-indigo-600 dark:text-indigo-400">Abas Pré-selecionadas para "${grupoAtivo}"</span>
+                                        <span id="preset-abas-count" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 tabular-nums">0 / 0</span>
+                                    </div>
+                                    <button type="button" onclick="app.ui.toggleAllTabs('preset-grupo-aba-check', 'preset-abas-container', 'preset-abas-count')" class="text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Visíveis</button>
                                 </div>
-                                <div class="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
-                                    ${todasAbas.map(tab => `
-                                        <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-indigo-500 transition-colors">
-                                            <input type="checkbox" value="${tab.id}" class="preset-grupo-aba-check w-4 h-4 accent-indigo-600" ${abasAtivas.includes(tab.id) ? 'checked' : ''}>
-                                            <span class="text-[10px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-200' : 'text-purple-600 dark:text-purple-400'} uppercase truncate" title="${tab.label}">${tab.label}</span>
-                                        </label>
-                                    `).join('')}
+                                <div class="relative mb-2">
+                                    <i class="fa-solid fa-magnifying-glass text-xs text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                                    <input type="text" id="preset-abas-search" oninput="app.ui.filterTabsChecklist('preset-abas-container', this.value)" placeholder="Buscar aba/página... (ex: Kantar, PDCA, Atas)" class="w-full pl-8 pr-8 py-2 text-xs font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 dark:text-white outline-none">
+                                    <button type="button" onclick="const s=document.getElementById('preset-abas-search'); if(s){s.value=''; app.ui.filterTabsChecklist('preset-abas-container',''); s.focus();}" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs" title="Limpar busca"><i class="fa-solid fa-xmark"></i></button>
                                 </div>
+                                <div id="preset-abas-container" class="max-h-72 overflow-y-auto p-3 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-900 custom-scrollbar space-y-3"></div>
                             </div>
 
                             <label class="flex items-center gap-2 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 cursor-pointer">
@@ -17002,10 +17009,12 @@ storage: {
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
-                        <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-xs">Fechar</button>
+                        <button onclick="app.admin?._restoreGlobalModalSize?.(); document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-white rounded-xl font-bold text-xs">Fechar</button>
                         <button onclick="app.ui.salvarPresetGrupo('${grupoAtivo}')" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md"><i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Padrão de ${grupoAtivo}</button>
                     `;
+                    this.renderTabsChecklist(document.getElementById('preset-abas-container'), 'preset-grupo-aba-check', abasAtivas, 'indigo', 'preset-abas-count');
                     document.getElementById('global-modal').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('preset-abas-search')?.focus(), 80);
                 },
 
                 salvarPresetGrupo(grupo) {
@@ -17035,6 +17044,7 @@ storage: {
                         }
                     }
                     this.renderNav();
+                    if (app.admin && typeof app.admin._restoreGlobalModalSize === 'function') app.admin._restoreGlobalModalSize();
                     document.getElementById('global-modal').classList.add('hidden');
 
                     this.showAlert("Padrão Salvo!", `As abas do grupo <b>${grupo}</b> foram salvas permanentemente${atualizados > 0 ? ` e aplicadas a <b>${atualizados} colaborador(es)</b> deste grupo` : ''}.`, "success");
@@ -17056,10 +17066,116 @@ storage: {
                     return Array.from(tabsMap.values());
                 },
 
-                toggleAllTabs(className) {
-                    const checkboxes = document.querySelectorAll('.' + className);
-                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-                    checkboxes.forEach(cb => cb.checked = !allChecked);
+                getGroupedSystemTabs() {
+                    const seen = new Set();
+                    const groups = [];
+                    const defaultIds = new Set();
+                    this.menusUser.forEach(m => m.items.forEach(i => defaultIds.add(i.id)));
+
+                    const addGroup = (groupTitle, items, isAdminMenu) => {
+                        const list = [];
+                        items.forEach(i => {
+                            if (seen.has(i.id)) return;
+                            seen.add(i.id);
+                            const isDefault = defaultIds.has(i.id);
+                            list.push({
+                                id: i.id,
+                                label: i.label,
+                                fullLabel: isDefault ? i.label : `${i.label} (ADM)`,
+                                isDefault
+                            });
+                        });
+                        if (list.length > 0) {
+                            groups.push({ group: groupTitle, isAdminMenu, items: list });
+                        }
+                    };
+
+                    this.menusUser.forEach(m => addGroup(m.group, m.items, false));
+                    this.menusAdmin.forEach(m => addGroup(m.group, m.items, true));
+                    return groups;
+                },
+
+                updateTabsChecklistCount(containerId, checkClass, countElId) {
+                    const countEl = countElId ? document.getElementById(countElId) : null;
+                    const container = containerId ? document.getElementById(containerId) : document;
+                    if (!countEl || !container) return;
+                    const all = container.querySelectorAll('.' + checkClass);
+                    const checked = container.querySelectorAll('.' + checkClass + ':checked');
+                    countEl.textContent = `${checked.length} / ${all.length} selecionadas`;
+                },
+
+                renderTabsChecklist(containerEl, checkClass, selectedIds = [], accent = 'blue', countElId = '') {
+                    if (!containerEl) return;
+                    const selSet = new Set(Array.isArray(selectedIds) ? selectedIds : []);
+                    const esc = app.utils.escapeHtml;
+                    const accentCls = accent === 'purple'
+                        ? 'accent-purple-600 hover:border-purple-400'
+                        : (accent === 'indigo' ? 'accent-indigo-600 hover:border-indigo-400' : 'accent-blue-600 hover:border-blue-400');
+                    const groups = this.getGroupedSystemTabs();
+                    const cId = containerEl.id;
+
+                    containerEl.innerHTML = groups.map(grp => `
+                        <div class="tab-group-block bg-white/80 dark:bg-slate-800/50 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-700/70">
+                            <div class="flex items-center justify-between gap-2 mb-2 px-1">
+                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                    <span>${esc(grp.group)}</span>
+                                    <span class="px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] tabular-nums">${grp.items.length}</span>
+                                </span>
+                                <button type="button" onclick="app.ui.toggleGroupTabs(this, '${checkClass}', '${cId}', '${countElId}')" class="text-[10px] font-bold text-blue-500 hover:underline cursor-pointer">Alternar grupo</button>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                ${grp.items.map(tab => {
+                                    const searchStr = String(`${tab.label} ${grp.group} ${tab.id}`).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                                    const checked = selSet.has(tab.id) ? 'checked' : '';
+                                    return `
+                                        <label data-tab-search="${esc(searchStr)}" class="tab-check-item flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors ${accentCls}">
+                                            <input type="checkbox" value="${esc(tab.id)}" onchange="app.ui.updateTabsChecklistCount('${cId}', '${checkClass}', '${countElId}')" class="${checkClass} w-4 h-4 shrink-0" ${checked}>
+                                            <span class="text-[11px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-200' : 'text-purple-600 dark:text-purple-400'} leading-tight break-words">${esc(tab.label)}${!tab.isDefault ? ' <span class="text-[9px] font-black opacity-75">ADM</span>' : ''}</span>
+                                        </label>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+
+                    this.updateTabsChecklistCount(cId, checkClass, countElId);
+                },
+
+                filterTabsChecklist(containerId, query) {
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+                    const q = String(query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                    container.querySelectorAll('.tab-group-block').forEach(grpEl => {
+                        let visibleInGroup = 0;
+                        grpEl.querySelectorAll('.tab-check-item').forEach(lbl => {
+                            const txt = lbl.dataset.tabSearch || '';
+                            const match = !q || txt.includes(q);
+                            lbl.classList.toggle('hidden', !match);
+                            if (match) visibleInGroup++;
+                        });
+                        grpEl.classList.toggle('hidden', visibleInGroup === 0);
+                    });
+                },
+
+                toggleGroupTabs(btn, checkClass, containerId, countElId) {
+                    const grpEl = btn?.closest('.tab-group-block');
+                    if (!grpEl) return;
+                    const boxes = Array.from(grpEl.querySelectorAll('.' + checkClass)).filter(cb => !cb.closest('.tab-check-item')?.classList.contains('hidden'));
+                    if (boxes.length === 0) return;
+                    const allChecked = boxes.every(cb => cb.checked);
+                    boxes.forEach(cb => cb.checked = !allChecked);
+                    this.updateTabsChecklistCount(containerId, checkClass, countElId);
+                },
+
+                toggleAllTabs(className, containerId = '', countElId = '') {
+                    const all = Array.from(document.querySelectorAll('.' + className));
+                    const visible = all.filter(cb => !cb.closest('.tab-check-item')?.classList.contains('hidden'));
+                    const targets = visible.length > 0 ? visible : all;
+                    const allChecked = targets.every(cb => cb.checked);
+                    targets.forEach(cb => cb.checked = !allChecked);
+                    if (containerId && countElId) {
+                        this.updateTabsChecklistCount(containerId, className, countElId);
+                    }
                 },
                 // ------------------------------------------------------------
                 filtrosApresentacaoAbertos: false,
@@ -17582,13 +17698,11 @@ storage: {
                     }
                     
                     const containerAbas = document.getElementById('cad-abas-container');
+                    const searchCadAbas = document.getElementById('cad-abas-search');
+                    if (searchCadAbas) searchCadAbas.value = '';
                     if(containerAbas) {
-                        containerAbas.innerHTML = this.getAllSystemTabs().map(tab => `
-                            <label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors">
-                                <input type="checkbox" value="${tab.id}" class="cad-aba-check w-4 h-4 accent-blue-600" ${tab.isDefault ? 'checked' : ''}> 
-                                <span class="text-[11px] font-bold ${tab.isDefault ? 'text-slate-700 dark:text-slate-300' : 'text-purple-600 dark:text-purple-400'} uppercase">${tab.label}</span>
-                            </label>
-                        `).join('');
+                        const defaultSel = this.getAllSystemTabs().filter(t => t.isDefault).map(t => t.id);
+                        this.renderTabsChecklist(containerAbas, 'cad-aba-check', defaultSel, 'blue', 'cad-abas-count');
                     }
 
                     const selTipo = document.getElementById('cad-tipo-acesso');
@@ -34602,21 +34716,21 @@ storage: {
                         const podeGerenciar = podeEditarHierarquia;
 
                         return `
-                            <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
-                                <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div data-search="${searchMeta}" data-role="${cargo}" class="hierarquia-user-row group flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-2.5 rounded-xl border-b border-slate-100/80 dark:border-slate-800/60 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                                <div class="flex items-center gap-3 min-w-[240px] flex-1">
                                     <div class="relative shrink-0">
                                         <img src="${avatarDe(u)}" onclick="app.ui.viewUserProfile('${u.matricula}')" class="w-10 h-10 rounded-full object-cover cursor-pointer ring-1 ring-slate-200 dark:ring-slate-700" title="Ver Perfil e Log de Atividade">
                                         <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${dot[cargo] || dot.Qualidade} ring-2 ring-white dark:ring-slate-900" title="${cargo}"></span>
                                     </div>
                                     <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 truncate" title="${nomeClean}">${nomeClean}</span>
+                                        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug break-words" title="${nomeClean}">${nomeClean}</span>
                                             <span class="text-[11px] font-medium text-slate-400 shrink-0 tabular-nums">#${u.matricula}</span>
                                         </div>
-                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" title="${nomesOps.join(', ')}">${opsResumo}</div>
+                                        <div class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug break-words mt-0.5" title="${nomesOps.join(', ')}">${opsResumo}</div>
                                     </div>
                                 </div>
-                                <div class="flex items-center gap-2 shrink-0 ml-auto">
+                                <div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 ml-auto max-w-full">
                                     ${podeEditarHierarquia ? `
                                         <select onchange="app.ui.alterarGrupoAcessoRapido('${u.matricula}', this.value)" class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase border cursor-pointer outline-none transition-colors ${roleBadgeStyle[cargo] || roleBadgeStyle['Qualidade']}" title="Alterar Grupo de Acesso / Perfil ADM">
                                             ${['Operador', 'Qualidade', 'Treinamento', 'Jovem Aprendiz', 'Dev', 'Gestor', 'Gerente'].map(g => `<option value="${g}" ${cargo === g ? 'selected' : ''} class="bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200">${g}</option>`).join('')}
@@ -50691,7 +50805,7 @@ storage: {
                 _restoreGlobalModalSize() {
                     const modalBox = document.querySelector('#global-modal > div');
                     if (modalBox) {
-                        modalBox.classList.remove('max-w-sm', 'max-w-2xl', 'max-w-3xl', 'max-w-5xl', 'p-5');
+                        modalBox.classList.remove('max-w-sm', 'max-w-2xl', 'max-w-3xl', 'max-w-4xl', 'max-w-5xl', 'p-5');
                         modalBox.classList.add('max-w-lg', 'p-6');
                     }
                 },
@@ -51665,15 +51779,12 @@ storage: {
                     }).join('');
                 
                     const containerAbas = document.getElementById('edit-abas-container');
+                    const searchEditAbas = document.getElementById('edit-abas-search');
+                    if (searchEditAbas) searchEditAbas.value = '';
                     
-                    // Usa getEffectiveUserTabs para refletir fielmente as abas efetivas do colaborador
-                    const todasAbas = app.ui.getAllSystemTabs();
+                    // Usa getEffectiveUserTabs para refletir fielmente as abas efetivas do colaborador agrupadas e pesquisáveis
                     const userAbas = app.ui.getEffectiveUserTabs(u);
-                    
-                    containerAbas.innerHTML = todasAbas.map(tab => {
-                        const checked = userAbas.includes(tab.id) ? 'checked' : '';
-                        return `<label class="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-colors"><input type="checkbox" value="${tab.id}" class="edit-aba-check w-4 h-4 accent-blue-600" ${checked}> <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase">${tab.label}</span></label>`;
-                    }).join('');
+                    app.ui.renderTabsChecklist(containerAbas, 'edit-aba-check', userAbas, 'purple', 'edit-abas-count');
                 
                     // Trava de Segurança: Esconde Abas e Operações se o usuário não tiver permissão de Gestão da Equipe / Hierarquia
                     const adminBlocks = document.getElementById('edit-ops-container').parentElement;
@@ -57803,1244 +57914,430 @@ Object.assign(app.ui, {
                     },
 
                     // =========================================================================
-                    // ABA INICIAL: SPEED DIAL ESTILO NAVEGADOR COM BUSCA, FAVORITOS E LIKES
+                    // ABA INICIAL: PERSONALIZÁVEL COM HORÁRIO DE BRASÍLIA E TEMPO DE CURITIBA
                     // =========================================================================
+                    HOME_BG_THEMES: {
+                        indigo: {
+                            id: 'indigo',
+                            name: 'Índigo Noturno',
+                            swatch: 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900',
+                            hero: 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-slate-800',
+                            canvas: 'bg-gradient-to-br from-indigo-50/70 via-slate-50/80 to-sky-50/60 dark:from-slate-950 dark:via-indigo-950/35 dark:to-slate-950',
+                            orb1: 'bg-indigo-500/15',
+                            orb2: 'bg-sky-500/15',
+                            titleGrad: 'from-indigo-300 via-sky-200 to-emerald-300',
+                            isLightHero: false
+                        },
+                        ocean: {
+                            id: 'ocean',
+                            name: 'Oceano Atlântico',
+                            swatch: 'bg-gradient-to-br from-slate-950 via-cyan-800 to-sky-900',
+                            hero: 'bg-gradient-to-r from-slate-950 via-cyan-950 to-sky-900 text-white border-cyan-900/70',
+                            canvas: 'bg-gradient-to-br from-cyan-50/80 via-sky-50/70 to-slate-50 dark:from-slate-950 dark:via-cyan-950/35 dark:to-slate-950',
+                            orb1: 'bg-cyan-400/20',
+                            orb2: 'bg-sky-400/20',
+                            titleGrad: 'from-cyan-300 via-sky-200 to-teal-200',
+                            isLightHero: false
+                        },
+                        emerald: {
+                            id: 'emerald',
+                            name: 'Floresta Esmeralda',
+                            swatch: 'bg-gradient-to-br from-emerald-950 via-teal-800 to-slate-900',
+                            hero: 'bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white border-emerald-900/70',
+                            canvas: 'bg-gradient-to-br from-emerald-50/80 via-teal-50/60 to-slate-50 dark:from-slate-950 dark:via-emerald-950/35 dark:to-slate-950',
+                            orb1: 'bg-emerald-400/20',
+                            orb2: 'bg-teal-400/15',
+                            titleGrad: 'from-emerald-300 via-teal-200 to-lime-200',
+                            isLightHero: false
+                        },
+                        aurora: {
+                            id: 'aurora',
+                            name: 'Aurora Violeta',
+                            swatch: 'bg-gradient-to-br from-purple-950 via-fuchsia-900 to-indigo-950',
+                            hero: 'bg-gradient-to-r from-purple-950 via-fuchsia-950 to-indigo-950 text-white border-purple-900/70',
+                            canvas: 'bg-gradient-to-br from-purple-50/80 via-fuchsia-50/50 to-indigo-50/70 dark:from-slate-950 dark:via-purple-950/35 dark:to-slate-950',
+                            orb1: 'bg-fuchsia-500/20',
+                            orb2: 'bg-violet-400/20',
+                            titleGrad: 'from-fuchsia-300 via-pink-200 to-indigo-200',
+                            isLightHero: false
+                        },
+                        sunset: {
+                            id: 'sunset',
+                            name: 'Crepúsculo Âmbar',
+                            swatch: 'bg-gradient-to-br from-slate-900 via-rose-900 to-amber-800',
+                            hero: 'bg-gradient-to-r from-slate-900 via-rose-950 to-amber-950 text-white border-rose-900/60',
+                            canvas: 'bg-gradient-to-br from-amber-50/75 via-rose-50/60 to-slate-50 dark:from-slate-950 dark:via-rose-950/30 dark:to-slate-950',
+                            orb1: 'bg-rose-400/20',
+                            orb2: 'bg-amber-400/20',
+                            titleGrad: 'from-amber-300 via-orange-200 to-rose-200',
+                            isLightHero: false
+                        },
+                        royal: {
+                            id: 'royal',
+                            name: 'Azul Royal',
+                            swatch: 'bg-gradient-to-br from-blue-950 via-blue-800 to-indigo-950',
+                            hero: 'bg-gradient-to-r from-blue-950 via-blue-900 to-indigo-950 text-white border-blue-800/70',
+                            canvas: 'bg-gradient-to-br from-blue-50/80 via-indigo-50/60 to-slate-50 dark:from-slate-950 dark:via-blue-950/35 dark:to-slate-950',
+                            orb1: 'bg-blue-400/20',
+                            orb2: 'bg-indigo-400/20',
+                            titleGrad: 'from-blue-200 via-sky-200 to-cyan-200',
+                            isLightHero: false
+                        },
+                        graphite: {
+                            id: 'graphite',
+                            name: 'Grafite Minimal',
+                            swatch: 'bg-gradient-to-br from-zinc-900 via-neutral-800 to-stone-900',
+                            hero: 'bg-gradient-to-r from-zinc-900 via-neutral-900 to-stone-900 text-white border-zinc-800',
+                            canvas: 'bg-gradient-to-br from-zinc-100/80 via-slate-50 to-stone-100/70 dark:from-zinc-950 dark:via-neutral-900 dark:to-zinc-950',
+                            orb1: 'bg-zinc-400/15',
+                            orb2: 'bg-stone-400/15',
+                            titleGrad: 'from-white via-zinc-200 to-slate-400',
+                            isLightHero: false
+                        },
+                        daylight: {
+                            id: 'daylight',
+                            name: 'Manhã Clara',
+                            swatch: 'bg-gradient-to-br from-sky-200 via-white to-emerald-100 border border-slate-300',
+                            hero: 'bg-gradient-to-r from-sky-100 via-white to-emerald-50 text-slate-900 border-sky-200/90',
+                            canvas: 'bg-gradient-to-br from-sky-50 via-white to-emerald-50/70 dark:from-slate-900 dark:via-slate-950 dark:to-sky-950/30',
+                            orb1: 'bg-sky-300/25',
+                            orb2: 'bg-emerald-300/20',
+                            titleGrad: 'from-blue-600 via-indigo-600 to-emerald-600',
+                            isLightHero: true
+                        }
+                    },
+
+                    _getUserHomeThemeId() {
+                        const mat = String(app.currentUser?.matricula || (app.isAdmin ? 'admin' : 'guest')).trim();
+                        const userTheme = app.currentUser?.homeTheme;
+                        let saved = null;
+                        try { saved = localStorage.getItem('soft_home_theme_' + mat); } catch (e) {}
+                        const chosen = saved || userTheme || 'indigo';
+                        return this.HOME_BG_THEMES[chosen] ? chosen : 'indigo';
+                    },
+
+                    setUserHomeTheme(themeId) {
+                        if (!this.HOME_BG_THEMES[themeId]) return;
+                        const mat = String(app.currentUser?.matricula || (app.isAdmin ? 'admin' : 'guest')).trim();
+                        try { localStorage.setItem('soft_home_theme_' + mat, themeId); } catch (e) {}
+                        if (app.currentUser && !app.isAdmin && mat && mat !== 'guest') {
+                            app.currentUser.homeTheme = themeId;
+                            if (app.storage && typeof app.storage.saveUserByMatricula === 'function') {
+                                app.storage.saveUserByMatricula(mat, { homeTheme: themeId }).catch(() => {});
+                            }
+                        }
+                        const container = document.getElementById('view-container-home');
+                        if (container) this.renderView_Home(container);
+                        this.showNotification(`Tema "${this.HOME_BG_THEMES[themeId].name}" aplicado à sua tela inicial!`, 'success', 1800);
+                    },
+
+                    _mapWeatherCodePt(code) {
+                        const c = Number(code);
+                        if (c === 0) return { label: 'Céu limpo', icon: 'fa-sun', color: 'text-amber-400' };
+                        if (c === 1) return { label: 'Pred. ensolarado', icon: 'fa-cloud-sun', color: 'text-amber-300' };
+                        if (c === 2) return { label: 'Parcialmente nublado', icon: 'fa-cloud-sun', color: 'text-sky-300' };
+                        if (c === 3) return { label: 'Nublado', icon: 'fa-cloud', color: 'text-slate-300' };
+                        if (c === 45 || c === 48) return { label: 'Nevoeiro', icon: 'fa-smog', color: 'text-slate-300' };
+                        if ([51, 53, 55, 56, 57].includes(c)) return { label: 'Garoa', icon: 'fa-cloud-rain', color: 'text-cyan-300' };
+                        if ([61, 63, 65, 66, 67, 80, 81, 82].includes(c)) return { label: 'Chuva', icon: 'fa-cloud-showers-heavy', color: 'text-blue-400' };
+                        if ([71, 73, 75, 77, 85, 86].includes(c)) return { label: 'Neve / Geada', icon: 'fa-snowflake', color: 'text-cyan-200' };
+                        if ([95, 96, 99].includes(c)) return { label: 'Tempestade', icon: 'fa-cloud-bolt', color: 'text-amber-400' };
+                        return { label: 'Tempo em Curitiba', icon: 'fa-cloud-sun', color: 'text-sky-300' };
+                    },
+
+                    _startHomeBrasiliaClock() {
+                        if (this._homeClockInterval) {
+                            clearInterval(this._homeClockInterval);
+                            this._homeClockInterval = null;
+                        }
+                        const updateClock = () => {
+                            const timeEl = document.getElementById('home-brasilia-time');
+                            const dateEl = document.getElementById('home-brasilia-date');
+                            if (!timeEl) {
+                                if (this._homeClockInterval) {
+                                    clearInterval(this._homeClockInterval);
+                                    this._homeClockInterval = null;
+                                }
+                                return;
+                            }
+                            const now = new Date();
+                            try {
+                                timeEl.textContent = new Intl.DateTimeFormat('pt-BR', {
+                                    timeZone: 'America/Sao_Paulo',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                }).format(now);
+                                if (dateEl) {
+                                    const dStr = new Intl.DateTimeFormat('pt-BR', {
+                                        timeZone: 'America/Sao_Paulo',
+                                        weekday: 'long',
+                                        day: '2-digit',
+                                        month: 'long',
+                                        year: 'numeric'
+                                    }).format(now);
+                                    dateEl.textContent = dStr.charAt(0).toUpperCase() + dStr.slice(1);
+                                }
+                            } catch (e) {
+                                timeEl.textContent = now.toLocaleTimeString('pt-BR');
+                            }
+                        };
+                        updateClock();
+                        this._homeClockInterval = setInterval(updateClock, 1000);
+                    },
+
+                    async _loadHomeCuritibaWeather(force = false) {
+                        const cacheKey = 'soft_curitiba_weather_v1';
+                        const renderWeather = (w) => {
+                            const tempEl = document.getElementById('home-cwb-temp');
+                            const descEl = document.getElementById('home-cwb-desc');
+                            const iconEl = document.getElementById('home-cwb-icon');
+                            const metaEl = document.getElementById('home-cwb-meta');
+                            const rangeEl = document.getElementById('home-cwb-range');
+                            if (!tempEl || !w) return;
+                            const info = this._mapWeatherCodePt(w.code);
+                            tempEl.textContent = `${Math.round(w.temp)}°C`;
+                            if (descEl) descEl.textContent = info.label;
+                            if (iconEl) iconEl.className = `fa-solid ${info.icon} ${info.color} text-3xl`;
+                            if (metaEl) metaEl.textContent = `Sensação ${Math.round(w.feels)}° • Umidade ${Math.round(w.humidity)}% • Vento ${Math.round(w.wind)} km/h`;
+                            if (rangeEl && Number.isFinite(w.min) && Number.isFinite(w.max)) {
+                                rangeEl.textContent = `Mín ${Math.round(w.min)}° / Máx ${Math.round(w.max)}°`;
+                            }
+                        };
+
+                        if (!force) {
+                            try {
+                                const cachedRaw = localStorage.getItem(cacheKey);
+                                if (cachedRaw) {
+                                    const cached = JSON.parse(cachedRaw);
+                                    if (cached && cached.ts && (Date.now() - cached.ts) < 10 * 60 * 1000 && cached.data) {
+                                        renderWeather(cached.data);
+                                        return;
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+
+                        try {
+                            const url = 'https://api.open-meteo.com/v1/forecast?latitude=-25.4284&longitude=-49.2733&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=America%2FSao_Paulo&forecast_days=1';
+                            const resp = await fetch(url);
+                            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                            const json = await resp.json();
+                            const cur = json.current || {};
+                            const daily = json.daily || {};
+                            const payload = {
+                                temp: Number(cur.temperature_2m ?? 0),
+                                feels: Number(cur.apparent_temperature ?? cur.temperature_2m ?? 0),
+                                humidity: Number(cur.relative_humidity_2m ?? 0),
+                                wind: Number(cur.wind_speed_10m ?? 0),
+                                code: Number(cur.weather_code ?? 1),
+                                max: Array.isArray(daily.temperature_2m_max) ? Number(daily.temperature_2m_max[0]) : null,
+                                min: Array.isArray(daily.temperature_2m_min) ? Number(daily.temperature_2m_min[0]) : null
+                            };
+                            try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: payload })); } catch (e) {}
+                            renderWeather(payload);
+                        } catch (e) {
+                            const descEl = document.getElementById('home-cwb-desc');
+                            const metaEl = document.getElementById('home-cwb-meta');
+                            if (descEl && descEl.textContent === 'Carregando...') descEl.textContent = 'Indisponível offline';
+                            if (metaEl && !metaEl.textContent) metaEl.textContent = 'Curitiba - PR';
+                        }
+                    },
+
                     renderView_Home(container) {
                         const currentUser = app.currentUser || { matricula: 'admin', nome: 'Administrador', tipoAcesso: 'Dev' };
-                        const mat = String(currentUser.matricula || 'admin').trim();
                         const userTabs = app.isAdmin ? null : this.getEffectiveUserTabs(currentUser);
+                        const esc = app.utils.escapeHtml;
+                        const themeId = this._getUserHomeThemeId();
+                        const theme = this.HOME_BG_THEMES[themeId] || this.HOME_BG_THEMES.indigo;
+                        const isLight = Boolean(theme.isLightHero);
 
-                        // Carrega favoritos, curtidas e contagem de acessos do usuário
-                        const favKey = 'soft_user_favs_' + mat;
-                        const likeKey = 'soft_user_likes_' + mat;
-                        const likesCountKey = 'soft_card_likes_counter';
-                        const visitsKey = 'soft_tab_visits_' + mat;
-                        const postitsKey = 'soft_user_postits_' + mat;
-
-                        let userFavs = [];
-                        try { userFavs = JSON.parse(localStorage.getItem(favKey) || '[]'); } catch (e) { userFavs = []; }
-
-                        let userLikes = [];
-                        try { userLikes = JSON.parse(localStorage.getItem(likeKey) || '[]'); } catch (e) { userLikes = []; }
-
-                        let likesCounter = {};
-                        try { likesCounter = JSON.parse(localStorage.getItem(likesCountKey) || '{}'); } catch (e) { likesCounter = {}; }
-
-                        let tabVisits = {};
-                        try { tabVisits = JSON.parse(localStorage.getItem(visitsKey) || '{}'); } catch (e) { tabVisits = {}; }
-
-                        // Post-its e lembretes pessoais unificados com motor GTD + Tríade do Tempo
-                        let userPostits = app.gtd.loadNotes();
-
-                        // Modo de exibição: 'tortinho' (inclinado natural), 'reto' (alinhado), 'balancando' (flutuante)
-                        const postitStyleKey = 'soft_user_postit_style_' + mat;
-                        let userPostitStyle = localStorage.getItem(postitStyleKey) || 'tortinho';
-                        const postitThemes = app.gtd.POSTIT_THEMES;
-
-                        // Catálogo completo de módulos do portal com ícones vibrantes e bem destacados
-                        const catalog = [
-                            {
-                                id: 'meu_painel',
-                                title: 'Meu Painel de Resultados',
-                                cat: 'operacao',
-                                catLabel: 'Operação & Qualidade',
-                                icon: 'fa-gauge-high',
-                                badge: 'Essencial',
-                                iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30',
-                                desc: 'Acompanhe seus indicadores individuais, bonificação, notas de monitoria e status do mês em tempo real.'
-                            },
-                            {
-                                id: 'produtividade_gtd',
-                                title: 'Produtividade GTD & Tríade do Tempo',
-                                cat: 'ferramentas',
-                                catLabel: 'Rotina & Foco',
-                                icon: 'fa-bullseye',
-                                badge: 'Novo',
-                                iconBg: 'bg-gradient-to-br from-amber-500 to-rose-600 text-white shadow-lg shadow-amber-500/30',
-                                desc: 'Transforme post-its em ações claras: Caixa de Entrada GTD, Próximas Ações, Aguardando e esferas Importante, Urgente e Circunstancial.'
-                            },
-                            {
-                                id: 'qualidade_treinamento',
-                                title: 'Qualidade & Treinamento (Backoffice)',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Treinamento',
-                                icon: 'fa-compass-drafting',
-                                badge: 'Novo',
-                                iconBg: 'bg-gradient-to-br from-indigo-600 to-teal-600 text-white shadow-lg shadow-indigo-500/30',
-                                desc: 'Motor de prescrição operacional retroalimentado por setor, fila de atuação Q&T, exportação XLSX e Simulador What-If.'
-                            },
-                            {
-                                id: 'caca_palavras',
-                                title: 'Caça-Palavras da Qualidade',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Dinâmicas',
-                                icon: 'fa-puzzle-piece',
-                                badge: 'Novo',
-                                iconBg: 'bg-gradient-to-br from-violet-600 to-purple-700 text-white shadow-lg shadow-violet-500/30',
-                                desc: 'Crie dinâmicas pedagógicas e caça-palavras sob medida com exportação em folha A4 e envio direto para impressão.'
-                            },
-                            {
-                                id: 'palavras_cruzadas',
-                                title: 'Palavras Cruzadas Pedagógicas',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Dinâmicas',
-                                icon: 'fa-spell-check',
-                                badge: 'Novo',
-                                iconBg: 'bg-gradient-to-br from-fuchsia-600 to-pink-700 text-white shadow-lg shadow-fuchsia-500/30',
-                                desc: 'Gere palavras cruzadas com temas técnicos, dicas horizontais e verticais, gabarito e envio à fila de impressão.'
-                            },
-                            {
-                                id: 'calendario',
-                                title: 'Calendário & Agenda Executiva',
-                                cat: 'operacao',
-                                catLabel: 'Operação & Rotina',
-                                icon: 'fa-calendar-days',
-                                badge: 'Rotina',
-                                iconBg: 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-500/30',
-                                desc: 'Consulte calibrações, quality days, reuniões setoriais e painel analítico com indicadores executivos.'
-                            },
-                            {
-                                id: 'ata_reuniao',
-                                title: 'Atas de Reunião & Calibração',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Governança',
-                                icon: 'fa-pen-to-square',
-                                badge: 'Rotina',
-                                iconBg: 'bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-lg shadow-teal-500/30',
-                                desc: 'Registre novas atas, gerencie participantes na base compartilhada e acompanhe o histórico e devolutivas no mesmo painel.'
-                            },
-                            {
-                                id: 'laudos_estudos',
-                                title: 'Meus Laudos & Estudos',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Auditoria',
-                                icon: 'fa-file-waveform',
-                                badge: 'Auditoria',
-                                iconBg: 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-lg shadow-purple-500/30',
-                                desc: 'Emissão e registro de laudos analíticos de chamadas críticas, desvios operacionais e resolutividade FCR.'
-                            },
-                            {
-                                id: 'dashboard_estudos',
-                                title: 'Dashboard de Laudos',
-                                cat: 'gestao',
-                                catLabel: 'Gestão & Estudos',
-                                icon: 'fa-chart-simple',
-                                badge: 'Gerencial',
-                                iconBg: 'bg-gradient-to-br from-violet-600 to-indigo-800 text-white shadow-lg shadow-violet-600/30',
-                                desc: 'Análise consolidada e percentual de responsabilidade, origem de falhas e habilidades dos operadores.'
-                            },
-                            {
-                                id: 'dashboard_adm',
-                                title: 'Dashboard Executivo ADM',
-                                cat: 'gestao',
-                                catLabel: 'Gestão & Métricas',
-                                icon: 'fa-chart-pie',
-                                badge: 'Gerencial',
-                                iconBg: 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-500/30',
-                                desc: 'Visão consolidada da operação, atingimento de metas globais, dispersão de notas e saúde operacional.'
-                            },
-                            {
-                                id: 'analitico_visao_geral',
-                                title: 'Apresentação de Resultados',
-                                cat: 'gestao',
-                                catLabel: 'Gestão & Resultados',
-                                icon: 'fa-chart-line',
-                                badge: 'Mensal',
-                                iconBg: 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-lg shadow-indigo-500/30',
-                                desc: 'Relatórios analíticos setoriais com histórico por mês, status operacionais e exportação profissional.'
-                            },
-                            {
-                                id: 'hierarquia',
-                                title: 'Hierarquia & Supervisões',
-                                cat: 'gestao',
-                                catLabel: 'Gestão & Equipes',
-                                icon: 'fa-sitemap',
-                                badge: 'Equipes',
-                                iconBg: 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/30',
-                                desc: 'Organograma operacional, supervisões, gestão de operadores, alocações setoriais e span de controle.'
-                            },
-                            {
-                                id: 'span_operacoes',
-                                title: 'Span de Operações',
-                                cat: 'gestao',
-                                catLabel: 'Gestão & Equipes',
-                                icon: 'fa-people-arrows',
-                                badge: 'Controle',
-                                iconBg: 'bg-gradient-to-br from-teal-600 to-emerald-700 text-white shadow-lg shadow-teal-500/30',
-                                desc: 'Métricas de dimensionamento, equilíbrio de equipes e proporção operador x supervisor.'
-                            },
-                            {
-                                id: 'implantacao_ia',
-                                title: 'Gantt de Implantação',
-                                cat: 'gestao',
-                                catLabel: 'Planejamento & Projetos',
-                                icon: 'fa-diagram-project',
-                                badge: 'Projetos',
-                                iconBg: 'bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30',
-                                desc: 'Cronograma interativo de implantação, fases, marcos, troca de posições e extração em PDF executivo.'
-                            },
-                            {
-                                id: 'harmony',
-                                title: 'Harmony (Perguntas & Prompts)',
-                                cat: 'gestao',
-                                catLabel: 'Dev & Governança IA',
-                                icon: 'fa-robot',
-                                badge: 'Harmony',
-                                iconBg: 'bg-gradient-to-br from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30',
-                                desc: 'Controle de perguntas Soft por operação e datalake, pesos, flags Harmony, prompts V1..Vn e auditoria de insights.'
-                            },
-                            {
-                                id: 'treinamentos',
-                                title: 'Treinamentos & Avaliações',
-                                cat: 'treinamento',
-                                catLabel: 'Treinamento & Pessoas',
-                                icon: 'fa-graduation-cap',
-                                badge: 'Oficial',
-                                iconBg: 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30',
-                                desc: 'Provas oficiais de NPS/CSAT, avaliação FCR anti-cola e emissão de certificados oficiais em PDF.'
-                            },
-                            {
-                                id: 'teste_duolingo',
-                                title: 'Softlingo Gamificado',
-                                cat: 'treinamento',
-                                catLabel: 'Treinamento Gamificado',
-                                icon: 'fa-gamepad',
-                                badge: 'Gamificação',
-                                iconBg: 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30',
-                                desc: 'Trilha gamificada de capacitação com lições interativas, sistema de vidas, mascotes e CMS por operação.'
-                            },
-                            {
-                                id: 'bi_banco_horas',
-                                title: 'BI Banco de Horas (Dev)',
-                                cat: 'analytics',
-                                catLabel: 'Analytics Exclusivo Dev',
-                                icon: 'fa-business-time',
-                                badge: 'Dev Only',
-                                iconBg: 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-lg shadow-indigo-500/30',
-                                desc: 'Analytics de banco de horas via CSV com passivo, débito, Pareto 80/20, dispersão, matriz de transição e auditoria.'
-                            },
-                            {
-                                id: 'gestao_atas',
-                                title: 'Gestão de Atas & Alinhamentos',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Governança',
-                                icon: 'fa-file-lines',
-                                badge: 'Governança',
-                                iconBg: 'bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-lg shadow-slate-600/30',
-                                desc: 'Registro e consulta de atas de reunião, alinhamentos de processo, auditorias e compromissos operacionais.'
-                            },
-                            {
-                                id: 'validar_acoes',
-                                title: 'Validação de Ações',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Auditoria',
-                                icon: 'fa-clipboard-check',
-                                badge: 'Qualidade',
-                                iconBg: 'bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-lg shadow-rose-500/30',
-                                desc: 'Aprovação e auditoria de planos de ação cadastrados pela supervisão e acompanhamento de eficácia.'
-                            },
-                            {
-                                id: 'registrar_acao',
-                                title: 'Registrar Plano de Ação',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Ações',
-                                icon: 'fa-plus-circle',
-                                badge: 'Melhoria',
-                                iconBg: 'bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/30',
-                                desc: 'Cadastro de plano de melhoria operacional, 5 Porquês, causa raiz, prazos e evidências de suporte.'
-                            },
-                            {
-                                id: 'calibragem_audio',
-                                title: 'Laboratório de Áudio',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Monitoria',
-                                icon: 'fa-headphones',
-                                badge: 'Auditivo',
-                                iconBg: 'bg-gradient-to-br from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/30',
-                                desc: 'Calibragem auditiva de monitorias com simulação de notas, critérios e comparativo de desvios.'
-                            },
-                            {
-                                id: 'ranking_monitorias',
-                                title: 'Ranking de Monitorias',
-                                cat: 'qualidade',
-                                catLabel: 'Qualidade & Desempenho',
-                                icon: 'fa-trophy',
-                                badge: 'Destaque',
-                                iconBg: 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-400/30',
-                                desc: 'Classificação de qualidade por operador, equipe e operação, destacando notas máximas e evolução.'
-                            },
-                            {
-                                id: 'import_monitorias',
-                                title: 'Controle de Monitorias',
-                                cat: 'ferramentas',
-                                catLabel: 'Ferramentas & Dados',
-                                icon: 'fa-file-excel',
-                                badge: 'Dados',
-                                iconBg: 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-lg shadow-emerald-600/30',
-                                desc: 'Importação de planilhas de monitoria, conciliação de bases e consolidação de resultados.'
-                            },
-                            {
-                                id: 'calculadora',
-                                title: 'Calculadora de Premiação',
-                                cat: 'ferramentas',
-                                catLabel: 'Ferramentas & Apoio',
-                                icon: 'fa-calculator',
-                                badge: 'Cálculo',
-                                iconBg: 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30',
-                                desc: 'Simulador dinâmico de bonificação variável de acordo com o atingimento dos multiplicadores de meta.'
-                            },
-                            {
-                                id: 'calc_monitorias',
-                                title: 'Calculadora Amostral',
-                                cat: 'ferramentas',
-                                catLabel: 'Ferramentas & Apoio',
-                                icon: 'fa-chart-column',
-                                badge: 'Estatística',
-                                iconBg: 'bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-lg shadow-indigo-500/30',
-                                desc: 'Cálculo de dimensionamento de amostras estatísticas de monitorias necessárias por operação.'
-                            },
-                            {
-                                id: 'controle_estoque',
-                                title: 'Controle de Estoque & Materiais',
-                                cat: 'ferramentas',
-                                catLabel: 'Operação & Apoio',
-                                icon: 'fa-boxes-stacked',
-                                badge: 'Logística',
-                                iconBg: 'bg-gradient-to-br from-stone-500 to-zinc-600 text-white shadow-lg shadow-stone-500/30',
-                                desc: 'Solicitações e gestão de insumos, materiais de apoio, uniformes e headsets da operação.'
-                            },
-                            {
-                                id: 'impressoes',
-                                title: 'Centro de Impressão',
-                                cat: 'ferramentas',
-                                catLabel: 'Operação & Apoio',
-                                icon: 'fa-print',
-                                badge: 'Suporte',
-                                iconBg: 'bg-gradient-to-br from-slate-700 to-zinc-800 text-white shadow-lg shadow-slate-700/30',
-                                desc: 'Controle de filas e solicitações de impressão de materiais de treinamento, dinâmicas e formulários.'
-                            },
-                            {
-                                id: 'regras',
-                                title: 'Regras & Políticas de Qualidade',
-                                cat: 'apoio',
-                                catLabel: 'Regras & Governança',
-                                icon: 'fa-scale-balanced',
-                                badge: 'Governança',
-                                iconBg: 'bg-gradient-to-br from-slate-600 to-blue-700 text-white shadow-lg shadow-slate-600/30',
-                                desc: 'Regulamento oficial de bonificação, critérios de monitoria, políticas de tolerância e governança.'
-                            },
-                            {
-                                id: 'perfil',
-                                title: 'Meu Perfil & Segurança',
-                                cat: 'apoio',
-                                catLabel: 'Minha Conta',
-                                icon: 'fa-user-gear',
-                                badge: 'Conta',
-                                iconBg: 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-lg shadow-purple-600/30',
-                                desc: 'Gestão dos dados cadastrais do seu usuário, foto de perfil, permissões e alteração segura de senha.'
-                            }
-                        ];
-
-                        // Filtra módulos permitidos para o perfil atual
-                        const accessibleCards = catalog.filter(c => {
+                        const allSystemTabs = this.getAllSystemTabs();
+                        const searchableTabs = allSystemTabs.filter(t => {
                             if (app.isAdmin) return true;
-                            if (c.id === 'home' || c.id === 'meu_painel' || c.id === 'perfil') return true;
-                            return userTabs && userTabs.includes(c.id);
+                            if (t.id === 'home' || t.id === 'meu_painel' || t.id === 'perfil') return true;
+                            return userTabs && userTabs.includes(t.id);
                         });
-
-                        // Categorias disponíveis
-                        const categories = [
-                            { id: 'all', label: 'Todas as Telas' },
-                            { id: 'favs', label: 'Favoritos Fixados' },
-                            { id: 'operacao', label: 'Operação & Qualidade' },
-                            { id: 'gestao', label: 'Gestão & Métricas' },
-                            { id: 'treinamento', label: 'Treinamento & Pessoas' },
-                            { id: 'ferramentas', label: 'Ferramentas & Apoio' }
-                        ];
-
-                        let activeFilter = 'all';
-                        let searchQuery = '';
 
                         const indAlertHomeHtml = (app.notifications && typeof app.notifications.buildIndicatorsAlertCardHtml === 'function')
                             ? app.notifications.buildIndicatorsAlertCardHtml()
                             : '';
 
                         container.innerHTML = `
-                            <div class="w-full px-2 sm:px-6 py-4 animate-fade-in space-y-6">
-                                ${indAlertHomeHtml}
-                                <!-- Banner Hero de Boas-Vindas em Toda a Largura (Proporcional, Amplo e Elegante) -->
-                                <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
-                                    <div class="relative z-10 max-w-4xl">
-                                        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
-                                            Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-sky-200 to-emerald-300">${currentUser.nome || 'Colaborador'}</span>
-                                        </h1>
+                            <div class="w-full min-h-[calc(100vh-8.5rem)] rounded-3xl ${theme.canvas} p-3 sm:p-6 transition-all duration-300 animate-fade-in space-y-5 relative overflow-hidden">
+                                <!-- Orbes atmosféricos do tema escolhido -->
+                                <div class="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full ${theme.orb1} blur-3xl"></div>
+                                <div class="pointer-events-none absolute -bottom-24 -right-24 w-96 h-96 rounded-full ${theme.orb2} blur-3xl"></div>
 
-                                        <!-- Campo de Busca em Tempo Real (Speed Dial Search) -->
-                                        <div class="relative max-w-2xl mb-3">
-                                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                                                <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                                <div class="relative z-10 space-y-5">
+                                    ${indAlertHomeHtml}
+
+                                    <!-- Cabeçalho Hero Preservado + Busca ao Vivo -->
+                                    <div class="relative rounded-3xl ${theme.hero} p-6 sm:p-8 shadow-xl border transition-all duration-300">
+                                        <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                                            <div class="max-w-3xl w-full">
+                                                <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
+                                                    Olá, <span class="bg-clip-text text-transparent bg-gradient-to-r ${theme.titleGrad}">${esc(currentUser.nome || 'Colaborador')}</span>
+                                                </h1>
+
+                                                <!-- Campo de Busca em Tempo Real (abre primeira sugestão no Enter) -->
+                                                <div class="relative max-w-2xl">
+                                                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none ${isLight ? 'text-slate-400' : 'text-slate-400'}">
+                                                        <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                                                    </div>
+                                                    <input id="home-speed-dial-search" type="search" autocomplete="off" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
+                                                        class="w-full pl-12 pr-12 py-3 ${isLight ? 'bg-white/90 border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white' : 'bg-white/10 dark:bg-slate-950/40 border-white/20 dark:border-slate-700/60 text-white placeholder-slate-400 focus:bg-white/15'} border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all shadow-inner backdrop-blur-md">
+                                                    <button id="home-search-clear-btn" type="button" class="hidden absolute inset-y-0 right-0 pr-4 flex items-center ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-400 hover:text-white'} transition">
+                                                        <i class="fa-solid fa-circle-xmark"></i>
+                                                    </button>
+
+                                                    <!-- Sugestões ao digitar -->
+                                                    <div id="home-live-search-results" class="hidden absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 shadow-2xl p-2 z-50 max-h-72 overflow-y-auto custom-scrollbar"></div>
+                                                </div>
                                             </div>
-                                            <input id="home-speed-dial-search" type="search" placeholder="Pesquisar por página, relatório, ferramenta ou rotina..."
-                                                class="w-full pl-12 pr-12 py-3 bg-white/10 dark:bg-slate-950/40 border border-white/20 dark:border-slate-700/60 rounded-2xl text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white/15 transition-all shadow-inner backdrop-blur-md">
-                                            <button id="home-search-clear-btn" type="button" class="hidden absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-white transition">
-                                                <i class="fa-solid fa-circle-xmark"></i>
-                                            </button>
                                         </div>
 
-                                        <!-- Atalhos Rápidos Estilo Navegador -->
-                                        <div class="flex flex-wrap items-center gap-2 text-xs">
-                                            <span class="text-slate-400 font-semibold text-[11px] uppercase tracking-wider mr-1">Atalhos rápidos:</span>
-                                            <button type="button" onclick="app.ui.renderTab('meu_painel', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-gauge-high text-emerald-400"></i> Meu Painel</button>
-                                            <button type="button" onclick="app.ui.renderTab('produtividade_gtd', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-bullseye text-amber-400"></i> GTD & Tríade</button>
-                                            <button type="button" onclick="app.ui.renderTab('calendario', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-calendar-days text-blue-400"></i> Calendário</button>
-                                            <button type="button" onclick="app.ui.renderTab('caca_palavras', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-puzzle-piece text-violet-400"></i> Caça-Palavras</button>
-                                            <button type="button" onclick="app.ui.renderTab('palavras_cruzadas', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-spell-check text-fuchsia-400"></i> Palavras Cruzadas</button>
-                                            <button type="button" onclick="app.ui.renderTab('ata_reuniao', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-pen-to-square text-teal-400"></i> Nova Ata</button>
-                                            <button type="button" onclick="app.ui.renderTab('analitico_visao_geral', true)" class="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition flex items-center gap-1.5"><i class="fa-solid fa-chart-line text-indigo-400"></i> Resultados</button>
+                                        <!-- Grafismo decorativo -->
+                                        <div class="absolute -right-12 -bottom-12 w-96 h-96 ${theme.orb1} rounded-full blur-3xl pointer-events-none"></div>
+                                        <div class="absolute right-32 -top-12 w-64 h-64 ${theme.orb2} rounded-full blur-2xl pointer-events-none"></div>
+                                    </div>
+
+                                    <!-- Horário de Brasília & Tempo de Curitiba -->
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <!-- Horário de Brasília -->
+                                        <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 sm:p-6 flex items-center justify-between gap-4">
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-1">
+                                                    <i class="fa-regular fa-clock"></i>
+                                                    <span>Horário de Brasília</span>
+                                                    <span class="px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/70 text-[9px] font-black border border-indigo-200/70 dark:border-indigo-800/60">DF</span>
+                                                </div>
+                                                <div id="home-brasilia-time" class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white tabular-nums leading-none my-1.5">--:--:--</div>
+                                                <div id="home-brasilia-date" class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">Carregando data...</div>
+                                            </div>
+                                            <div class="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-300 text-2xl shrink-0">
+                                                <i class="fa-solid fa-clock"></i>
+                                            </div>
+                                        </div>
+
+                                        <!-- Tempo em Curitiba -->
+                                        <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5 sm:p-6 flex items-center justify-between gap-4">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-1">
+                                                    <i class="fa-solid fa-location-dot"></i>
+                                                    <span>Tempo em Curitiba</span>
+                                                    <span class="px-1.5 py-0.2 rounded bg-sky-50 dark:bg-sky-950/70 text-[9px] font-black border border-sky-200/70 dark:border-sky-800/60">PR</span>
+                                                    <button type="button" onclick="app.ui._loadHomeCuritibaWeather(true)" title="Atualizar clima agora" class="ml-1 text-slate-400 hover:text-sky-500 transition-colors cursor-pointer"><i class="fa-solid fa-rotate text-[10px]"></i></button>
+                                                </div>
+                                                <div class="flex items-baseline gap-3 my-1">
+                                                    <span id="home-cwb-temp" class="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white tabular-nums leading-none">--°C</span>
+                                                    <span id="home-cwb-desc" class="text-xs sm:text-sm font-extrabold text-slate-600 dark:text-slate-300 truncate">Carregando...</span>
+                                                </div>
+                                                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+                                                    <span id="home-cwb-range" class="font-bold text-sky-700 dark:text-sky-300"></span>
+                                                    <span id="home-cwb-meta"></span>
+                                                </div>
+                                            </div>
+                                            <div class="w-14 h-14 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-100 dark:border-sky-800/50 flex items-center justify-center shrink-0">
+                                                <i id="home-cwb-icon" class="fa-solid fa-cloud-sun text-amber-400 text-3xl"></i>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <!-- Grafismo de fundo decorativo -->
-                                    <div class="absolute -right-12 -bottom-12 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                                    <div class="absolute right-32 -top-12 w-64 h-64 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
-                                </div>
-
-                                <!-- Layout Principal (Post-its ficam exclusivamente na aba GTD & Tríade) -->
-                                <div class="space-y-6">
-                                    <!-- Filtros por Categoria -->
-                                    <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                                        ${categories.map(cat => `
-                                            <button type="button" data-home-cat="${cat.id}"
-                                                class="home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border ${cat.id === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'}">
-                                                ${cat.label}
-                                            </button>
-                                        `).join('')}
-                                    </div>
-
-                                    <!-- Seção: MAIS USADOS PELO USUÁRIO -->
-                                    <div id="home-most-used-wrapper">
-                                        <div class="flex items-center justify-between mb-3.5">
-                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                <i class="fa-solid fa-fire text-amber-500"></i> Mais Usados por Você
-                                            </h2>
-                                            <span class="text-xs text-slate-400 font-medium">Suas rotinas e ferramentas mais frequentes</span>
-                                        </div>
-                                        <div id="home-most-used-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                            <!-- Renderizado via JS -->
-                                        </div>
-                                    </div>
-
-                                    <!-- Seção de Favoritos Fixados -->
-                                    <div id="home-favorites-wrapper">
-                                        <div class="flex items-center justify-between mb-3.5">
-                                            <h2 class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                <i class="fa-solid fa-star text-amber-400"></i> Meus Atalhos Favoritos (Fixados)
-                                            </h2>
-                                            <span id="home-favs-subtitle" class="text-xs text-slate-400 font-medium">Fixados no topo para acesso rápido</span>
-                                        </div>
-                                        <div id="home-favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                            <!-- Renderizado via JS -->
-                                        </div>
-                                    </div>
-
-                                    <!-- Grade Principal de Blocos / Speed Dial -->
-                                    <div>
-                                        <div class="flex items-center justify-between mb-3.5">
-                                            <h2 id="home-catalog-title" class="text-base font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                                <i class="fa-solid fa-table-cells-large text-indigo-500"></i> Todas as Páginas & Módulos
-                                            </h2>
-                                            <span id="home-catalog-count" class="text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                                                Exibindo ${accessibleCards.length} páginas
+                                    <!-- Personalização de Tema de Fundo por Usuário -->
+                                    <div class="rounded-3xl bg-white/80 dark:bg-slate-900/75 backdrop-blur-xl border border-white/80 dark:border-slate-800 shadow-sm p-5">
+                                        <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center text-sm"><i class="fa-solid fa-palette"></i></span>
+                                                <div>
+                                                    <h3 class="text-sm font-black text-slate-800 dark:text-white leading-tight">Personalizar Tema de Fundo</h3>
+                                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">Escolha o visual da sua tela inicial (salvo no seu perfil)</p>
+                                                </div>
+                                            </div>
+                                            <span class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                Ativo: <strong class="text-slate-900 dark:text-white">${esc(theme.name)}</strong>
                                             </span>
                                         </div>
-                                        <div id="home-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                            <!-- Renderizado via JS -->
-                                        </div>
-                                        <div id="home-empty-state" class="hidden text-center py-16 px-4 glass-card rounded-3xl border border-dashed border-slate-300 dark:border-slate-800">
-                                            <div class="w-16 h-16 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-2xl">
-                                                <i class="fa-solid fa-magnifying-glass"></i>
-                                            </div>
-                                            <h3 class="text-base font-bold text-slate-700 dark:text-slate-300 mb-1">Nenhuma página encontrada</h3>
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Tente buscar por outro termo ou limpe os filtros de categoria.</p>
-                                            <button id="home-reset-filters-btn" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition">
-                                                Limpar Busca e Filtros
-                                            </button>
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                                            ${Object.values(this.HOME_BG_THEMES).map(t => {
+                                                const active = t.id === themeId;
+                                                return `
+                                                    <button type="button" onclick="app.ui.setUserHomeTheme('${t.id}')" class="group text-left p-2 rounded-2xl border transition-all cursor-pointer ${active
+                                                        ? 'border-indigo-500 ring-2 ring-indigo-500/25 bg-indigo-50/50 dark:bg-indigo-950/30 shadow-sm'
+                                                        : 'border-slate-200/80 dark:border-slate-700/70 bg-white/70 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-600'}">
+                                                        <div class="w-full h-10 rounded-xl ${t.swatch} mb-1.5 relative flex items-center justify-center shadow-inner">
+                                                            ${active ? `<span class="w-5 h-5 rounded-full bg-white text-indigo-600 flex items-center justify-center text-[10px] shadow"><i class="fa-solid fa-check"></i></span>` : ''}
+                                                        </div>
+                                                        <div class="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 truncate text-center">${esc(t.name)}</div>
+                                                    </button>
+                                                `;
+                                            }).join('')}
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         `;
 
-                        // Função auxiliar para renderizar um card individual com ícones ampliados e vibrantes
-                        const buildCardHtml = (card, isPinnedSection = false) => {
-                            const isFav = userFavs.includes(card.id);
-                            const isLiked = userLikes.includes(card.id);
-                            const likeCount = likesCounter[card.id] || 0;
-
-                            return `
-                                <div class="speed-dial-card group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 rounded-2xl p-5 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer"
-                                    data-card-id="${card.id}">
-                                    <div>
-                                        <div class="flex items-start justify-between gap-3 mb-3.5">
-                                            <!-- ÍCONE AMPLIADO E COM MÁXIMO DESTAQUE VISUAL -->
-                                            <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${card.iconBg || 'bg-indigo-600 text-white shadow-indigo-500/30'} flex items-center justify-center text-2xl sm:text-3xl shadow-lg group-hover:scale-105 transition-transform duration-200 shrink-0">
-                                                <i class="fa-solid ${card.icon}"></i>
-                                            </div>
-                                            <div class="flex items-center gap-1">
-                                                <button type="button" class="fav-star-btn p-2 rounded-lg text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-400 transition ${isFav ? 'is-fav' : ''}"
-                                                    data-card-id="${card.id}" title="${isFav ? 'Desafixar dos Favoritos' : 'Fixar nos Favoritos'}">
-                                                    <i class="fa-${isFav ? 'solid' : 'regular'} fa-star text-base"></i>
-                                                </button>
-                                                <button type="button" class="like-heart-btn p-2 rounded-lg text-slate-300 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400 transition flex items-center gap-1 ${isLiked ? 'is-liked' : ''}"
-                                                    data-card-id="${card.id}" title="${isLiked ? 'Descurtir' : 'Curtir'}">
-                                                    <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart text-base"></i>
-                                                    <span class="like-count-num text-[11px] font-bold ${isLiked ? 'text-rose-500' : 'text-slate-400'}">${likeCount > 0 ? likeCount : ''}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div class="mb-2">
-                                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">${card.catLabel}</span>
-                                            <h3 class="text-sm font-bold text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1 mt-0.5">
-                                                ${card.title}
-                                            </h3>
-                                        </div>
-
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-4">
-                                            ${card.desc}
-                                        </p>
-                                    </div>
-
-                                    <div class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-                                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                            ${card.badge || 'Módulo'}
-                                        </span>
-                                        <span class="text-indigo-600 dark:text-indigo-400 font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                                            Acessar <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                                        </span>
-                                    </div>
-                                </div>
-                            `;
-                        };
-
-                        // Atualiza as visualizações dos blocos
-                        const updateViews = () => {
-                            const query = searchQuery.trim().toLowerCase();
-
-                            // 0. Atualiza visibilidade dos Post-its na lateral
-                            const postitsWrapper = container.querySelector('#home-postits-wrapper');
-                            if (postitsWrapper) {
-                                postitsWrapper.classList.remove('hidden');
-                            }
-
-                            // 1. Atualiza bloco: MAIS USADOS PELO USUÁRIO
-                            const mostUsedWrapper = container.querySelector('#home-most-used-wrapper');
-                            const mostUsedGrid = container.querySelector('#home-most-used-grid');
-                            if (activeFilter === 'all' && !query) {
-                                mostUsedWrapper.classList.remove('hidden');
-                                const sortedByVisits = [...accessibleCards]
-                                    .map(c => ({ ...c, visits: tabVisits[c.id] || 0 }))
-                                    .sort((a, b) => b.visits - a.visits);
-                                const topCards = sortedByVisits.slice(0, 3);
-                                mostUsedGrid.innerHTML = topCards.map(c => buildCardHtml(c)).join('');
-                            } else {
-                                mostUsedWrapper.classList.add('hidden');
-                            }
-
-                            // 2. Atualiza lista de favoritos
-                            const favWrapper = container.querySelector('#home-favorites-wrapper');
-                            const favGrid = container.querySelector('#home-favorites-grid');
-                            const favCards = accessibleCards.filter(c => userFavs.includes(c.id));
-                            const favSubtitle = container.querySelector('#home-favs-subtitle');
-
-                            if (favCards.length > 0 && activeFilter !== 'favs') {
-                                favWrapper.classList.remove('hidden');
-                                if (favSubtitle) favSubtitle.textContent = 'Fixados no topo para acesso rápido';
-                                favGrid.innerHTML = favCards.map(c => buildCardHtml(c, true)).join('');
-                            } else if (userFavs.length === 0 && activeFilter !== 'favs' && !query) {
-                                const defaultQuick = accessibleCards.slice(0, 3);
-                                if (defaultQuick.length > 0) {
-                                    favWrapper.classList.remove('hidden');
-                                    if (favSubtitle) favSubtitle.textContent = 'Sugestões de atalhos (clique na estrela de qualquer módulo para fixar)';
-                                    favGrid.innerHTML = defaultQuick.map(c => buildCardHtml(c, true)).join('');
-                                } else {
-                                    favWrapper.classList.add('hidden');
-                                }
-                            } else {
-                                favWrapper.classList.add('hidden');
-                            }
-
-                            // 3. Filtra grade principal
-                            let filtered = accessibleCards;
-
-                            if (activeFilter === 'favs') {
-                                filtered = filtered.filter(c => userFavs.includes(c.id));
-                            } else if (activeFilter !== 'all') {
-                                filtered = filtered.filter(c => c.cat === activeFilter);
-                            }
-
-                            if (query) {
-                                filtered = filtered.filter(c =>
-                                    c.title.toLowerCase().includes(query) ||
-                                    c.desc.toLowerCase().includes(query) ||
-                                    c.catLabel.toLowerCase().includes(query) ||
-                                    c.id.toLowerCase().includes(query)
-                                );
-                            }
-
-                            const catalogGrid = container.querySelector('#home-catalog-grid');
-                            const emptyState = container.querySelector('#home-empty-state');
-                            const countEl = container.querySelector('#home-catalog-count');
-
-                            if (filtered.length === 0) {
-                                catalogGrid.classList.add('hidden');
-                                emptyState.classList.remove('hidden');
-                                countEl.textContent = 'Nenhum resultado';
-                            } else {
-                                catalogGrid.classList.remove('hidden');
-                                emptyState.classList.add('hidden');
-                                catalogGrid.innerHTML = filtered.map(c => buildCardHtml(c)).join('');
-                                countEl.textContent = `Exibindo ${filtered.length} página${filtered.length > 1 ? 's' : ''}`;
-                            }
-
-                            attachCardListeners();
-                        };
-
-                        // Associa os cliques aos cards, estrelas e corações
-                        const attachCardListeners = () => {
-                            // Clique no card abre a aba
-                            container.querySelectorAll('.speed-dial-card').forEach(cardEl => {
-                                cardEl.onclick = (e) => {
-                                    if (e.target.closest('.fav-star-btn') || e.target.closest('.like-heart-btn')) return;
-                                    const tabId = cardEl.getAttribute('data-card-id');
-                                    if (tabId) {
-                                        app.ui.renderTab(tabId, true);
-                                    }
-                                };
-                            });
-
-                            // Favoritar (estrela)
-                            container.querySelectorAll('.fav-star-btn').forEach(btn => {
-                                btn.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const cardId = btn.getAttribute('data-card-id');
-                                    if (!cardId) return;
-
-                                    if (userFavs.includes(cardId)) {
-                                        userFavs = userFavs.filter(id => id !== cardId);
-                                        app.ui.showNotification("Atalho removido dos favoritos.", "info");
-                                    } else {
-                                        userFavs.push(cardId);
-                                        app.ui.showNotification("Atalho fixado nos favoritos com sucesso!", "success");
-                                    }
-                                    try { localStorage.setItem(favKey, JSON.stringify(userFavs)); } catch (err) {}
-                                    updateViews();
-                                };
-                            });
-
-                            // Curtir (coração)
-                            container.querySelectorAll('.like-heart-btn').forEach(btn => {
-                                btn.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const cardId = btn.getAttribute('data-card-id');
-                                    if (!cardId) return;
-
-                                    const curCount = likesCounter[cardId] || 0;
-                                    if (userLikes.includes(cardId)) {
-                                        userLikes = userLikes.filter(id => id !== cardId);
-                                        likesCounter[cardId] = Math.max(0, curCount - 1);
-                                    } else {
-                                        userLikes.push(cardId);
-                                        likesCounter[cardId] = curCount + 1;
-                                    }
-                                    try {
-                                        localStorage.setItem(likeKey, JSON.stringify(userLikes));
-                                        localStorage.setItem(likesCountKey, JSON.stringify(likesCounter));
-                                    } catch (err) {}
-                                    updateViews();
-                                };
-                            });
-                        };
-
-                        // Eventos da barra de busca
+                        // Busca em tempo real no campo do cabeçalho Hero (Enter abre a 1ª sugestão)
                         const searchInput = container.querySelector('#home-speed-dial-search');
                         const clearBtn = container.querySelector('#home-search-clear-btn');
+                        const resultsBox = container.querySelector('#home-live-search-results');
+                        let filteredTabs = [];
 
-                        searchInput.addEventListener('input', (e) => {
-                            searchQuery = e.target.value;
-                            if (searchQuery) clearBtn.classList.remove('hidden');
-                            else clearBtn.classList.add('hidden');
-                            updateViews();
-                        });
+                        const renderSearchResults = (rawQuery) => {
+                            const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                            const q = norm(rawQuery);
+                            if (!q) {
+                                filteredTabs = [];
+                                if (resultsBox) { resultsBox.innerHTML = ''; resultsBox.classList.add('hidden'); }
+                                return;
+                            }
+                            filteredTabs = searchableTabs.filter(t => norm(t.label).includes(q) || norm(t.id).includes(q));
+                            if (!resultsBox) return;
+                            resultsBox.classList.remove('hidden');
+                            if (filteredTabs.length === 0) {
+                                resultsBox.innerHTML = `<div class="p-4 text-center text-xs font-bold text-slate-400">Nenhuma página encontrada para "${esc(rawQuery)}"</div>`;
+                                return;
+                            }
+                            resultsBox.innerHTML = filteredTabs.slice(0, 12).map((tab, idx) => `
+                                <button type="button" onclick="app.ui.renderTab('${esc(tab.id)}', true)" class="w-full text-left px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 transition-colors cursor-pointer ${idx === 0 ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'}">
+                                    <span class="text-xs font-bold flex items-center gap-2.5">
+                                        <i class="fa-solid fa-arrow-right text-[10px] opacity-60"></i>
+                                        <span>${esc(tab.label.replace(' (ADM)', ''))}</span>
+                                    </span>
+                                    ${idx === 0 ? `<span class="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/70 text-indigo-600 dark:text-indigo-300">Enter ↵</span>` : ''}
+                                </button>
+                            `).join('');
+                        };
 
-                        clearBtn.addEventListener('click', () => {
-                            searchInput.value = '';
-                            searchQuery = '';
-                            clearBtn.classList.add('hidden');
-                            searchInput.focus();
-                            updateViews();
-                        });
-
-                        // Eventos dos chips de categoria
-                        container.querySelectorAll('.home-cat-chip').forEach(chip => {
-                            chip.addEventListener('click', () => {
-                                const catId = chip.getAttribute('data-home-cat');
-                                activeFilter = catId;
-                                container.querySelectorAll('.home-cat-chip').forEach(c => {
-                                    c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700';
-                                });
-                                chip.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20';
-                                updateViews();
+                        if (searchInput) {
+                            searchInput.addEventListener('input', (e) => {
+                                const val = e.target.value;
+                                if (clearBtn) clearBtn.classList.toggle('hidden', !val);
+                                renderSearchResults(val);
                             });
-                        });
-
-                        // Botão de reset no empty state
-                        const resetBtn = container.querySelector('#home-reset-filters-btn');
-                        if (resetBtn) {
-                            resetBtn.addEventListener('click', () => {
-                                searchInput.value = '';
-                                searchQuery = '';
+                            searchInput.addEventListener('keydown', (e) => {
+                                if (e.key === 'Enter' && filteredTabs.length > 0) {
+                                    e.preventDefault();
+                                    app.ui.renderTab(filteredTabs[0].id, true);
+                                } else if (e.key === 'Escape') {
+                                    searchInput.value = '';
+                                    if (clearBtn) clearBtn.classList.add('hidden');
+                                    renderSearchResults('');
+                                }
+                            });
+                        }
+                        if (clearBtn) {
+                            clearBtn.addEventListener('click', () => {
+                                if (searchInput) { searchInput.value = ''; searchInput.focus(); }
                                 clearBtn.classList.add('hidden');
-                                activeFilter = 'all';
-                                container.querySelectorAll('.home-cat-chip').forEach((c, idx) => {
-                                    if (idx === 0) c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20';
-                                    else c.className = 'home-cat-chip px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm border bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700';
-                                });
-                                updateViews();
+                                renderSearchResults('');
                             });
                         }
 
-                        // =========================================================================
-                        // GESTÃO DOS POST-ITS GTD & TRÍADE DO TEMPO NA PÁGINA INICIAL
-                        // =========================================================================
-                        const postitsGrid = container.querySelector('#home-postits-grid');
-                        const postitsCount = container.querySelector('#home-postits-count');
-                        const triadeBarEl = container.querySelector('#home-triade-bar');
-                        const filterBarEl = container.querySelector('#home-gtd-filter-bar');
-                        const quickInput = container.querySelector('#home-quick-gtd-input');
-                        const quickBtn = container.querySelector('#home-quick-gtd-btn');
-                        const quick2MinBtn = container.querySelector('#home-quick-2min-btn');
-
-                        let homeGtdFilter = this._homeGtdFilter || 'ativos';
-                        let quickTriad = '';
-                        let quickTwoMin = false;
-
-                        const savePostits = () => {
-                            userPostits = app.gtd.saveNotes(userPostits);
-                        };
-
-                        const refreshTriadeAndFilterBars = () => {
-                            const metrics = app.gtd.computeMetrics(userPostits);
-                            if (postitsCount) postitsCount.textContent = metrics.totalActive;
-
-                            if (triadeBarEl) {
-                                const pImp = metrics.triadPct.importante;
-                                const pUrg = metrics.triadPct.urgente;
-                                const pCirc = metrics.triadPct.circunstancial;
-                                const toneMap = {
-                                    ideal: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/70',
-                                    urgente: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/70',
-                                    circunstancial: 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/70',
-                                    equilibrio: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/70',
-                                    neutral: 'bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                                };
-                                triadeBarEl.innerHTML = `
-                                    <div class="p-2.5 rounded-2xl border ${toneMap[metrics.diagnostico.tone] || toneMap.neutral}">
-                                        <div class="flex items-center justify-between text-[10px] font-extrabold mb-1.5">
-                                            <span class="flex items-center gap-1"><i class="fa-solid fa-chart-pie"></i> Tríade do Tempo</span>
-                                            <span class="opacity-80">Meta: 70% Imp · 20% Urg · 10% Circ</span>
-                                        </div>
-                                        <div class="w-full h-2 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden flex mb-1.5">
-                                            ${metrics.classifiedCount > 0 ? `
-                                                <div style="width:${pImp}%" class="bg-emerald-500 transition-all duration-300" title="Importante: ${pImp}%"></div>
-                                                <div style="width:${pUrg}%" class="bg-rose-500 transition-all duration-300" title="Urgente: ${pUrg}%"></div>
-                                                <div style="width:${pCirc}%" class="bg-amber-500 transition-all duration-300" title="Circunstancial: ${pCirc}%"></div>
-                                            ` : ''}
-                                        </div>
-                                        <div class="flex items-center justify-between text-[10px] font-bold gap-1">
-                                            <span class="text-emerald-700 dark:text-emerald-300">Imp ${pImp}% (${metrics.triadCounts.importante})</span>
-                                            <span class="text-rose-700 dark:text-rose-300">Urg ${pUrg}% (${metrics.triadCounts.urgente})</span>
-                                            <span class="text-amber-700 dark:text-amber-300">Circ ${pCirc}% (${metrics.triadCounts.circunstancial})</span>
-                                        </div>
-                                        <div class="text-[10px] font-semibold mt-1 opacity-90 leading-tight">${metrics.diagnostico.title}</div>
-                                    </div>
-                                `;
-                            }
-
-                            if (filterBarEl) {
-                                const urgCount = userPostits.filter(p => p.gtdStatus !== 'concluida' && p.triad === 'urgente').length;
-                                const filterDefs = [
-                                    { id: 'ativos', label: 'Ativos', count: metrics.totalActive },
-                                    { id: 'inbox', label: 'Entrada', count: metrics.byStage.inbox },
-                                    { id: 'proxima', label: 'Fazer', count: metrics.byStage.proxima },
-                                    { id: 'aguardando', label: 'Aguard.', count: metrics.byStage.aguardando },
-                                    { id: 'urgente', label: 'Urgentes', count: urgCount },
-                                    { id: 'concluida', label: 'Feitas', count: metrics.byStage.concluida }
-                                ];
-                                filterBarEl.innerHTML = filterDefs.map(f => {
-                                    const active = homeGtdFilter === f.id;
-                                    const cls = active
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700';
-                                    return `
-                                        <button type="button" data-home-gtd-filter="${f.id}"
-                                            class="home-gtd-filter-btn px-2 py-1 rounded-xl border text-[10px] font-extrabold transition flex items-center gap-1 ${cls}">
-                                            <span>${f.label}</span>
-                                            <span class="${active ? 'bg-white/25 text-white' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400'} px-1.5 rounded-full text-[9px]">${f.count}</span>
-                                        </button>
-                                    `;
-                                }).join('');
-
-                                filterBarEl.querySelectorAll('.home-gtd-filter-btn').forEach(btn => {
-                                    btn.onclick = () => {
-                                        homeGtdFilter = btn.getAttribute('data-home-gtd-filter') || 'ativos';
-                                        app.ui._homeGtdFilter = homeGtdFilter;
-                                        renderPostits();
-                                    };
-                                });
-                            }
-                        };
-
-                        const getFilteredPostits = () => {
-                            if (homeGtdFilter === 'concluida') return userPostits.filter(p => p.gtdStatus === 'concluida');
-                            if (homeGtdFilter === 'inbox') return userPostits.filter(p => p.gtdStatus === 'inbox');
-                            if (homeGtdFilter === 'proxima') return userPostits.filter(p => p.gtdStatus === 'proxima');
-                            if (homeGtdFilter === 'aguardando') return userPostits.filter(p => p.gtdStatus === 'aguardando');
-                            if (homeGtdFilter === 'urgente') return userPostits.filter(p => p.gtdStatus !== 'concluida' && p.triad === 'urgente');
-                            return userPostits.filter(p => p.gtdStatus !== 'concluida');
-                        };
-
-                        const renderPostits = () => {
-                            if (!postitsGrid) return;
-                            refreshTriadeAndFilterBars();
-                            postitsGrid.className = 'flex-1 space-y-4 overflow-y-auto custom-scrollbar px-2.5 py-2 postit-mode-' + userPostitStyle;
-
-                            const visibleNotes = getFilteredPostits();
-
-                            if (visibleNotes.length === 0) {
-                                const emptyMsg = userPostits.length === 0
-                                    ? 'Crie blocos com método GTD e classifique pela Tríade do Tempo.'
-                                    : 'Nenhum bloco encontrado neste filtro GTD.';
-                                postitsGrid.innerHTML = `
-                                    <div class="col-span-full py-8 px-4 rounded-2xl border-2 border-dashed border-amber-300/60 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 text-center flex flex-col items-center justify-center">
-                                        <div class="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xl mb-2">
-                                            <i class="fa-solid fa-note-sticky"></i>
-                                        </div>
-                                        <p class="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">${userPostits.length === 0 ? 'Nenhum lembrete salvo' : 'Lista limpa neste filtro'}</p>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">${emptyMsg}</p>
-                                        <div class="flex flex-wrap items-center justify-center gap-2">
-                                            ${userPostits.length > 0 && homeGtdFilter !== 'ativos' ? `
-                                                <button type="button" class="home-show-all-postits-btn px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-black text-white font-bold text-xs shadow transition">
-                                                    Ver Ativos
-                                                </button>
-                                            ` : ''}
-                                            <button type="button" class="home-create-first-postit-btn px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 active:scale-95">
-                                                <i class="fa-solid fa-plus"></i> Novo Bloco
-                                            </button>
-                                        </div>
-                                    </div>
-                                `;
-                                const firstBtn = postitsGrid.querySelector('.home-create-first-postit-btn');
-                                if (firstBtn) firstBtn.onclick = () => addPostit();
-                                const showAllBtn = postitsGrid.querySelector('.home-show-all-postits-btn');
-                                if (showAllBtn) showAllBtn.onclick = () => { homeGtdFilter = 'ativos'; app.ui._homeGtdFilter = 'ativos'; renderPostits(); };
-                                return;
-                            }
-
-                            postitsGrid.innerHTML = visibleNotes.map((p) => {
-                                const theme = postitThemes[p.color] || postitThemes.yellow;
-                                const triadMeta = p.triad ? app.gtd.TRIAD_SPHERES[p.triad] : null;
-                                const triadAccent = triadMeta ? triadMeta.borderAccent : '';
-                                const isDone = p.gtdStatus === 'concluida';
-                                const dueBadge = app.gtd.formatDueBadge(p.dueDate);
-                                const safeText = app.utils.escapeHtml(p.text || '');
-                                const safeDelegated = app.utils.escapeHtml(p.delegatedTo || '');
-                                const safeNext = app.utils.escapeHtml(p.nextAction || '');
-
-                                return `
-                                    <div class="postit-card ${theme.card} ${triadAccent} ${isDone ? 'opacity-75' : ''} relative flex flex-col justify-between group min-h-[235px]"
-                                        draggable="true" data-postit-id="${p.id}">
-                                        <!-- Faixa superior tipo bloco de anotações -->
-                                        <div class="absolute top-0 left-0 right-0 h-3 rounded-t-[1.35rem] ${theme.strip}"></div>
-
-                                        <!-- Cabeçalho do Post-it -->
-                                        <div class="flex items-center justify-between pt-1.5 pb-2 gap-1">
-                                            <div class="flex items-center gap-1.5">
-                                                <div class="postit-drag-handle p-1 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing transition rounded-lg hover:bg-black/5 dark:hover:bg-white/10" title="Arraste para reorganizar">
-                                                    <i class="fa-solid fa-grip-vertical text-xs"></i>
-                                                </div>
-                                                <button type="button" class="postit-done-btn p-1 rounded-full transition ${isDone ? 'text-emerald-600 dark:text-emerald-400 scale-110' : 'text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'}"
-                                                    data-postit-id="${p.id}" title="${isDone ? 'Reabrir tarefa' : 'Concluir tarefa (GTD)'}">
-                                                    <i class="${isDone ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle'} text-base"></i>
-                                                </button>
-                                                <div class="flex items-center gap-1 ${theme.pin}">
-                                                    <i class="fa-solid fa-thumbtack text-xs"></i>
-                                                    <span class="text-[10px] font-black uppercase tracking-wider opacity-80">${triadMeta ? triadMeta.label : theme.name}</span>
-                                                </div>
-                                            </div>
-
-                                            <div class="flex items-center gap-1.5">
-                                                <div class="flex items-center gap-1 opacity-85 group-hover:opacity-100 transition-opacity">
-                                                    ${Object.keys(postitThemes).map(cKey => `
-                                                        <button type="button" class="postit-color-btn w-3.5 h-3.5 rounded-full ${postitThemes[cKey].dot} hover:scale-125 transition-transform ${p.color === cKey ? 'ring-2 ring-slate-800 dark:ring-white scale-110 shadow-sm' : ''}"
-                                                            data-color="${cKey}" data-postit-id="${p.id}" title="Cor: ${postitThemes[cKey].name}"></button>
-                                                    `).join('')}
-                                                </div>
-                                                <button type="button" class="postit-delete-btn p-1 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                                                    data-postit-id="${p.id}" title="Excluir bloco">
-                                                    <i class="fa-solid fa-trash-can text-xs"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <!-- Controles GTD + Tríade do Tempo (1 clique) -->
-                                        <div class="flex flex-wrap items-center justify-between gap-1.5 pb-2 mb-1.5 border-b border-black/10 dark:border-white/10">
-                                            <div class="flex items-center gap-1" title="Classificação na Tríade do Tempo">
-                                                ${['importante', 'urgente', 'circunstancial'].map(spKey => {
-                                                    const sp = app.gtd.TRIAD_SPHERES[spKey];
-                                                    const active = p.triad === spKey;
-                                                    return `<button type="button" class="postit-triad-btn px-2 py-0.5 rounded-full border text-[10px] font-extrabold transition ${active ? sp.pillActive : sp.pillIdle}" data-postit-id="${p.id}" data-triad="${spKey}" title="${sp.desc}">${sp.short}</button>`;
-                                                }).join('')}
-                                            </div>
-
-                                            <div class="flex items-center gap-1">
-                                                <select class="postit-gtd-stage-select px-1.5 py-0.5 rounded-lg bg-white/80 dark:bg-slate-900/75 border border-black/15 dark:border-white/15 text-[10px] font-extrabold text-slate-700 dark:text-slate-200 outline-none cursor-pointer" data-postit-id="${p.id}" title="Destino no Fluxo GTD">
-                                                    ${Object.values(app.gtd.GTD_STAGES).map(st => `<option value="${st.id}" ${p.gtdStatus === st.id ? 'selected' : ''}>${st.label}</option>`).join('')}
-                                                </select>
-                                                <button type="button" class="postit-2min-btn px-1.5 py-0.5 rounded-lg border text-[10px] font-extrabold transition ${p.twoMin ? 'bg-amber-500 text-white border-amber-500 shadow-xs' : 'bg-white/70 dark:bg-slate-900/60 text-slate-500 dark:text-slate-300 border-black/15 dark:border-white/15'}" data-postit-id="${p.id}" title="Regra GTD dos 2 Minutos: rápida, faça já!">
-                                                    <i class="fa-solid fa-bolt text-[9px]"></i> 2m
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <!-- Campo de texto auto-salvável -->
-                                        <div class="flex-1 py-1">
-                                            <textarea class="postit-textarea w-full bg-transparent border-none outline-none resize-none text-sm font-medium leading-relaxed custom-scrollbar ${isDone ? 'line-through opacity-60' : ''} ${theme.placeholder}"
-                                                rows="3" placeholder="Escreva a ação ou anotação aqui..." data-postit-id="${p.id}">${safeText}</textarea>
-                                        </div>
-
-                                        ${p.gtdStatus === 'aguardando' ? `
-                                            <div class="mb-2 flex items-center gap-1.5 bg-white/60 dark:bg-slate-900/50 rounded-xl px-2.5 py-1 border border-amber-400/40">
-                                                <i class="fa-solid fa-user-clock text-[10px] text-amber-600 dark:text-amber-400"></i>
-                                                <input type="text" class="postit-extra-field w-full bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-none" data-postit-id="${p.id}" data-field="delegatedTo" value="${safeDelegated}" placeholder="Cobrar retorno de quem? (ex: João / TI)" />
-                                            </div>
-                                        ` : (p.gtdStatus === 'projeto' ? `
-                                            <div class="mb-2 flex items-center gap-1.5 bg-white/60 dark:bg-slate-900/50 rounded-xl px-2.5 py-1 border border-purple-400/40">
-                                                <i class="fa-solid fa-shoe-prints text-[10px] text-purple-600 dark:text-purple-400"></i>
-                                                <input type="text" class="postit-extra-field w-full bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-none" data-postit-id="${p.id}" data-field="nextAction" value="${safeNext}" placeholder="Próximo passo físico do projeto..." />
-                                            </div>
-                                        ` : '')}
-
-                                        <!-- Rodapé com Contexto, Prazo e Salvamento -->
-                                        <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-black/10 dark:border-white/10 text-[10px] font-bold">
-                                            <div class="flex items-center gap-1.5">
-                                                <select class="postit-context-select bg-white/65 dark:bg-slate-900/60 border border-black/10 dark:border-white/10 rounded-lg px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer" data-postit-id="${p.id}" title="Objetivo da tarefa">
-                                                    ${app.gtd.GTD_CONTEXTS.map(c => `<option value="${c.id}" ${p.gtdContext === c.id ? 'selected' : ''}>${c.id ? c.label : 'Objetivo'}</option>`).join('')}
-                                                </select>
-                                                <input type="date" class="postit-due-input bg-white/65 dark:bg-slate-900/60 border border-black/10 dark:border-white/10 rounded-lg px-1.5 py-0.5 text-[10px] font-bold outline-none cursor-pointer w-[108px]" data-postit-id="${p.id}" value="${p.dueDate || ''}" title="Prazo / Follow-up" />
-                                                ${dueBadge ? `<span class="px-1.5 py-0.5 rounded-md border ${dueBadge.cls}">${dueBadge.label}</span>` : ''}
-                                            </div>
-                                            <div class="flex items-center gap-2 opacity-75">
-                                                <span class="postit-updated-span">${p.updatedAt || 'Lembrete'}</span>
-                                                <span class="italic"><i class="fa-solid fa-floppy-disk text-[9px] mr-0.5"></i> Auto-salvo</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('');
-
-                            attachPostitEvents();
-                        };
-
-                        const attachPostitEvents = () => {
-                            postitsGrid.querySelectorAll('.postit-textarea').forEach(textarea => {
-                                textarea.addEventListener('focus', () => {
-                                    const c = textarea.closest('.postit-card');
-                                    if (c) c.draggable = false;
-                                });
-                                textarea.addEventListener('blur', () => {
-                                    const c = textarea.closest('.postit-card');
-                                    if (c) c.draggable = true;
-                                });
-                                textarea.addEventListener('input', (e) => {
-                                    const pId = textarea.getAttribute('data-postit-id');
-                                    const res = app.gtd.updateNote(pId, { text: e.target.value });
-                                    userPostits = res.notes;
-                                    const card = textarea.closest('.postit-card');
-                                    const timeSpan = card ? card.querySelector('.postit-updated-span') : null;
-                                    if (timeSpan && res.note) timeSpan.textContent = res.note.updatedAt;
-                                });
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-extra-field').forEach(inp => {
-                                inp.addEventListener('focus', () => {
-                                    const c = inp.closest('.postit-card');
-                                    if (c) c.draggable = false;
-                                });
-                                inp.addEventListener('blur', () => {
-                                    const c = inp.closest('.postit-card');
-                                    if (c) c.draggable = true;
-                                });
-                                inp.addEventListener('input', (e) => {
-                                    const pId = inp.getAttribute('data-postit-id');
-                                    const field = inp.getAttribute('data-field');
-                                    if (pId && field) {
-                                        const patch = {};
-                                        patch[field] = e.target.value;
-                                        userPostits = app.gtd.updateNote(pId, patch).notes;
-                                    }
-                                });
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-done-btn').forEach(btn => {
-                                btn.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const pId = btn.getAttribute('data-postit-id');
-                                    const cur = userPostits.find(n => n.id === pId);
-                                    if (!cur) return;
-                                    const nextStatus = cur.gtdStatus === 'concluida' ? 'proxima' : 'concluida';
-                                    userPostits = app.gtd.updateNote(pId, { gtdStatus: nextStatus }).notes;
-                                    renderPostits();
-                                    app.ui.showNotification(nextStatus === 'concluida' ? 'Ação concluída e registrada!' : 'Tarefa reaberta em Próxima Ação.', 'success', 1800);
-                                };
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-triad-btn').forEach(btn => {
-                                btn.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const pId = btn.getAttribute('data-postit-id');
-                                    const sp = btn.getAttribute('data-triad');
-                                    const cur = userPostits.find(n => n.id === pId);
-                                    if (!cur) return;
-                                    const nextTriad = cur.triad === sp ? '' : sp;
-                                    userPostits = app.gtd.updateNote(pId, { triad: nextTriad }).notes;
-                                    renderPostits();
-                                };
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-gtd-stage-select').forEach(sel => {
-                                sel.onchange = (e) => {
-                                    const pId = sel.getAttribute('data-postit-id');
-                                    userPostits = app.gtd.updateNote(pId, { gtdStatus: e.target.value }).notes;
-                                    renderPostits();
-                                };
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-2min-btn').forEach(btn => {
-                                btn.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const pId = btn.getAttribute('data-postit-id');
-                                    const cur = userPostits.find(n => n.id === pId);
-                                    if (!cur) return;
-                                    userPostits = app.gtd.updateNote(pId, { twoMin: !cur.twoMin, estMinutes: !cur.twoMin ? 2 : cur.estMinutes }).notes;
-                                    renderPostits();
-                                };
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-context-select').forEach(sel => {
-                                sel.onchange = (e) => {
-                                    const pId = sel.getAttribute('data-postit-id');
-                                    userPostits = app.gtd.updateNote(pId, { gtdContext: e.target.value }).notes;
-                                };
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-due-input').forEach(inp => {
-                                inp.onchange = (e) => {
-                                    const pId = inp.getAttribute('data-postit-id');
-                                    userPostits = app.gtd.updateNote(pId, { dueDate: e.target.value }).notes;
-                                    renderPostits();
-                                };
-                            });
-
-                            // Drag and Drop para reorganizar (seguro mesmo com filtros ativos)
-                            let draggedId = null;
-                            postitsGrid.querySelectorAll('.postit-card').forEach(card => {
-                                card.addEventListener('dragstart', (e) => {
-                                    draggedId = card.getAttribute('data-postit-id');
-                                    card.classList.add('is-dragging');
-                                    e.dataTransfer.effectAllowed = 'move';
-                                    try { e.dataTransfer.setData('text/plain', String(draggedId || '')); } catch (err) {}
-                                });
-
-                                card.addEventListener('dragend', () => {
-                                    card.classList.remove('is-dragging');
-                                    postitsGrid.querySelectorAll('.postit-card').forEach(c => {
-                                        c.classList.remove('drag-over-above', 'drag-over-below');
-                                    });
-                                });
-
-                                card.addEventListener('dragover', (e) => {
-                                    e.preventDefault();
-                                    e.dataTransfer.dropEffect = 'move';
-                                    const rect = card.getBoundingClientRect();
-                                    const midY = rect.top + (rect.height / 2);
-                                    if (e.clientY < midY) {
-                                        card.classList.add('drag-over-above');
-                                        card.classList.remove('drag-over-below');
-                                    } else {
-                                        card.classList.add('drag-over-below');
-                                        card.classList.remove('drag-over-above');
-                                    }
-                                });
-
-                                card.addEventListener('dragleave', () => {
-                                    card.classList.remove('drag-over-above', 'drag-over-below');
-                                });
-
-                                card.addEventListener('drop', (e) => {
-                                    e.preventDefault();
-                                    card.classList.remove('drag-over-above', 'drag-over-below');
-                                    const targetId = card.getAttribute('data-postit-id');
-                                    if (draggedId && targetId && draggedId !== targetId) {
-                                        const rect = card.getBoundingClientRect();
-                                        const midY = rect.top + (rect.height / 2);
-                                        const insertAfter = e.clientY >= midY;
-                                        userPostits = app.gtd.moveNoteOrderById(draggedId, targetId, insertAfter);
-                                        renderPostits();
-                                        app.ui.showNotification("Blocos reorganizados!", "info", 1500);
-                                    }
-                                });
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-color-btn').forEach(btn => {
-                                btn.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const pId = btn.getAttribute('data-postit-id');
-                                    const color = btn.getAttribute('data-color');
-                                    if (pId && color) {
-                                        userPostits = app.gtd.updateNote(pId, { color }).notes;
-                                        renderPostits();
-                                    }
-                                });
-                            });
-
-                            postitsGrid.querySelectorAll('.postit-delete-btn').forEach(btn => {
-                                btn.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const pId = btn.getAttribute('data-postit-id');
-                                    userPostits = app.gtd.deleteNote(pId);
-                                    renderPostits();
-                                    app.ui.showNotification("Bloco removido com sucesso.", "info");
-                                });
-                            });
-                        };
-
-                        // Captura rápida na lateral Home
-                        const updateQuickTriadPills = () => {
-                            container.querySelectorAll('.home-quick-triad-btn').forEach(b => {
-                                const tr = b.getAttribute('data-triad');
-                                const sp = app.gtd.TRIAD_SPHERES[tr];
-                                if (!sp) return;
-                                const base = 'home-quick-triad-btn px-2 py-0.5 rounded-full border transition ';
-                                b.className = base + (quickTriad === tr ? sp.pillActive : sp.pillIdle);
-                            });
-                            if (quick2MinBtn) {
-                                quick2MinBtn.className = quickTwoMin
-                                    ? 'px-2 py-0.5 rounded-full border border-amber-500 bg-amber-500 text-white transition flex items-center gap-1 shadow-xs'
-                                    : 'px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 transition flex items-center gap-1';
-                            }
-                        };
-
-                        container.querySelectorAll('.home-quick-triad-btn').forEach(btn => {
-                            btn.onclick = () => {
-                                const tr = btn.getAttribute('data-triad');
-                                quickTriad = (quickTriad === tr) ? '' : tr;
-                                updateQuickTriadPills();
-                            };
-                        });
-
-                        if (quick2MinBtn) {
-                            quick2MinBtn.onclick = () => {
-                                quickTwoMin = !quickTwoMin;
-                                updateQuickTriadPills();
-                            };
-                        }
-
-                        const handleQuickCapture = () => {
-                            const txt = quickInput ? quickInput.value.trim() : '';
-                            if (!txt) {
-                                addPostit();
-                                return;
-                            }
-                            const stage = quickTwoMin ? 'proxima' : (homeGtdFilter === 'proxima' || homeGtdFilter === 'aguardando' ? homeGtdFilter : 'inbox');
-                            userPostits = app.gtd.createNote({
-                                text: txt,
-                                gtdStatus: stage,
-                                triad: quickTriad,
-                                twoMin: quickTwoMin
-                            }).notes;
-                            if (quickInput) quickInput.value = '';
-                            if (homeGtdFilter === 'concluida') {
-                                homeGtdFilter = 'ativos';
-                                app.ui._homeGtdFilter = 'ativos';
-                            }
-                            renderPostits();
-                            app.ui.showNotification("Capturado na sua lista GTD!", "success", 1600);
-                        };
-
-                        if (quickInput) {
-                            quickInput.addEventListener('keydown', (e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleQuickCapture();
-                                }
-                            });
-                        }
-                        if (quickBtn) quickBtn.onclick = () => handleQuickCapture();
-
-                        // Seletor de Estilos: Tortinho | Reto | Balançando
-                        container.querySelectorAll('.postit-style-btn').forEach(btn => {
-                            btn.onclick = (e) => {
-                                e.stopPropagation();
-                                const style = btn.getAttribute('data-style');
-                                if (style && style !== userPostitStyle) {
-                                    userPostitStyle = style;
-                                    try { localStorage.setItem(postitStyleKey, style); } catch (err) {}
-                                    container.querySelectorAll('.postit-style-btn').forEach(b => {
-                                        if (b.getAttribute('data-style') === style) {
-                                            b.className = 'postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm';
-                                        } else {
-                                            b.className = 'postit-style-btn flex-1 py-1 px-1.5 rounded-xl text-center text-[10px] sm:text-[11px] font-bold transition-all text-slate-500 hover:text-slate-800 dark:hover:text-slate-200';
-                                        }
-                                    });
-                                    renderPostits();
-                                    const styleLabels = { tortinho: 'Tortinho', reto: 'Reto', balancando: 'Balançando' };
-                                    app.ui.showNotification(`Estilo: ${styleLabels[style] || style}!`, "info", 1500);
-                                }
-                            };
-                        });
-
-                        const addPostit = () => {
-                            const gtdStage = (homeGtdFilter === 'proxima' || homeGtdFilter === 'aguardando') ? homeGtdFilter : 'inbox';
-                            userPostits = app.gtd.createNote({
-                                text: '',
-                                gtdStatus: gtdStage,
-                                triad: quickTriad,
-                                twoMin: quickTwoMin
-                            }).notes;
-                            if (homeGtdFilter === 'concluida') {
-                                homeGtdFilter = 'ativos';
-                                app.ui._homeGtdFilter = 'ativos';
-                            }
-                            renderPostits();
-                            app.ui.showNotification("Novo bloco GTD criado!", "success");
-
-                            setTimeout(() => {
-                                const firstTextarea = postitsGrid.querySelector('.postit-textarea');
-                                if (firstTextarea) firstTextarea.focus();
-                            }, 80);
-                        };
-
-                        const addPostitBtn = container.querySelector('#home-add-postit-btn');
-                        if (addPostitBtn) {
-                            addPostitBtn.onclick = () => addPostit();
-                        }
-
-                        updateQuickTriadPills();
-                        renderPostits();
-
-                        // Inicializa
-                        updateViews();
+                        // Inicia Relógio de Brasília e Clima de Curitiba
+                        this._startHomeBrasiliaClock();
+                        this._loadHomeCuritibaWeather(false);
                     },
 
                     // =========================================================================
@@ -70609,12 +69906,13 @@ app.pdcaTeste = {
                 alvo: topOps ? `${qtd} ocorr. crítica(s) • ${topOps}` : `${qtd} ocorrência(s) crítica(s)`,
                 criterioTipo: 'critica',
                 criterioGap: `Falha Crítica #${idx + 1} (${qtd} ocorr.) • Impacto coletivo`,
-                areaResponsavel: areaDona,
+                areaSugerida: areaDona,
+                areaResponsavel: '',
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
-                qtLink: areaDona === 'Treinamento' ? 'Reciclagem técnica em Treinamento' : 'Ação conjunta Qualidade + Treinamento',
-                responsavel: userNow,
+                qtLink: 'Aguardando execução',
+                responsavel: '',
                 etapa: 'P',
                 acaoPlanejada: areaDona === 'Treinamento'
                     ? 'Reciclagem técnica dirigida e material visual do processo crítico'
@@ -70658,12 +69956,13 @@ app.pdcaTeste = {
                 alvo: topOps ? `${qtd} ocorr. de qualidade • ${topOps}` : `${qtd} ocorrência(s) em monitoria`,
                 criterioTipo: 'comum',
                 criterioGap: `Gap de Qualidade #${idx + 1} (${qtd} ocorr.) • Item ofensor`,
-                areaResponsavel: areaDona,
+                areaSugerida: areaDona,
+                areaResponsavel: '',
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
-                qtLink: areaDona === 'Qualidade + Treinamento' ? 'Alinhamento Qualidade + Treinamento' : 'Feedback dirigido e calibração',
-                responsavel: userNow,
+                qtLink: 'Aguardando execução',
+                responsavel: '',
                 etapa: 'P',
                 acaoPlanejada: areaDona === 'Qualidade + Treinamento'
                     ? 'Calibração de item recorrente + reforço operacional'
@@ -70706,12 +70005,13 @@ app.pdcaTeste = {
                 alvo: op?.setor ? `${op.setor} • ${totalMon} mon.` : `${totalMon} monitorias`,
                 criterioTipo: 'nota',
                 criterioGap: `Nota ${this._formatNum(nota)} (< 92%) • Faltam ${gapPP.toFixed(1)} p.p. p/ meta`,
-                areaResponsavel: areaDona,
+                areaSugerida: areaDona,
+                areaResponsavel: emTratativa ? areaDona : '',
                 operacao: operacaoFonte,
                 aprId: aprRefId,
                 origemApres: sourceLabel,
-                qtLink: emTratativa ? `Em tratativa Q&T (${matchedTrat[1]?.status || 'Ativa'})` : `Aguardando ação (${areaDona})`,
-                responsavel: op?.supervisor || userNow || areaDona,
+                qtLink: emTratativa ? `Em tratativa Q&T (${matchedTrat[1]?.status || 'Ativa'})` : 'Aguardando execução',
+                responsavel: emTratativa ? (op?.supervisor || userNow || areaDona) : '',
                 etapa: emTratativa ? 'D' : 'P',
                 acaoPlanejada: emTratativa
                     ? (matchedTrat[1]?.observacao || 'Acompanhamento ativo na aba Qualidade & Treinamento')
@@ -71004,11 +70304,11 @@ app.pdcaTeste = {
             titulo: existing?.titulo || '',
             alvo: existing?.alvo || '',
             criterioGap: existing?.criterioGap || '',
-            areaResponsavel: existing?.areaResponsavel || 'Qualidade',
+            areaResponsavel: existing ? this._resolveArea(existing) : '',
             operacao: existing ? this._resolveOperacaoCiclo(existing) : (this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : (srcAtual?.operacao || '')),
             acaoPlanejada: existing?.acaoPlanejada || '',
             qtLink: existing?.qtLink || 'Ação em Qualidade & Treinamento',
-            responsavel: existing?.responsavel || app.currentUser?.nome || 'Gestão',
+            responsavel: existing ? (existing.etapa === 'P' && !existing.executadoEm ? '' : (existing.responsavel || '')) : '',
             antesValor: existing?.antesValor ?? 75,
             metaValor: existing?.metaValor ?? 88,
             depoisValor: existing?.depoisValor ?? ''
@@ -71026,27 +70326,41 @@ app.pdcaTeste = {
         if (!c) return;
         const ordem = ['Qualidade', 'Treinamento', 'Qualidade + Treinamento'];
         const atual = this._resolveArea(c);
-        const prox = ordem[(ordem.indexOf(atual) + 1) % ordem.length];
+        const prox = atual ? ordem[(ordem.indexOf(atual) + 1) % ordem.length] : 'Qualidade';
         await this._persistCiclo({
             ...c,
             areaResponsavel: prox,
+            areaManual: true,
             atualizadoEm: new Date().toISOString()
         });
         this.renderView();
     },
 
-    _resolveArea(c) {
-        const raw = String(c?.areaResponsavel || '').trim();
-        if (raw === 'Qualidade' || raw === 'Treinamento' || raw === 'Qualidade + Treinamento') return raw;
-        const txt = `${c?.qtLink || ''} ${c?.responsavel || ''} ${c?.acaoPlanejada || ''}`.toLowerCase();
-        const temQ = txt.includes('qualidade') || txt.includes('feedback') || txt.includes('auditoria');
-        const temT = txt.includes('trein') || txt.includes('recicl') || txt.includes('onboarding');
-        if (temQ && temT) return 'Qualidade + Treinamento';
-        if (temT) return 'Treinamento';
+    _inferAreaSugerida(c) {
+        if (c?.areaSugerida === 'Qualidade' || c?.areaSugerida === 'Treinamento' || c?.areaSugerida === 'Qualidade + Treinamento') return c.areaSugerida;
+        if (c?.criterioTipo === 'critica') return this._extractOcorrencias(c) >= 5 ? 'Treinamento' : 'Qualidade + Treinamento';
+        if (c?.criterioTipo === 'comum') return this._extractOcorrencias(c) >= 8 ? 'Qualidade + Treinamento' : 'Qualidade';
+        if (c?.criterioTipo === 'nota') return Number(c?.antesValor || 0) < 75 ? 'Treinamento' : 'Qualidade';
         return 'Qualidade';
     },
 
+    _resolveArea(c) {
+        const etapa = c?.etapa || 'P';
+        if (etapa === 'P' && !c?.executadoEm && !c?.areaManual) return '';
+        const raw = String(c?.areaResponsavel || '').trim();
+        if (raw === 'Qualidade' || raw === 'Treinamento' || raw === 'Qualidade + Treinamento') return raw;
+        if (etapa === 'P') return '';
+        return this._inferAreaSugerida(c);
+    },
+
     _getAreaMeta(area) {
+        if (!area) {
+            return {
+                label: 'Sem responsável',
+                icon: 'fa-user-clock',
+                cls: 'bg-slate-100/80 text-slate-400 border-slate-200/70 dark:bg-slate-800/70 dark:text-slate-400 dark:border-white/10'
+            };
+        }
         if (area === 'Treinamento') {
             return {
                 label: 'Treinamento',
@@ -71082,11 +70396,14 @@ app.pdcaTeste = {
         const depoisStr = getVal('pdca-m-depois').replace(',', '.');
         const depoisRaw = depoisStr !== '' ? parseFloat(depoisStr) : null;
         const etapaSel = getVal('pdca-m-etapa') || existing?.etapa || 'P';
-        const areaSel = getVal('pdca-m-area') || existing?.areaResponsavel || 'Qualidade';
+        const areaSelRaw = getVal('pdca-m-area');
+        const areaSel = etapaSel === 'P' && !areaSelRaw ? '' : (areaSelRaw || (existing ? this._inferAreaSugerida(existing) : 'Qualidade'));
         const operacaoSel = getVal('pdca-m-operacao') || existing?.operacao || 'Geral';
         const antesNum = Number.isFinite(antesRaw) ? antesRaw : 0;
         const metaNum = Number.isFinite(metaRaw) ? metaRaw : 85;
         const criterioAuto = getVal('pdca-m-criterio') || existing?.criterioGap || `Manual: ${this._formatNum(antesNum)} -> Meta ${this._formatNum(metaNum)}`;
+        const respInput = getVal('pdca-m-resp');
+        const userWho = app.currentUser?.nome || (app.isAdmin ? 'Administração' : 'Gestão');
 
         const ciclo = {
             id: existing?.id || `pdca_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -71095,12 +70412,15 @@ app.pdcaTeste = {
             alvo: getVal('pdca-m-alvo') || 'Gap operacional',
             criterioTipo: existing?.criterioTipo || 'manual',
             criterioGap: criterioAuto,
+            areaSugerida: existing?.areaSugerida || areaSel || 'Qualidade',
             areaResponsavel: areaSel,
+            areaManual: Boolean(areaSelRaw),
             operacao: operacaoSel,
             aprId: existing?.aprId || (this.selectedAprId !== '__atual__' ? this.selectedAprId : ''),
             origemApres: existing?.origemApres || `[${operacaoSel}] Manual`,
-            qtLink: getVal('pdca-m-qt') || `Ação (${areaSel})`,
-            responsavel: getVal('pdca-m-resp') || areaSel,
+            qtLink: getVal('pdca-m-qt') || (etapaSel === 'P' ? 'Aguardando execução' : `Ação (${areaSel})`),
+            responsavel: etapaSel === 'P' ? respInput : (respInput || userWho),
+            executadoEm: existing?.executadoEm || (etapaSel !== 'P' ? new Date().toISOString() : ''),
             etapa: etapaSel,
             acaoPlanejada: getVal('pdca-m-acao') || 'Definir ação prática com o time',
             antesValor: antesNum,
@@ -71119,20 +70439,30 @@ app.pdcaTeste = {
         const c = this.ciclos[id];
         if (!c) return;
         const next = { ...c, atualizadoEm: new Date().toISOString() };
+        const userWho = app.currentUser?.nome || (app.isAdmin ? 'Administração' : 'Gestão');
         if (destino === 'P') {
             next.etapa = 'P';
         } else if (destino === 'D') {
             next.etapa = 'D';
+            next.responsavel = userWho;
+            next.executadoPor = userWho;
+            next.executadoEm = new Date().toISOString();
+            if (!next.areaResponsavel || !['Qualidade', 'Treinamento', 'Qualidade + Treinamento'].includes(next.areaResponsavel)) {
+                next.areaResponsavel = this._inferAreaSugerida(c);
+            }
             if (!next.qtLink || next.qtLink.includes('Aguardando')) {
-                next.qtLink = 'Executando em Qualidade & Treinamento';
+                next.qtLink = `Executado por ${userWho}`;
             }
         } else if (destino === 'C') {
             next.etapa = 'C';
+            if (!next.responsavel) next.responsavel = userWho;
+            if (!next.areaResponsavel) next.areaResponsavel = this._inferAreaSugerida(c);
             if (next.depoisValor === null || next.depoisValor === undefined) {
                 next.depoisValor = next.antesValor;
             }
         } else if (destino === 'A') {
             next.etapa = 'A';
+            if (!next.responsavel) next.responsavel = userWho;
         } else if (destino === 'GIRAR') {
             next.etapa = 'P';
             next.cicloNumero = Number(next.cicloNumero || 1) + 1;
@@ -71140,7 +70470,11 @@ app.pdcaTeste = {
                 next.antesValor = Number(next.depoisValor);
             }
             next.depoisValor = null;
-            next.qtLink = `Ciclo #${next.cicloNumero} • Ajustando abordagem`;
+            next.responsavel = '';
+            next.areaResponsavel = '';
+            next.executadoEm = '';
+            next.areaManual = false;
+            next.qtLink = `Ciclo #${next.cicloNumero} • Aguardando execução`;
         }
         await this._persistCiclo(next);
         this.renderView();
@@ -71243,14 +70577,29 @@ app.pdcaTeste = {
             `;
         })();
 
+        const temResponsavel = Boolean(areaDona) || (stageKey !== 'P' && Boolean(c.responsavel));
+        const respNome = (stageKey !== 'P' || c.executadoEm) ? String(c.responsavel || '').trim() : '';
+
         return `
             <div class="group relative rounded-2xl bg-white/85 dark:bg-slate-900/75 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 shadow-[0_6px_18px_-8px_rgba(15,23,42,0.1)] hover:shadow-[0_12px_26px_-8px_rgba(15,23,42,0.16)] p-3.5 transition-all duration-200 hover:-translate-y-0.5 min-w-0">
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                        <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar responsável" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-all shrink-0 ${areaMeta.cls}">
-                            <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
-                            <span>${esc(areaMeta.label)}</span>
-                        </button>
+                        ${temResponsavel && areaDona ? `
+                            <button type="button" onclick="app.pdcaTeste.alternarArea('${esc(c.id)}')" title="Clique para alternar área" class="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-all shrink-0 ${areaMeta.cls}">
+                                <i class="fa-solid ${areaMeta.icon} text-[9px]"></i>
+                                <span>${esc(areaMeta.label)}</span>
+                            </button>
+                        ` : `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-200/60 dark:border-white/10 flex items-center gap-1 shrink-0">
+                                <i class="fa-regular fa-user text-[9px]"></i>
+                                <span>Sem responsável</span>
+                            </span>
+                        `}
+                        ${respNome ? `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 break-words" title="Responsável: ${esc(respNome)}">
+                                ${esc(respNome)}
+                            </span>
+                        ` : ''}
                         ${this.filtroOperacao === 'TODAS' ? `
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 break-words">
                                 ${esc(opCiclo)}
@@ -71351,6 +70700,7 @@ app.pdcaTeste = {
                         <div>
                             <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Quem cuida? *</label>
                             <select id="pdca-m-area" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-800 dark:text-white outline-none cursor-pointer">
+                                <option value="" ${!m.areaResponsavel ? 'selected' : ''}>Sem responsável</option>
                                 <option value="Qualidade" ${m.areaResponsavel === 'Qualidade' ? 'selected' : ''}>Qualidade</option>
                                 <option value="Treinamento" ${m.areaResponsavel === 'Treinamento' ? 'selected' : ''}>Treinamento</option>
                                 <option value="Qualidade + Treinamento" ${m.areaResponsavel === 'Qualidade + Treinamento' ? 'selected' : ''}>Qualidade + Treinamento</option>

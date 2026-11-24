@@ -125,7 +125,7 @@
 
     <!-- Modal Novo Colaborador (Admin) -->
     <div id="add-user-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border max-h-[90vh] overflow-y-auto">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-4xl w-full mx-4 border border-slate-200 dark:border-dark-border max-h-[92vh] overflow-y-auto custom-scrollbar">
             <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-plus text-green-600"></i> Novo Colaborador</h3>
             <div class="space-y-4">
                 <div class="flex gap-4">
@@ -161,17 +161,25 @@
                 </div>
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operações Atribuídas</label>
-                    <div id="cad-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                    <div id="cad-ops-container" class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
                 </div>
                     <!-- NOVA ÁREA: Permissão de Abas -->
                 <div>
-                    <div class="flex justify-between items-center mb-1.5">
-                        <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
-                        <button type="button" onclick="app.ui.toggleAllTabs('cad-aba-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                        <div class="flex items-center gap-2">
+                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
+                            <span id="cad-abas-count" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 tabular-nums">0 / 0</span>
+                        </div>
+                        <button type="button" onclick="app.ui.toggleAllTabs('cad-aba-check', 'cad-abas-container', 'cad-abas-count')" class="text-[11px] font-bold text-blue-500 hover:text-blue-700 transition-colors cursor-pointer"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Visíveis</button>
                     </div>
-                    <div id="cad-abas-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                    <div class="relative mb-2">
+                        <i class="fa-solid fa-magnifying-glass text-xs text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                        <input type="text" id="cad-abas-search" oninput="app.ui.filterTabsChecklist('cad-abas-container', this.value)" placeholder="Buscar página/aba para liberar... (ex: Kantar, PDCA, Atas, Monitorias)" class="w-full pl-8 pr-8 py-2 text-xs font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 dark:text-white outline-none">
+                        <button type="button" onclick="const s=document.getElementById('cad-abas-search'); if(s){s.value=''; app.ui.filterTabsChecklist('cad-abas-container',''); s.focus();}" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs" title="Limpar busca"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div id="cad-abas-container" class="max-h-72 overflow-y-auto p-3 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-900 custom-scrollbar space-y-3">
                         <!-- Injetado dinamicamente -->
                     </div>
                 </div>
@@ -186,7 +194,7 @@
 
     <!-- Modal Editar Colaborador (Admin) -->
     <div id="edit-user-modal" class="fixed inset-0 z-[75] hidden flex items-center justify-center bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm transition-opacity">
-        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-lg w-full mx-4 border border-slate-200 dark:border-dark-border max-h-[90vh] overflow-y-auto">
+        <div class="bg-white dark:bg-dark-surface rounded-2xl shadow-2xl p-6 max-w-4xl w-full mx-4 border border-slate-200 dark:border-dark-border max-h-[92vh] overflow-y-auto custom-scrollbar">
             <h3 class="font-bold text-lg text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-5 flex items-center gap-2"><i class="fa-solid fa-user-pen text-purple-600"></i> Editar Colaborador</h3>
             <div class="space-y-4">
                 <input type="hidden" id="edit-mat-original">
@@ -224,17 +232,25 @@
                 </div>
                 <div>
                     <label class="block text-[11px] font-bold text-slate-500 uppercase mb-1.5">Operações Atribuídas</label>
-                    <div id="edit-ops-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                    <div id="edit-ops-container" class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
                         <!-- Injetado dinamicamente -->
                     </div>
                 </div>
                     <!-- NOVA ÁREA: Permissão de Abas -->
                 <div>
-                    <div class="flex justify-between items-center mb-1.5">
-                        <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
-                        <button type="button" onclick="app.ui.toggleAllTabs('edit-aba-check')" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Tudo</button>
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                        <div class="flex items-center gap-2">
+                            <label class="block text-[11px] font-bold text-slate-500 uppercase">Acesso às Abas</label>
+                            <span id="edit-abas-count" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-50 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 tabular-nums">0 / 0</span>
+                        </div>
+                        <button type="button" onclick="app.ui.toggleAllTabs('edit-aba-check', 'edit-abas-container', 'edit-abas-count')" class="text-[11px] font-bold text-blue-500 hover:text-blue-700 transition-colors cursor-pointer"><i class="fa-solid fa-check-double mr-1"></i>Marcar/Desmarcar Visíveis</button>
                     </div>
-                    <div id="edit-abas-container" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900 custom-scrollbar">
+                    <div class="relative mb-2">
+                        <i class="fa-solid fa-magnifying-glass text-xs text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                        <input type="text" id="edit-abas-search" oninput="app.ui.filterTabsChecklist('edit-abas-container', this.value)" placeholder="Buscar página/aba para liberar... (ex: Kantar, PDCA, Atas, Monitorias)" class="w-full pl-8 pr-8 py-2 text-xs font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-purple-500 dark:text-white outline-none">
+                        <button type="button" onclick="const s=document.getElementById('edit-abas-search'); if(s){s.value=''; app.ui.filterTabsChecklist('edit-abas-container',''); s.focus();}" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs" title="Limpar busca"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div id="edit-abas-container" class="max-h-72 overflow-y-auto p-3 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-900 custom-scrollbar space-y-3">
                         <!-- Injetado dinamicamente -->
                     </div>
                 </div>
@@ -1197,7 +1213,7 @@
     <!-- Toast Container para Ações com Desfazer (Undo) -->
     <div id="undo-toast-container" class="fixed bottom-6 right-6 z-[120] flex flex-col gap-2 pointer-events-none"></div>
 
-    <script src="script.js?v=20261124_v139"></script>
+    <script src="script.js?v=20261124_v143"></script>
 </body>
 </html>
 
