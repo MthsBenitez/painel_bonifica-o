@@ -1179,7 +1179,17 @@ storage: {
                     };
                     const deps = tabDependsOn[tab];
                     if (deps && deps.some(k => loadedKeys.includes(k)) && app.ui?.renderTab) {
-                        app.ui.renderTab(tab, true);
+                        if (!this._bgSyncPendingTabs) this._bgSyncPendingTabs = new Set();
+                        this._bgSyncPendingTabs.add(tab);
+                        if (this._bgSyncRefreshTimer) clearTimeout(this._bgSyncRefreshTimer);
+                        this._bgSyncRefreshTimer = setTimeout(() => {
+                            const activeTab = app.currentTab;
+                            const hadTab = this._bgSyncPendingTabs && this._bgSyncPendingTabs.has(activeTab);
+                            if (this._bgSyncPendingTabs) this._bgSyncPendingTabs.clear();
+                            if (hadTab && app.ui?.renderTab) {
+                                app.ui.renderTab(activeTab, true, { silent: true });
+                            }
+                        }, 160);
                     }
                 },
 
@@ -1345,14 +1355,11 @@ storage: {
                             app.ui.renderNav();
                             app.notifications.updateBadge();
                             const abasSegurasParaAutoRefresh = ['dashboard_adm', 'meu_painel', 'ranking_monitorias', 'impressoes', 'gestao_impressoes'];
-                            if (abasSegurasParaAutoRefresh.includes(app.currentTab)) {
+                            if (app._phase1Loaded && abasSegurasParaAutoRefresh.includes(app.currentTab)) {
                                 if (this._firebaseRefreshTimer) clearTimeout(this._firebaseRefreshTimer);
                                 this._firebaseRefreshTimer = setTimeout(() => {
-                                    const viewDiv = document.getElementById('view-container-' + app.currentTab);
-                                    if (viewDiv) {
-                                        if (app.currentTab === 'meu_painel') app.ui.renderView_MeuPainel(viewDiv);
-                                        else if (app.currentTab === 'dashboard_adm') app.ui.renderView_DashboardAdm(viewDiv);
-                                        else if (app.currentTab === 'ranking_monitorias') app.ui.renderView_RankingMonitorias(viewDiv);
+                                    if (app.ui && typeof app.ui.renderTab === 'function') {
+                                        app.ui.renderTab(app.currentTab, true, { silent: true });
                                     }
                                 }, 350);
                             }
@@ -2200,10 +2207,10 @@ storage: {
                                 if (app.admin && typeof app.admin.filtrarPastasApresentacoesDOM === 'function' && document.getElementById('pastas-apresentacoes-grid')) {
                                     app.admin.filtrarPastasApresentacoesDOM();
                                 } else if (app.ui) {
-                                    app.ui.renderTab('analise_csv_dinamico', true);
+                                    app.ui.renderTab('analise_csv_dinamico', true, { silent: true });
                                 }
                             } else if (app.currentTab === 'qualidade_treinamento' && app.ui) {
-                                app.ui.renderTab('qualidade_treinamento', true);
+                                app.ui.renderTab('qualidade_treinamento', true, { silent: true });
                             }
                         }
                         if (force && app.ui && app.ui.showToast) {
@@ -19074,8 +19081,7 @@ storage: {
                     }
                     
                     if (app.gtd && typeof app.gtd.syncFromUser === 'function') app.gtd.syncFromUser();
-                    this.renderNav();
-                    this.renderTab(app.currentTab, true);
+                    this.renderTab(app.currentTab, true, { animate: true });
                     app.notifications.updateBadge();
                     if (typeof this.syncGtdFocusOnBoot === 'function') this.syncGtdFocusOnBoot();
                     if (app.notifications && typeof app.notifications.checkQualidadeIndicatorsAlert === 'function') {
@@ -20525,7 +20531,7 @@ storage: {
                     return `${months[parseInt(m)-1]} de ${y}`;
                 },
 
-                                renderTab(tabId, forceRefresh = false) {
+                                renderTab(tabId, forceRefresh = false, opts = null) {
                     // Proteção Anti-Cola: Bloqueia navegação no portal se houver uma avaliação oficial ativa em outra aba
                     const activeExamLock = localStorage.getItem('portal_prova_ativa_lock');
                     if (activeExamLock && !document.getElementById('fcr-exam-fullscreen') && !document.getElementById('csat-nps-exam-screen')) {
@@ -20617,13 +20623,30 @@ storage: {
                     });
 
                     let viewDiv = document.getElementById('view-container-' + tabId);
+                    const isSilentBg = Boolean(opts && opts.silent);
+                    const prevRenderedTab = this._lastRenderedTabId || null;
+                    const shouldAnimateEntrance = !isSilentBg && (Boolean(opts && opts.animate) || !viewDiv || prevRenderedTab !== tabId);
+                    const prevScrollY = isSilentBg ? (window.scrollY || 0) : null;
+                    this._lastRenderedTabId = tabId;
                     
                     if(!viewDiv || forceRefresh) {
-                        if(viewDiv) viewDiv.remove();
-                        viewDiv = document.createElement('div');
-                        viewDiv.id = 'view-container-' + tabId;
-                        viewDiv.className = 'tab-view-container w-full h-full animate-fade-in pb-12 relative z-10';
-                        mainContainer.appendChild(viewDiv);
+                        if (!viewDiv) {
+                            viewDiv = document.createElement('div');
+                            viewDiv.id = 'view-container-' + tabId;
+                            viewDiv.className = shouldAnimateEntrance
+                                ? 'tab-view-container w-full h-full animate-fade-in pb-12 relative z-10'
+                                : 'tab-view-container w-full h-full pb-12 relative z-10 sl-no-anim';
+                            mainContainer.appendChild(viewDiv);
+                        } else if (shouldAnimateEntrance) {
+                            viewDiv.remove();
+                            viewDiv = document.createElement('div');
+                            viewDiv.id = 'view-container-' + tabId;
+                            viewDiv.className = 'tab-view-container w-full h-full animate-fade-in pb-12 relative z-10';
+                            mainContainer.appendChild(viewDiv);
+                        } else {
+                            viewDiv.classList.remove('animate-fade-in');
+                            viewDiv.classList.add('sl-no-anim');
+                        }
 
                         // RENDER DIRETO E INSTANTÂNEO COM CINTURÃO DE SEGURANÇA (TRY/CATCH)
                         try {
@@ -20666,13 +20689,13 @@ storage: {
                             else if(tabId === 'registrar_acao') {
                                 this.renderView_RegistrarAcao(viewDiv);
                                 if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
-                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'registrar_acao') this.renderView_RegistrarAcao(viewDiv); });
+                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'registrar_acao') this.renderTab('registrar_acao', true, { silent: true }); });
                                 }
                             }
                             else if(tabId === 'validar_acoes') {
                                 this.renderView_ValidarAcoes(viewDiv);
                                 if (!app._actionsLoadedFromCloud && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
-                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'validar_acoes') this.renderView_ValidarAcoes(viewDiv); });
+                                    app.storage.ensureActionsLoaded(() => { if (app.currentTab === 'validar_acoes') this.renderTab('validar_acoes', true, { silent: true }); });
                                 }
                             }
 
@@ -20680,7 +20703,7 @@ storage: {
                             else if(tabId === 'ata_reuniao') {
                                 if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
                                     app.storage.ensureAtasLoaded().then(() => {
-                                        if (app.currentTab === 'ata_reuniao') app.ui.renderTab('ata_reuniao', true);
+                                        if (app.currentTab === 'ata_reuniao') app.ui.renderTab('ata_reuniao', true, { silent: true });
                                     });
                                 }
                                 this.renderView_AtaReuniao(viewDiv);
@@ -20690,7 +20713,7 @@ storage: {
                             else if(tabId === 'gestao_atas') {
                                 if (!app._atasLoadedFromCloud && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
                                     app.storage.ensureAtasLoaded().then(() => {
-                                        if (app.currentTab === tabId) app.ui.renderTab(tabId, true);
+                                        if (app.currentTab === tabId) app.ui.renderTab(tabId, true, { silent: true });
                                     });
                                 }
                                 this.renderView_GestaoAtas(viewDiv);
@@ -20753,11 +20776,18 @@ storage: {
                         if (typeof this.initSmoothTyping === 'function') this.initSmoothTyping(viewDiv);
                     } catch (e) {}
 
-                    // Aplica melhorias leves de UX apenas na aba ativa
+                    // Aplica melhorias leves de UX apenas na aba ativa (sem reiniciar animações em atualizações silenciosas/mesma aba)
                     requestAnimationFrame(() => {
                         this.applyPremiumUX(viewDiv);
-                        if (app.mintZenTeste && typeof app.mintZenTeste.applyPortalTabAnimations === 'function') {
-                            app.mintZenTeste.applyPortalTabAnimations(viewDiv);
+                        if (app.mintZenTeste) {
+                            if (shouldAnimateEntrance && typeof app.mintZenTeste.applyPortalTabAnimations === 'function') {
+                                app.mintZenTeste.applyPortalTabAnimations(viewDiv);
+                            } else if (typeof app.mintZenTeste.refreshIcons === 'function') {
+                                app.mintZenTeste.refreshIcons();
+                            }
+                        }
+                        if (isSilentBg && prevScrollY !== null && Math.abs((window.scrollY || 0) - prevScrollY) > 4) {
+                            try { window.scrollTo({ top: prevScrollY, behavior: 'instant' }); } catch (e) { window.scrollTo(0, prevScrollY); }
                         }
                     });
                 },
@@ -22997,13 +23027,13 @@ storage: {
                     if (!app._atasLoadedFromCloud && !app._atasSyncTriggeredFromMeuPainel && app.storage && typeof app.storage.ensureAtasLoaded === 'function') {
                         app._atasSyncTriggeredFromMeuPainel = true;
                         app.storage.ensureAtasLoaded(() => {
-                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true);
+                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true, { silent: true });
                         });
                     }
                     if (!app._actionsLoadedFromCloud && !app._actionsSyncTriggeredFromMeuPainel && app.storage && typeof app.storage.ensureActionsLoaded === 'function') {
                         app._actionsSyncTriggeredFromMeuPainel = true;
                         app.storage.ensureActionsLoaded(() => {
-                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true);
+                            if (app.currentTab === 'meu_painel') app.ui.renderTab('meu_painel', true, { silent: true });
                         });
                     }
 
@@ -23306,7 +23336,9 @@ storage: {
                                     quantoFalta: quantoFalta
                                 });
                             });
-                            
+                        }
+                    });
+
                     const _nowFbDash = new Date();
                     const _todayFbIso = `${_nowFbDash.getFullYear()}-${String(_nowFbDash.getMonth() + 1).padStart(2, '0')}-${String(_nowFbDash.getDate()).padStart(2, '0')}`;
                     const _curCalMonth = _todayFbIso.slice(0, 7);
@@ -72601,6 +72633,10 @@ app.mintZenTeste = {
             body.portal-rail-test-mode .sl-portal-cascade {
                 animation: mzCascadeUp 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
                 animation-delay: var(--sl-delay, 0ms);
+            }
+            .sl-no-anim,
+            .sl-no-anim * {
+                animation: none !important;
             }
 
             /* Cards elegantes em dashboards comuns (preserva intactos Apresentação de Resultados & Dental Uni) */
