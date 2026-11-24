@@ -1080,16 +1080,23 @@ storage: {
                         }
                     }
                     if (has('anatel')) {
-                        if (data.anatel) {
-                            app.allAnatel = data.anatel;
-                            if (app.allAnatel.registros || app.allAnatel.canceladasNovas) {
-                                const oldAnatel = { ...app.allAnatel };
-                                app.allAnatel = { [app.currentMonth]: oldAnatel };
-                            }
-                            app.anatelData = app.allAnatel[app.currentMonth] || { registros: [], canceladasNovas: [] };
-                        } else {
-                            app.allAnatel = {};
-                            app.anatelData = { registros: [], canceladasNovas: [] };
+                        const rawAnatel = data.anatel || (() => {
+                            try {
+                                const b = localStorage.getItem('soft_anatel_backup');
+                                return b ? JSON.parse(b) : {};
+                            } catch (e) { return {}; }
+                        })();
+                        const norm = this._normalizeAnatelStore(rawAnatel);
+                        app.allAnatel = norm;
+                        let localAtivo = null;
+                        try { localAtivo = localStorage.getItem('soft_kantar_projeto_ativo') || null; } catch (e) {}
+                        const memAtivo = app.anatelData?.projetoAtivo || localAtivo;
+                        const activeValid = (memAtivo && norm._projetosGlobais[memAtivo]) ? memAtivo : null;
+                        app.anatelData = { projetos: norm._projetosGlobais, projetoAtivo: activeValid };
+                        if (data.anatel !== undefined) {
+                            app._anatelCloudLoaded = true;
+                            app._lastAnatelFetchTs = Date.now();
+                            try { localStorage.setItem('soft_anatel_backup', JSON.stringify(norm)); } catch (e) {}
                         }
                     }
                     if (has('operacoes')) {
@@ -1136,6 +1143,7 @@ storage: {
                         'gestao_impressoes': ['impressoes', 'impressoesStats'],
                         'analitico_visao_geral': ['visaoGeralData', 'monitorias'],
                         'dashboard_adm': ['visaoGeralData', 'monitorias', 'anatel'],
+                        'pesquisas_anatel': ['anatel'],
                         'meu_painel': ['monitorias', 'visaoGeralData'],
                         'analise_csv_dinamico': ['apresentacoes'],
                         'qualidade_treinamento': ['apresentacoes'],
@@ -2185,10 +2193,127 @@ storage: {
                     app.allMonitorias[app.currentMonth] = app.monitoriasData;
                     return this._writeFirebaseNodeFast('sistema_bonificacao/monitorias', app.allMonitorias || {}, 'PUT');
                 },
+                _normalizeAnatelStore(rawAllAnatel) {
+                    const src = (rawAllAnatel && typeof rawAllAnatel === 'object') ? { ...rawAllAnatel } : {};
+                    const toArray = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+                    const sharedProjetos = {};
+
+                    const absorbProjMap = (projMap) => {
+                        if (!projMap || typeof projMap !== 'object') return;
+                        Object.entries(projMap).forEach(([pid, pObj]) => {
+                            if (!pObj || typeof pObj !== 'object') return;
+                            const id = String(pObj.id || pid).trim();
+                            if (!id) return;
+                            const normProj = {
+                                ...pObj,
+                                id,
+                                nome: String(pObj.nome || 'Projeto Kantar').trim(),
+                                meta: Number.isFinite(Number(pObj.meta)) ? Number(pObj.meta) : 10,
+                                registros: toArray(pObj.registros),
+                                canceladasNovas: toArray(pObj.canceladasNovas)
+                            };
+                            const prev = sharedProjetos[id];
+                            if (!prev) {
+                                sharedProjetos[id] = normProj;
+                            } else {
+                                const prevScore = (prev.registros?.length || 0) + (prev.canceladasNovas?.length || 0);
+                                const nextScore = (normProj.registros?.length || 0) + (normProj.canceladasNovas?.length || 0);
+                                if (String(normProj.atualizadoEm || '') > String(prev.atualizadoEm || '') || nextScore > prevScore) {
+                                    sharedProjetos[id] = normProj;
+                                }
+                            }
+                        });
+                    };
+
+                    if (src.registros || src.canceladasNovas) {
+                        const legReg = toArray(src.registros);
+                        const legCanc = toArray(src.canceladasNovas);
+                        if (legReg.length > 0 || legCanc.length > 0) {
+                            absorbProjMap({
+                                proj_legado: { id: 'proj_legado', nome: 'Projeto Recuperado', meta: 10, registros: legReg, canceladasNovas: legCanc }
+                            });
+                        }
+                        delete src.registros;
+                        delete src.canceladasNovas;
+                    }
+
+                    Object.entries(src).forEach(([k, bucket]) => {
+                        if (!bucket || typeof bucket !== 'object') return;
+                        if (k === '_projetosGlobais' || k === 'projetos') {
+                            absorbProjMap(bucket);
+                            return;
+                        }
+                        if (bucket.projetos && typeof bucket.projetos === 'object') {
+                            absorbProjMap(bucket.projetos);
+                        } else if (bucket.registros || bucket.canceladasNovas) {
+                            const bReg = toArray(bucket.registros);
+                            const bCanc = toArray(bucket.canceladasNovas);
+                            if (bReg.length > 0 || bCanc.length > 0) {
+                                absorbProjMap({
+                                    [`proj_legado_${k}`]: { id: `proj_legado_${k}`, nome: `Projeto Recuperado (${k})`, meta: 10, registros: bReg, canceladasNovas: bCanc }
+                                });
+                            }
+                        }
+                    });
+
+                    src._projetosGlobais = sharedProjetos;
+                    if (app.currentMonth) {
+                        src[app.currentMonth] = { projetos: sharedProjetos };
+                    }
+                    return src;
+                },
+                async ensureAnatelLoaded(force = false) {
+                    const stale = (Date.now() - Number(app._lastAnatelFetchTs || 0)) > 15000;
+                    if (app._anatelCloudLoaded && !force && !stale) return;
+                    if (app._loadingAnatelCloud) return;
+                    app._loadingAnatelCloud = true;
+                    try {
+                        const res = await this._fetchFirebaseNodeFast('sistema_bonificacao/anatel', 350, 12000);
+                        if (res && res.ok) {
+                            const norm = this._normalizeAnatelStore(res.val || {});
+                            app.allAnatel = norm;
+                            let localAtivo = null;
+                            try { localAtivo = localStorage.getItem('soft_kantar_projeto_ativo') || null; } catch (e) {}
+                            const memAtivo = app.anatelData?.projetoAtivo || localAtivo;
+                            const activeValid = (memAtivo && norm._projetosGlobais[memAtivo]) ? memAtivo : null;
+                            app.anatelData = { projetos: norm._projetosGlobais, projetoAtivo: activeValid };
+                            try { localStorage.setItem('soft_anatel_backup', JSON.stringify(norm)); } catch (e) {}
+                            app._anatelCloudLoaded = true;
+                            app._lastAnatelFetchTs = Date.now();
+                        }
+                    } catch (e) {
+                        console.warn('[Kantar] Fallback local:', e);
+                    } finally {
+                        app._loadingAnatelCloud = false;
+                        if (app.currentTab === 'pesquisas_anatel') {
+                            const container = document.getElementById('view-container-pesquisas_anatel');
+                            if (container && app.ui) app.ui.renderView_PesquisasAnatel(container);
+                        }
+                    }
+                },
                 saveAnatel() {
                     this.invalidateCoreCache();
-                    app.allAnatel[app.currentMonth] = app.anatelData;
-                    return this._writeFirebaseNodeFast('sistema_bonificacao/anatel', app.allAnatel || {}, 'PUT');
+                    if (!app.allAnatel || typeof app.allAnatel !== 'object') app.allAnatel = {};
+                    const projs = (app.anatelData && app.anatelData.projetos && typeof app.anatelData.projetos === 'object')
+                        ? app.anatelData.projetos
+                        : {};
+                    app.allAnatel._projetosGlobais = projs;
+                    Object.keys(app.allAnatel).forEach(k => {
+                        if (k !== '_projetosGlobais' && /^\d{4}-\d{2}$/.test(k)) {
+                            app.allAnatel[k] = { projetos: projs };
+                        }
+                    });
+                    if (app.currentMonth) {
+                        app.allAnatel[app.currentMonth] = { projetos: projs };
+                    }
+                    const sanitized = this.sanitizeFirebaseObject(app.allAnatel || {});
+                    try { localStorage.setItem('soft_anatel_backup', JSON.stringify(sanitized)); } catch (e) {}
+                    return this._writeFirebaseNodeFast('sistema_bonificacao/anatel', sanitized, 'PUT')
+                        .then(res => {
+                            app._anatelCloudLoaded = true;
+                            app._lastAnatelFetchTs = Date.now();
+                            return res;
+                        });
                 },
                 saveHarmony(singleKey = null) {
                     const list = app.harmonyDeployList || {};
@@ -2354,10 +2479,10 @@ storage: {
                 if (tabId === 'teste_duolingo') {
                     return tipo === 'Dev';
                 }
-                if (tabId === 'bi_banco_horas' || tabId === 'pdca_teste' || tabId === 'mint_zen_teste') {
+                if (tabId === 'bi_banco_horas' || tabId === 'mint_zen_teste') {
                     return this.isAdmin || tipo === 'Dev';
                 }
-                if (tabId === 'faltas_integracao') {
+                if (tabId === 'pdca_teste' || tabId === 'faltas_integracao') {
                     return this.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(tipo || '').trim());
                 }
                 if (tipo === 'Dev' || tipo === 'Gerente') return true;
@@ -3265,10 +3390,14 @@ storage: {
                     if (!Array.isArray(this.monitoriasData.ranking)) this.monitoriasData.ranking = [];
                 }
                 if (this.allAnatel) {
-                    if (!this.allAnatel[newMonthStr]) {
-                        this.allAnatel[newMonthStr] = { registros: [], canceladasNovas: [] };
-                    }
-                    this.anatelData = this.allAnatel[newMonthStr];
+                    const sharedProjs = (this.anatelData && this.anatelData.projetos) || this.allAnatel._projetosGlobais || {};
+                    this.allAnatel._projetosGlobais = sharedProjs;
+                    this.allAnatel[newMonthStr] = { projetos: sharedProjs };
+                    const localAtivo = (() => { try { return localStorage.getItem('soft_kantar_projeto_ativo') || null; } catch (e) { return null; } })();
+                    const activeValid = (this.anatelData?.projetoAtivo && sharedProjs[this.anatelData.projetoAtivo])
+                        ? this.anatelData.projetoAtivo
+                        : ((localAtivo && sharedProjs[localAtivo]) ? localAtivo : null);
+                    this.anatelData = { projetos: sharedProjs, projetoAtivo: activeValid };
                 }
                 if (this.allVisaoGeralData) {
                     if (!this.allVisaoGeralData[newMonthStr]) {
@@ -16544,7 +16673,7 @@ storage: {
                     { group: 'Início', icon: 'fa-house', items: [{id:'home', label:'Início'}, {id:'produtividade_gtd', label:'GTD & Tríade'}] },
                     { group: 'Dashboards', icon: 'fa-chart-pie', items: [{id:'dashboard_adm', label:'Visão Executiva'}, {id:'analitico_visao_geral', label:'Visão Geral (Setores)'}, {id:'hierarquia', label:'Equipe, Hierarquia & Span'}, {id:'span_operacoes', label:'Span & Cobertura'}, {id:'implantacao_ia', label:'Implantação IA (Harmony)'}, {id:'meu_painel', label:'Visão Individual'}, {id:'dashboard_estudos', label:'Dash. de Laudos'}] },
                     { group: 'Controle & Importação', icon: 'fa-users-gear', items: [{id:'cadastros', label:'Lançar Notas'}, {id:'import_monitorias', label:'Controle de Monitorias'}, {id:'diario_bordo', label:'Diário de Bordo'}, {id:'faltas_integracao', label:'Faltas na Integração'}, {id:'pesquisas_anatel', label:'Pesquisas Kantar'}, {id:'analise_csv_dinamico', label:'Apresentação de Resultados'}, {id:'apresentacao_dental_uni', label:'Apresentação Dental Uni'}, {id:'qualidade_treinamento', label:'Qualidade & Treinamento'}, {id:'calendario', label:'Calendário Global'}] },
-                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'PDCA (Teste Dev)'}, {id:'mint_zen_teste', label:'Laboratório Visual (Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
+                    { group: 'Sistema', icon: 'fa-sliders', items: [{id:'controle_estoque', label:'Insumos / Estoque'}, {id:'gestao_impressoes', label:'Gestão de Impressões'}, {id:'validar_acoes', label:'Validar Ações'}, {id:'configuracoes', label:'Pesos e Metas'}, {id:'gestao_atas', label:'Gestão de Atas'}, {id:'harmony', label:'Harmony'}, {id:'teste_duolingo', label:'Softlingo'}, {id:'bi_banco_horas', label:'BI Banco de Horas'}, {id:'pdca_teste', label:'Ciclo PDCA'}, {id:'mint_zen_teste', label:'Laboratório Visual (Dev)'}, {id:'caca_palavras', label:'Caça-Palavras'}, {id:'palavras_cruzadas', label:'Palavras Cruzadas'}] },
                     { group: 'Guias', icon: 'fa-book-open', items: [{id:'calculadora', label:'Simulador'}, {id:'calc_monitorias', label:'Calc. Produtividade'}, {id:'treinamentos', label:'Treinamentos'}, {id:'regras', label:'Regras'}, {id:'legal', label:'LGPD'}] }
                 ],
 
@@ -16562,7 +16691,7 @@ storage: {
                         'Treinamento': [...new Set(treinoDefaults)],
                         'Jovem Aprendiz': [...new Set([...defaultUserIds, ...treinoDefaults, 'hierarquia', 'gestao_equipe', 'span_operacoes', 'implantacao_ia', 'cadastros', 'import_monitorias', 'apresentacao_dental_uni'])],
                         'Dev': allIds,
-                        'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'faltas_integracao', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
+                        'Gestor': [...new Set([...defaultUserIds, 'home', 'produtividade_gtd', 'qualidade_treinamento', 'diario_bordo', 'faltas_integracao', 'pdca_teste', 'dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'implantacao_ia', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'gestao_atas', 'caca_palavras', 'palavras_cruzadas', 'apresentacao_dental_uni'])],
                         'Gerente': allIds.filter(id => id !== 'harmony')
                     };
 
@@ -16597,16 +16726,16 @@ storage: {
                             if (!base.includes('treinamentos')) base.push('treinamentos');
                         }
                         if (g !== 'Dev') {
-                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
+                            base = base.filter(id => id !== 'bi_banco_horas' && id !== 'mint_zen_teste');
                         } else {
                             if (!base.includes('bi_banco_horas')) base.push('bi_banco_horas');
-                            if (!base.includes('pdca_teste')) base.push('pdca_teste');
                             if (!base.includes('mint_zen_teste')) base.push('mint_zen_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(g)) {
-                            base = base.filter(id => id !== 'faltas_integracao');
-                        } else if (!base.includes('faltas_integracao')) {
-                            base.push('faltas_integracao');
+                            base = base.filter(id => id !== 'faltas_integracao' && id !== 'pdca_teste');
+                        } else {
+                            if (!base.includes('faltas_integracao')) base.push('faltas_integracao');
+                            if (!base.includes('pdca_teste')) base.push('pdca_teste');
                         }
                         result[g] = [...new Set(base)];
                     });
@@ -16686,21 +16815,23 @@ storage: {
                     if (['Gestor', 'Dev', 'Treinamento', 'Jovem Aprendiz', 'Gerente'].includes(tipo)) {
                         const adminOnlyIds = ['dashboard_adm', 'analitico_visao_geral', 'hierarquia', 'span_operacoes', 'dashboard_estudos', 'gestao_equipe', 'cadastros', 'import_monitorias', 'gestao_impressoes', 'validar_acoes', 'configuracoes', 'gestao_atas', 'harmony', 'teste_duolingo', 'bi_banco_horas', 'pdca_teste', 'mint_zen_teste', 'apresentacao_dental_uni', 'faltas_integracao'];
                         if (tipo !== 'Dev') {
-                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
+                            savedTabs = savedTabs.filter(id => id !== 'bi_banco_horas' && id !== 'mint_zen_teste');
                         } else {
                             if (!savedTabs.includes('bi_banco_horas')) savedTabs.push('bi_banco_horas');
-                            if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
                             if (!savedTabs.includes('mint_zen_teste')) savedTabs.push('mint_zen_teste');
                         }
                         if (!['Gestor', 'Gerente', 'Dev'].includes(tipo)) {
-                            savedTabs = savedTabs.filter(id => id !== 'faltas_integracao');
-                        } else if (!savedTabs.includes('faltas_integracao')) {
-                            savedTabs.push('faltas_integracao');
+                            savedTabs = savedTabs.filter(id => id !== 'faltas_integracao' && id !== 'pdca_teste');
+                        } else {
+                            if (!savedTabs.includes('faltas_integracao')) savedTabs.push('faltas_integracao');
+                            if (!savedTabs.includes('pdca_teste')) savedTabs.push('pdca_teste');
                         }
                         const hasAnyAdminSaved = savedTabs.some(id => adminOnlyIds.includes(id));
                         if (!hasAnyAdminSaved || savedTabs.length <= 2) {
                             const merged = [...new Set([...savedTabs, ...presetTabs])];
-                            return tipo === 'Dev' ? merged : merged.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
+                            if (tipo === 'Dev') return merged;
+                            if (['Gestor', 'Gerente'].includes(tipo)) return merged.filter(id => id !== 'bi_banco_horas' && id !== 'mint_zen_teste');
+                            return merged.filter(id => id !== 'bi_banco_horas' && id !== 'pdca_teste' && id !== 'mint_zen_teste');
                         }
                         if (['Gestor', 'Gerente', 'Dev', 'Jovem Aprendiz'].includes(tipo) && !savedTabs.includes('hierarquia')) savedTabs.push('hierarquia');
                         return [...new Set(savedTabs)];
@@ -18381,30 +18512,55 @@ storage: {
                 closeCommandPalette() {
                     document.getElementById('command-palette-modal').classList.add('hidden');
                 },
+                handleCommandInputKey(e) {
+                    if (!e) return;
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        this.closeCommandPalette();
+                        return;
+                    }
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const input = document.getElementById('command-input');
+                        if (!Array.isArray(this._filteredCommandTabs)) {
+                            this.filterCommands(input ? input.value : '');
+                        }
+                        const firstTab = (this._filteredCommandTabs || [])[0];
+                        if (firstTab && firstTab.id) {
+                            this.renderTab(firstTab.id, true);
+                            this.closeCommandPalette();
+                        }
+                    }
+                },
                 filterCommands(query) {
-                    const term = query.toLowerCase();
+                    const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const term = norm(query).trim();
                     const container = document.getElementById('command-results');
                     const abas = this.getAllSystemTabs();
                     
-                    // Filtra pelo termo digitado
-                    let filtered = abas.filter(tab => tab.label.toLowerCase().includes(term));
+                    // Filtra pelo termo digitado (ignorando acentos)
+                    let filtered = term ? abas.filter(tab => norm(tab.label).includes(term)) : [...abas];
                     
                     // Respeita as permissões efetivas do usuário se não for admin
                     if(!app.isAdmin && app.currentUser) {
                         const effectiveAbas = this.getEffectiveUserTabs(app.currentUser);
                         filtered = filtered.filter(tab => effectiveAbas.includes(tab.id));
                     }
+                    this._filteredCommandTabs = filtered;
 
                     if(filtered.length === 0) {
                         container.innerHTML = `<div class="p-8 text-center text-slate-400 flex flex-col items-center"><i class="fa-solid fa-ghost text-4xl mb-3 opacity-50"></i><p class="text-sm font-medium">Nenhum atalho encontrado para "${query}"</p></div>`;
                         return;
                     }
 
-                    container.innerHTML = filtered.map(tab => `
-                        <button onclick="app.ui.renderTab('${tab.id}', true); app.ui.closeCommandPalette();" class="w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-4 group border border-transparent hover:border-blue-100 dark:hover:border-blue-800/50">
-                            <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 group-hover:bg-white dark:group-hover:bg-slate-900 flex items-center justify-center text-slate-400 group-hover:text-blue-500 shadow-sm transition-colors"><i class="fa-solid fa-arrow-right"></i></div>
-                            <div class="font-semibold text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">${tab.label.replace(' (ADM)', '')}</div>
-                            ${tab.label.includes('(ADM)') ? `<span class="ml-auto text-[9px] bg-purple-100 text-purple-600 px-2 py-1 rounded font-bold shadow-sm">ADM</span>` : ''}
+                    container.innerHTML = filtered.map((tab, idx) => `
+                        <button onclick="app.ui.renderTab('${tab.id}', true); app.ui.closeCommandPalette();" class="w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-4 group border ${idx === 0 ? 'bg-blue-50/50 dark:bg-blue-900/15 border-blue-200/70 dark:border-blue-800/40' : 'border-transparent hover:border-blue-100 dark:hover:border-blue-800/50'}">
+                            <div class="w-8 h-8 rounded-lg ${idx === 0 ? 'bg-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'} group-hover:bg-white dark:group-hover:bg-slate-900 flex items-center justify-center group-hover:text-blue-500 shadow-sm transition-colors"><i class="fa-solid fa-arrow-right"></i></div>
+                            <div class="font-semibold ${idx === 0 ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'} group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">${tab.label.replace(' (ADM)', '')}</div>
+                            <div class="ml-auto flex items-center gap-2">
+                                ${idx === 0 ? `<span class="text-[9px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/50">Enter ↵</span>` : ''}
+                                ${tab.label.includes('(ADM)') ? `<span class="text-[9px] bg-purple-100 text-purple-600 px-2 py-1 rounded font-bold shadow-sm">ADM</span>` : ''}
+                            </div>
                         </button>
                     `).join('');
                 },
@@ -20039,7 +20195,7 @@ storage: {
                             else if(tabId === 'bi_banco_horas') this.renderView_BIBancoHoras(viewDiv);
                             else if(tabId === 'pdca_teste') {
                                 if (!app.hasAdminAccess('pdca_teste')) {
-                                    viewDiv.innerHTML = '<div class="max-w-xl mx-auto mt-16 p-8 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-rose-200/60 text-center"><i class="fa-solid fa-shield-halved text-3xl text-rose-500 mb-3"></i><h3 class="text-lg font-black text-slate-800 dark:text-white">Acesso restrito ao perfil Dev</h3><p class="text-xs text-slate-500 mt-1">Esta aba experimental está liberada exclusivamente para desenvolvedores.</p></div>';
+                                    viewDiv.innerHTML = '<div class="max-w-xl mx-auto mt-16 p-8 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-rose-200/60 text-center"><i class="fa-solid fa-shield-halved text-3xl text-rose-500 mb-3"></i><h3 class="text-lg font-black text-slate-800 dark:text-white">Acesso restrito a Gestores e Gerência</h3><p class="text-xs text-slate-500 mt-1">Esta aba está liberada para perfis de Gestão, Gerência e Administração.</p></div>';
                                 } else if (app.pdcaTeste) {
                                     app.pdcaTeste.renderView(viewDiv);
                                 }
@@ -44238,33 +44394,44 @@ storage: {
                     if (container) this.renderView_PesquisasAnatel(container);
                 },
                 renderView_PesquisasAnatel(container) {
-                    // Inicializa a árvore de Projetos caso não exista
+                    if (app.storage && typeof app.storage.ensureAnatelLoaded === 'function') {
+                        app.storage.ensureAnatelLoaded();
+                    }
+                    // Inicializa a árvore global de Projetos caso não exista
                     if (!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
-                    
-                    // ==========================================
-                    // Módulo de Migração de Dados Antigos (Legado)
-                    // ==========================================
-                    if (!app.anatelData.projetos) {
-                        let legados = { registros: app.anatelData.registros || [], canceladasNovas: app.anatelData.canceladasNovas || [] };
-                        app.anatelData = { projetos: {}, projetoAtivo: null };
-                        
-                        if (legados.registros.length > 0 || legados.canceladasNovas.length > 0) {
-                            app.anatelData.projetos['proj_legado'] = { 
-                                id: 'proj_legado', 
-                                nome: 'Projeto Recuperado', 
-                                meta: 10, 
-                                registros: legados.registros, 
-                                canceladasNovas: legados.canceladasNovas 
+                    if (app.storage && typeof app.storage._normalizeAnatelStore === 'function' && (!app.anatelData.projetos || Object.keys(app.anatelData.projetos).length === 0)) {
+                        const hadLegacy = Boolean(app.anatelData.registros?.length || app.anatelData.canceladasNovas?.length);
+                        const norm = app.storage._normalizeAnatelStore(app.allAnatel || {});
+                        if (hadLegacy && app.anatelData.registros) {
+                            norm._projetosGlobais = norm._projetosGlobais || {};
+                            norm._projetosGlobais['proj_legado'] = {
+                                id: 'proj_legado',
+                                nome: 'Projeto Recuperado',
+                                meta: 10,
+                                registros: app.anatelData.registros || [],
+                                canceladasNovas: app.anatelData.canceladasNovas || []
                             };
                         }
-                        // Limpa chaves antigas
-                        delete app.anatelData.registros;
-                        delete app.anatelData.canceladasNovas;
-                        app.storage.saveAnatel();
+                        app.allAnatel = norm;
+                        app.anatelData = { projetos: norm._projetosGlobais || {}, projetoAtivo: app.anatelData.projetoAtivo || null };
+                        if (hadLegacy && Object.keys(app.anatelData.projetos).length > 0) {
+                            app.storage.saveAnatel().catch(() => {});
+                        }
+                    }
+                    if (!app.anatelData.projetos) app.anatelData.projetos = {};
+                    if (!app.anatelData.projetoAtivo) {
+                        try {
+                            const savedLocalProj = localStorage.getItem('soft_kantar_projeto_ativo');
+                            if (savedLocalProj && app.anatelData.projetos[savedLocalProj]) {
+                                app.anatelData.projetoAtivo = savedLocalProj;
+                            }
+                        } catch (e) {}
                     }
 
-                    const tipoKantar = String(app.currentUser?.tipoAcesso || '').trim();
-                    const canManageKantar = app.isAdmin || ['Dev', 'Gerente', 'Gestor', 'Jovem Aprendiz', 'Qualidade'].includes(tipoKantar) || app.hasAdminAccess('pesquisas_anatel');
+                    // Apenas perfil Dev (ou Admin mestre) pode criar/editar Projetos Kantar; demais perfis visualizam e baixam
+                    const canManageKantar = (app.admin && typeof app.admin.canEditKantar === 'function')
+                        ? app.admin.canEditKantar()
+                        : (app.isAdmin || String(app.currentUser?.tipoAcesso || '').trim() === 'Dev');
 
                     // Verifica se existe um projeto ativo aberto na memória
                     if (!app.anatelData.projetoAtivo || !app.anatelData.projetos[app.anatelData.projetoAtivo]) {
@@ -44429,7 +44596,7 @@ storage: {
                     html += `</div>`;
                     
                     if (reg.length === 0 && canc.length === 0) {
-                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.</p></div>`;
+                        html += `<div class="p-16 text-center glass-card rounded-3xl border-dashed border-2 border-slate-300 dark:border-slate-700"><i class="fa-solid fa-box-open text-6xl text-slate-300 dark:text-slate-600 mb-4 animate-bounce"></i><h3 class="font-extrabold text-xl text-slate-700 dark:text-slate-200 mb-2">Projeto Vazio</h3><p class="text-slate-400 text-sm max-w-md mx-auto">${canManageKantar ? 'Utilize os botões acima para importar as planilhas da Kantar para dentro deste projeto.' : 'Nenhuma planilha importada neste projeto ainda. Somente o perfil Dev pode editar e importar dados.'}</p></div>`;
                         container.innerHTML = html;
                         return;
                     }
@@ -44530,12 +44697,12 @@ storage: {
                                 <td class="p-4 text-center space-x-2" onclick="event.stopPropagation()">
                                     <label class="bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors shadow-sm inline-flex items-center gap-1" title="Substituir Base da Campanha">
                                         <i class="fa-solid fa-file-arrow-up"></i> Atualizar
-                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="app.admin.processarKantarPadrao(this, '${c.nome}')" onclick="this.value = null">
+                                        <input type="file" accept=".xlsx, .xls, .csv" class="hidden" data-camp="${app.utils.escapeHtml(c.nome)}" onchange="app.admin.processarKantarPadrao(this, this.dataset.camp)" onclick="this.value = null">
                                     </label>
-                                    <button onclick="event.stopPropagation(); app.admin.kantarRenomearCampanhaPrompt('${c.nome}')" class="bg-indigo-100 text-indigo-600 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Renomear Nome da Campanha">
+                                    <button data-camp="${app.utils.escapeHtml(c.nome)}" onclick="event.stopPropagation(); app.admin.kantarRenomearCampanhaPrompt(this.dataset.camp)" class="bg-indigo-100 text-indigo-600 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Renomear Nome da Campanha">
                                         <i class="fa-solid fa-pen"></i> Editar
                                     </button>
-                                    <button onclick="event.stopPropagation(); app.admin.kantarExcluirCampanha('${c.nome}')" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
+                                    <button data-camp="${app.utils.escapeHtml(c.nome)}" onclick="event.stopPropagation(); app.admin.kantarExcluirCampanha(this.dataset.camp)" class="bg-red-100 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1" title="Excluir Campanha do Projeto">
                                         <i class="fa-solid fa-trash"></i> Excluir
                                     </button>
                                 </td>
@@ -44553,7 +44720,7 @@ storage: {
                         <div class="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 w-full overflow-x-auto mb-6">
                             <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
                                 <h3 class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2"><i class="fa-solid fa-headset text-slate-400"></i> Detalhamento por Entrevistador ${selectedCamp ? `<span class="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-black normal-case">${selectedCamp}</span>` : ''}</h3>
-                                ${canManageKantar ? `<button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Extrair Tabela</button>` : ''}
+                                <button onclick="app.admin.exportKantarDetalhado()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl shadow-sm text-xs transition-colors flex items-center gap-2 cursor-pointer"><i class="fa-solid fa-download"></i> Extrair Tabela</button>
                             </div>
                             <table class="w-full text-left text-sm whitespace-nowrap">
                                 <thead class="bg-slate-50 dark:bg-slate-700/50 uppercase text-[10px] text-slate-500 tracking-wider">
@@ -45303,104 +45470,182 @@ storage: {
                 },
                 
                 // ==========================================
-                // GESTÃO DE PROJETOS KANTAR (NOVO MÓDULO)
+                // GESTÃO DE PROJETOS KANTAR (SOMENTE DEV EDITA; TODOS PODEM VISUALIZAR E BAIXAR)
                 // ==========================================
+                canEditKantar() {
+                    return Boolean(app.isAdmin || String(app.currentUser?.tipoAcesso || '').trim() === 'Dev');
+                },
                 kantarCriarProjeto() {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode criar ou editar projetos Kantar.', 'error');
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-folder-plus text-blue-500"></i> Criar Novo Projeto Kantar`;
                     document.getElementById('modal-content').innerHTML = `
                         <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">Insira o nome do projeto (ex: Kantar Setembro) e a meta percentual padrão:</p>
                         <div class="space-y-4">
-                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Projeto</label><input type="text" id="k-proj-nome" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
-                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Meta (%)</label><input type="number" id="k-proj-meta" value="10" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
+                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Projeto</label><input type="text" id="k-proj-nome" onkeydown="if(event.key==='Enter'){ event.preventDefault(); app.admin.execKantarCriarProjeto(); }" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
+                            <div><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Meta (%)</label><input type="number" id="k-proj-meta" value="10" onkeydown="if(event.key==='Enter'){ event.preventDefault(); app.admin.execKantarCriarProjeto(); }" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 shadow-sm"></div>
                         </div>
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-bold text-sm">Cancelar</button>
-                        <button onclick="app.admin.execKantarCriarProjeto()" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-md">Criar Projeto</button>
+                        <button id="btn-kantar-criar" onclick="app.admin.execKantarCriarProjeto()" class="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm shadow-md">Criar Projeto</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('k-proj-nome')?.focus(), 80);
                 },
                 execKantarCriarProjeto() {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode criar ou editar projetos Kantar.', 'error');
                     const nome = document.getElementById('k-proj-nome').value.trim();
                     const meta = parseFloat(document.getElementById('k-proj-meta').value) || 10;
                     if(!nome) return app.ui.showAlert('Aviso', 'Nome é obrigatório', 'error');
                     
+                    const btn = document.getElementById('btn-kantar-criar');
+                    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+
                     const id = 'proj_' + Date.now();
+                    if(!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
                     if(!app.anatelData.projetos) app.anatelData.projetos = {};
-                    app.anatelData.projetos[id] = { id, nome, meta, registros: [], canceladasNovas: [] };
+                    app.anatelData.projetos[id] = {
+                        id,
+                        nome,
+                        meta,
+                        registros: [],
+                        canceladasNovas: [],
+                        criadoPor: app.currentUser?.nome || 'Dev',
+                        atualizadoEm: new Date().toISOString()
+                    };
                     
                     app.storage.saveAnatel().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.renderTab('pesquisas_anatel', true);
-                        app.ui.showAlert('Sucesso', 'Projeto criado com sucesso!', 'success');
+                        app.ui.showAlert('Sucesso', 'Projeto criado e salvo na nuvem para toda a equipe!', 'success');
+                    }).catch(err => {
+                        console.error('[Kantar] Erro ao criar projeto:', err);
+                        if (btn) { btn.disabled = false; btn.textContent = 'Criar Projeto'; }
+                        app.ui.showAlert('Erro ao Salvar', 'Não foi possível salvar o projeto Kantar na nuvem. Verifique a conexão.', 'error');
                     });
                 },
                 kantarAbrirProjeto(id) {
+                    if (!app.anatelData) app.anatelData = { projetos: {}, projetoAtivo: null };
                     app.anatelData.projetoAtivo = id;
+                    try { localStorage.setItem('soft_kantar_projeto_ativo', id); } catch (e) {}
                     if (app.ui) app.ui.anatelCampanhaFilter = null;
                     app.ui.renderTab('pesquisas_anatel', true);
                 },
                 kantarVoltarLobby() {
-                    app.anatelData.projetoAtivo = null;
+                    if (app.anatelData) app.anatelData.projetoAtivo = null;
+                    try { localStorage.removeItem('soft_kantar_projeto_ativo'); } catch (e) {}
                     if (app.ui) app.ui.anatelCampanhaFilter = null;
                     app.ui.renderTab('pesquisas_anatel', true);
                 },
                 kantarExcluirProjeto(id) {
-                    app.ui.showConfirm("Cuidado!", "Tem certeza que deseja excluir todo este projeto e suas planilhas importadas? Não tem volta.", `delete app.anatelData.projetos['${id}']; app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));`, true);
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir projetos Kantar.', 'error');
+                    app.ui.showConfirm("Cuidado!", "Tem certeza que deseja excluir todo este projeto e suas planilhas importadas? Não tem volta.", `app.admin.execKantarExcluirProjeto('${id}')`, true);
+                },
+                execKantarExcluirProjeto(id) {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir projetos Kantar.', 'error');
+                    if (app.anatelData?.projetos) delete app.anatelData.projetos[id];
+                    if (app.anatelData?.projetoAtivo === id) {
+                        app.anatelData.projetoAtivo = null;
+                        try { localStorage.removeItem('soft_kantar_projeto_ativo'); } catch (e) {}
+                    }
+                    if (app.allAnatel && typeof app.allAnatel === 'object') {
+                        Object.values(app.allAnatel).forEach(bucket => {
+                            if (bucket && typeof bucket === 'object') {
+                                if (bucket.projetos && bucket.projetos[id]) delete bucket.projetos[id];
+                                if (bucket[id]) delete bucket[id];
+                            }
+                        });
+                    }
+                    app.storage.saveAnatel()
+                        .then(() => app.ui.renderTab('pesquisas_anatel', true))
+                        .catch(() => app.ui.showAlert('Erro', 'Falha ao excluir projeto na nuvem.', 'error'));
                 },
                 kantarAtualizarMeta(val) {
-                    if (!app.anatelData.projetoAtivo) return;
-                    app.anatelData.projetos[app.anatelData.projetoAtivo].meta = parseFloat(val) || 10;
-                    app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode editar a meta do projeto.', 'error');
+                    if (!app.anatelData?.projetoAtivo) return;
+                    const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    if (!proj) return;
+                    proj.meta = parseFloat(val) || 10;
+                    proj.atualizadoEm = new Date().toISOString();
+                    app.storage.saveAnatel()
+                        .then(() => {
+                            app.ui.showToast?.('Meta salva na nuvem!', 'success');
+                            app.ui.renderTab('pesquisas_anatel', true);
+                        })
+                        .catch(() => app.ui.showAlert('Erro', 'Falha ao salvar meta na nuvem.', 'error'));
                 },
                 limparKantarProjeto() {
-                    if (!app.anatelData.projetoAtivo) return;
-                    app.ui.showConfirm("Zerar Dados", "Isso apagará TODAS as planilhas (Padrão e Canceladas) de DENTRO DESTE PROJETO. Continuar?", `app.anatelData.projetos[app.anatelData.projetoAtivo].registros = []; app.anatelData.projetos[app.anatelData.projetoAtivo].canceladasNovas = []; app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));`, true);
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode esvaziar este projeto.', 'error');
+                    if (!app.anatelData?.projetoAtivo) return;
+                    app.ui.showConfirm("Zerar Dados", "Isso apagará TODAS as planilhas (Padrão e Canceladas) de DENTRO DESTE PROJETO. Continuar?", `app.admin.execLimparKantarProjeto()`, true);
+                },
+                execLimparKantarProjeto() {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode esvaziar este projeto.', 'error');
+                    const proj = app.anatelData?.projetos?.[app.anatelData.projetoAtivo];
+                    if (!proj) return;
+                    proj.registros = [];
+                    proj.canceladasNovas = [];
+                    proj.atualizadoEm = new Date().toISOString();
+                    app.storage.saveAnatel()
+                        .then(() => app.ui.renderTab('pesquisas_anatel', true))
+                        .catch(() => app.ui.showAlert('Erro', 'Falha ao limpar dados na nuvem.', 'error'));
                 },
                 kantarExcluirCampanha(nomeCampanha) {
-                    if (!app.anatelData.projetoAtivo) return;
-                    app.ui.showConfirm("Excluir Campanha", `Isso removerá apenas a campanha <b>${nomeCampanha}</b> deste projeto. Continuar?`, `app.admin.execKantarExcluirCampanha('${nomeCampanha}')`, true);
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir campanhas.', 'error');
+                    if (!app.anatelData?.projetoAtivo) return;
+                    window._kantarCampanhaTarget = nomeCampanha;
+                    app.ui.showConfirm("Excluir Campanha", `Isso removerá apenas a campanha <b>${app.utils.escapeHtml(nomeCampanha)}</b> deste projeto. Continuar?`, `app.admin.execKantarExcluirCampanha(window._kantarCampanhaTarget)`, true);
                 },
                 execKantarExcluirCampanha(nomeCampanha) {
-                    let proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
-                    proj.registros = proj.registros.filter(r => r.campanha !== nomeCampanha);
-                    proj.canceladasNovas = proj.canceladasNovas.filter(c => c.campanha !== nomeCampanha);
-                    app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true));
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode excluir campanhas.', 'error');
+                    let proj = app.anatelData?.projetos?.[app.anatelData.projetoAtivo];
+                    if (!proj) return;
+                    proj.registros = (proj.registros || []).filter(r => r.campanha !== nomeCampanha);
+                    proj.canceladasNovas = (proj.canceladasNovas || []).filter(c => c.campanha !== nomeCampanha);
+                    proj.atualizadoEm = new Date().toISOString();
+                    app.storage.saveAnatel()
+                        .then(() => app.ui.renderTab('pesquisas_anatel', true))
+                        .catch(() => app.ui.showAlert('Erro', 'Falha ao salvar exclusão da campanha na nuvem.', 'error'));
                 },
 
                 kantarRenomearCampanhaPrompt(nomeAntigo) {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode renomear campanhas.', 'error');
+                    window._kantarRenameFrom = nomeAntigo;
                     document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-pen text-indigo-500"></i> Renomear Campanha`;
                     document.getElementById('modal-content').innerHTML = `
-                        <p class="mb-3 text-slate-600 dark:text-slate-300">Digite o novo nome para a campanha <b>${nomeAntigo}</b>:</p>
-                        <input type="text" id="rename-camp-input" value="${nomeAntigo}" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-indigo-500 shadow-sm transition-all">
+                        <p class="mb-3 text-slate-600 dark:text-slate-300">Digite o novo nome para a campanha <b>${app.utils.escapeHtml(nomeAntigo)}</b>:</p>
+                        <input type="text" id="rename-camp-input" value="${app.utils.escapeHtml(nomeAntigo)}" onkeydown="if(event.key==='Enter'){ event.preventDefault(); app.admin.execKantarRenomearCampanha(window._kantarRenameFrom); }" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-indigo-500 shadow-sm transition-all">
                     `;
                     document.getElementById('modal-actions').innerHTML = `
                         <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
-                        <button onclick="app.admin.execKantarRenomearCampanha('${nomeAntigo}')" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition-transform hover:-translate-y-0.5">Salvar Nome</button>
+                        <button onclick="app.admin.execKantarRenomearCampanha(window._kantarRenameFrom)" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition-transform hover:-translate-y-0.5">Salvar Nome</button>
                     `;
                     document.getElementById('global-modal').classList.remove('hidden');
                     // Foca no input e já deixa o texto pré-selecionado para agilidade
-                    setTimeout(() => { const input = document.getElementById('rename-camp-input'); input.focus(); input.select(); }, 100);
+                    setTimeout(() => { const input = document.getElementById('rename-camp-input'); if (input) { input.focus(); input.select(); } }, 100);
                 },
 
                 execKantarRenomearCampanha(nomeAntigo) {
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode renomear campanhas.', 'error');
                     const novoNome = document.getElementById('rename-camp-input').value.trim();
                     if(!novoNome || novoNome === nomeAntigo) {
                         document.getElementById('global-modal').classList.add('hidden');
                         return;
                     }
-                    let proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    let proj = app.anatelData?.projetos?.[app.anatelData.projetoAtivo];
+                    if (!proj) return;
                     
                     // Varre as duas bases e aplica o novo nome em massa
                     if(proj.registros) proj.registros.forEach(r => { if(r.campanha === nomeAntigo) r.campanha = novoNome; });
                     if(proj.canceladasNovas) proj.canceladasNovas.forEach(c => { if(c.campanha === nomeAntigo) c.campanha = novoNome; });
+                    proj.atualizadoEm = new Date().toISOString();
                     if (app.ui && app.ui.anatelCampanhaFilter === nomeAntigo) app.ui.anatelCampanhaFilter = novoNome;
                     
                     app.storage.saveAnatel().then(() => {
                         document.getElementById('global-modal').classList.add('hidden');
                         app.ui.renderTab('pesquisas_anatel', true);
-                        app.ui.showAlert("Renomeada", `A campanha <b>${nomeAntigo}</b> agora se chama <b>${novoNome}</b> em todos os registros!`, "success");
-                    });
+                        app.ui.showAlert("Renomeada", `A campanha <b>${app.utils.escapeHtml(nomeAntigo)}</b> agora se chama <b>${app.utils.escapeHtml(novoNome)}</b> em todos os registros!`, "success");
+                    }).catch(() => app.ui.showAlert('Erro', 'Falha ao salvar novo nome da campanha na nuvem.', 'error'));
                 },
                 
                 verMotivosCanceladasKantar(nomeEncoded) {
@@ -45428,11 +45673,13 @@ storage: {
                 },
 
                 processarKantarCanceladas(input) {
-                    if (!app.anatelData.projetoAtivo) return;
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode importar dados Kantar.', 'error');
+                    if (!app.anatelData?.projetoAtivo) return;
                     const file = input.files[0];
                     if (!file) return;
 
                     const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    if (!proj) return;
                     if(!proj.canceladasNovas) proj.canceladasNovas = [];
 
                     app.ui.showAlert("Lendo...", "Processando as monitorias canceladas sem validação para este projeto...", "info");
@@ -45473,9 +45720,12 @@ storage: {
                                 }
                             });
 
+                            proj.atualizadoEm = new Date().toISOString();
                             app.storage.saveAnatel().then(() => {
                                 app.ui.renderTab('pesquisas_anatel', true);
-                                app.ui.showAlert("Importação Concluída", `${count} canceladas integradas ao projeto!`, "success");
+                                app.ui.showAlert("Importação Concluída", `${count} canceladas integradas ao projeto e salvas na nuvem!`, "success");
+                            }).catch(() => {
+                                app.ui.showAlert("Erro ao Salvar", "Planilha lida, mas houve falha ao salvar na nuvem.", "error");
                             });
 
                         } catch (err) {
@@ -45539,11 +45789,13 @@ storage: {
                 },
 
                 processarKantarPadrao(input, updateCampanhaNome = null) {
-                    if (!app.anatelData.projetoAtivo) return;
+                    if (!this.canEditKantar()) return app.ui.showAlert('Acesso Restrito', 'Somente o perfil Dev pode importar dados Kantar.', 'error');
+                    if (!app.anatelData?.projetoAtivo) return;
                     const files = Array.from(input.files);
                     if (files.length === 0) return;
                     
                     const proj = app.anatelData.projetos[app.anatelData.projetoAtivo];
+                    if (!proj) return;
                     if(!proj.registros) proj.registros = [];
                     
                     app.ui.showAlert("Processando...", "Lendo relatórios Padrão. Isso levará alguns segundos...", "info");
@@ -45601,10 +45853,20 @@ storage: {
                             
                             processedCount++;
                             if (processedCount === files.length) {
+                                proj.atualizadoEm = new Date().toISOString();
                                 app.storage.saveAnatel().then(() => {
                                     app.ui.renderTab('pesquisas_anatel', true);
-                                    app.ui.showAlert("Importação Concluída", "Planilhas integradas com sucesso ao projeto.", "success");
+                                    app.ui.showAlert("Importação Concluída", "Planilhas integradas e salvas na nuvem com sucesso.", "success");
+                                }).catch(() => {
+                                    app.ui.showAlert("Erro ao Salvar", "Falha ao gravar as planilhas Kantar na nuvem.", "error");
                                 });
+                            }
+                        };
+                        reader.onerror = () => {
+                            processedCount++;
+                            if (processedCount === files.length) {
+                                proj.atualizadoEm = new Date().toISOString();
+                                app.storage.saveAnatel().then(() => app.ui.renderTab('pesquisas_anatel', true)).catch(() => {});
                             }
                         };
                         reader.readAsArrayBuffer(file);
@@ -48158,20 +48420,24 @@ storage: {
 
                             window.tempCSVAnaliseData = rows;
                             
-                            // Abre modal para nomear o formulário
-                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-tag text-blue-500"></i> Nomear Formulário/Relatório`;
+                            // Abre modal compacto para nomear o arquivo CSV
+                            const modalBox = document.querySelector('#global-modal > div');
+                            if (modalBox) {
+                                modalBox.classList.remove('max-w-lg', 'max-w-2xl', 'max-w-3xl', 'max-w-5xl', 'p-6');
+                                modalBox.classList.add('max-w-sm', 'p-5');
+                            }
+                            document.getElementById('modal-title').innerHTML = `<i class="fa-solid fa-tag text-blue-500 text-sm"></i> <span class="text-base">Nomear CSV</span>`;
                             document.getElementById('modal-content').innerHTML = `
-                                <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">Este arquivo será consolidado com as importações anteriores. Para que as perguntas de Qualidade não se misturem e baguncem o painel, por favor, defina um nome claro para identificar a origem delas (Ex: <em>Qualidade Vendas, Checklist Atendimento, etc</em>):</p>
-                                <input type="text" id="csv-form-name" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Digite o nome do formulário...">
+                                <input type="text" id="csv-form-name" onkeydown="if(event.key==='Enter'){ event.preventDefault(); app.admin.confirmarNomeCSV(); }" class="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500" placeholder="Nome do formulário (Ex: Qualidade SAC)">
                             `;
                             document.getElementById('modal-actions').innerHTML = `
-                                <button onclick="document.getElementById('global-modal').classList.add('hidden')" class="px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-sm transition-colors">Cancelar</button>
-                                <button onclick="app.admin.confirmarNomeCSV()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-md transition-all transform hover:-translate-y-0.5">Importar e Consolidar</button>
+                                <button onclick="app.admin._restoreGlobalModalSize(); document.getElementById('global-modal').classList.add('hidden')" class="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg font-bold text-xs transition-colors">Cancelar</button>
+                                <button onclick="app.admin.confirmarNomeCSV()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-sm transition-all">Importar</button>
                             `;
                             document.getElementById('global-modal').classList.remove('hidden');
                             
                             // Foca automaticamente no campo para digitar
-                            setTimeout(() => document.getElementById('csv-form-name').focus(), 100);
+                            setTimeout(() => document.getElementById('csv-form-name')?.focus(), 80);
                             
                         } catch (error) {
                             console.error(error);
@@ -49444,6 +49710,9 @@ storage: {
                             app.apresentacoesList[id] = payload;
 
                             app.storage.saveApresentacoes(id).then(() => {
+                                if (app.pdcaTeste && typeof app.pdcaTeste.syncFromApresentacao === 'function') {
+                                    app.pdcaTeste.syncFromApresentacao(id, payload).catch(() => {});
+                                }
                                 if (typeof localforage !== 'undefined' && app.analiseCSVDinamicoData) {
                                     localforage.setItem('soft_analise_data', app.analiseCSVDinamicoData).catch(() => {});
                                 }
@@ -50419,10 +50688,27 @@ storage: {
                     }, 850);
                 },
 
+                _restoreGlobalModalSize() {
+                    const modalBox = document.querySelector('#global-modal > div');
+                    if (modalBox) {
+                        modalBox.classList.remove('max-w-sm', 'max-w-2xl', 'max-w-3xl', 'max-w-5xl', 'p-5');
+                        modalBox.classList.add('max-w-lg', 'p-6');
+                    }
+                },
+
                 confirmarNomeCSV() {
-                    const nomeForm = document.getElementById('csv-form-name').value.trim();
-                    if(!nomeForm) return app.ui.showAlert("Aviso Obrigatório", "Você precisa definir um nome para que as perguntas não se misturem no consolidador global.", "error");
+                    const inputEl = document.getElementById('csv-form-name');
+                    const nomeForm = (inputEl?.value || '').trim();
+                    if(!nomeForm) {
+                        if (inputEl) {
+                            inputEl.classList.add('border-red-500', 'ring-2', 'ring-red-500/30');
+                            inputEl.placeholder = 'Informe um nome...';
+                            inputEl.focus();
+                        }
+                        return;
+                    }
                     
+                    this._restoreGlobalModalSize();
                     document.getElementById('global-modal').classList.add('hidden');
                     
                     // Inicializa a Gaveta se for a primeira vez
@@ -69754,10 +70040,14 @@ app.faltasIntegracao = {
 // =========================================================================
 app.pdcaTeste = {
     STORAGE_KEY: 'soft_pdca_teste_backup_v1',
+    HIDDEN_STORAGE_KEY: 'soft_pdca_ocultos_backup_v1',
     FIREBASE_NODE: 'sistema_bonificacao/pdca_ciclos',
+    HIDDEN_NODE: 'sistema_bonificacao/pdca_ocultos',
     ciclos: {},
+    ocultos: {},
     selectedAprId: '__atual__',
     filtroArea: 'TODOS',
+    filtroTipoGap: 'TODOS',
     filtroOperacao: 'TODAS',
     showCriterios: false,
     sourceDropdownOpen: false,
@@ -69765,6 +70055,9 @@ app.pdcaTeste = {
     modalState: null,
     _loadedCloud: false,
     _loadingCloud: false,
+    _syncingAuto: false,
+    _lastCloudFetchTs: 0,
+    _lastCloudSyncLabel: '',
 
     _stages: [
         { key: 'P', num: '1', title: 'Identificar', hint: 'O que dói nos Resultados?', accent: 'blue', badgeBg: 'bg-blue-500', softBg: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-300/60 dark:border-blue-500/30', text: 'text-blue-700 dark:text-blue-300', icon: 'fa-bullseye' },
@@ -69773,8 +70066,42 @@ app.pdcaTeste = {
         { key: 'A', num: '4', title: 'Ação Contínua', hint: 'Evolução constante ou Novo Ciclo', accent: 'emerald', badgeBg: 'bg-emerald-500', softBg: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-300/60 dark:border-emerald-500/30', text: 'text-emerald-700 dark:text-emerald-300', icon: 'fa-infinity' }
     ],
 
+    _canAccess() {
+        return app.isAdmin || ['Dev', 'Gestor', 'Gerente'].includes(String(app.currentUser?.tipoAcesso || '').trim());
+    },
+
     _isDevUser() {
-        return app.isAdmin || app.currentUser?.tipoAcesso === 'Dev';
+        return this._canAccess();
+    },
+
+    _normTxt(s) {
+        return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+    },
+
+    _hashKey(str) {
+        const txt = String(str || '');
+        let h = 0x811c9dc5;
+        for (let i = 0; i < txt.length; i++) {
+            h ^= txt.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return (h >>> 0).toString(36);
+    },
+
+    _buildAutoGapId(opName, tipo, gapName) {
+        const opSlug = this._normTxt(opName).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 18) || 'geral';
+        const keySeed = `${this._normTxt(opName)}|${tipo}|${this._normTxt(gapName)}`;
+        return `pdca_auto_${opSlug}_${tipo}_${this._hashKey(keySeed)}`;
+    },
+
+    _buildOrigemKey(opName, tipo, gapName) {
+        return `${this._normTxt(opName)}|${tipo}:${this._normTxt(gapName).toLowerCase()}`;
+    },
+
+    _stampSyncTime() {
+        try {
+            this._lastCloudSyncLabel = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {}
     },
 
     _loadLocalBackup() {
@@ -69791,26 +70118,53 @@ app.pdcaTeste = {
     _saveLocalBackup() {
         try {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.ciclos || {}));
+            localStorage.setItem(this.HIDDEN_STORAGE_KEY, JSON.stringify(this.ocultos || {}));
         } catch (e) {}
     },
 
+    _loadLocalHidden() {
+        try {
+            const raw = localStorage.getItem(this.HIDDEN_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    },
+
     async ensureLoaded(force = false) {
-        if (!this._isDevUser()) return;
-        if (this._loadedCloud && !force) return;
+        if (!this._canAccess()) return;
+        const stale = (Date.now() - Number(this._lastCloudFetchTs || 0)) > 20000;
+        if (this._loadedCloud && !force && !stale) return;
         if (Object.keys(this.ciclos || {}).length === 0) {
             this.ciclos = this._loadLocalBackup();
+        }
+        if (Object.keys(this.ocultos || {}).length === 0) {
+            this.ocultos = this._loadLocalHidden();
         }
         if (this._loadingCloud) return;
         this._loadingCloud = true;
         try {
-            const res = await app.storage._fetchFirebaseNodeFast(this.FIREBASE_NODE, 350, 12000);
-            if (res && res.ok && res.val && typeof res.val === 'object') {
-                this.ciclos = res.val;
-                this._saveLocalBackup();
+            const [resCiclos, resOcultos] = await Promise.all([
+                app.storage._fetchFirebaseNodeFast(this.FIREBASE_NODE, 350, 12000),
+                app.storage._fetchFirebaseNodeFast(this.HIDDEN_NODE, 350, 10000).catch(() => null)
+            ]);
+            if (resCiclos && resCiclos.ok && resCiclos.val && typeof resCiclos.val === 'object') {
+                this.ciclos = resCiclos.val;
             }
+            if (resOcultos && resOcultos.ok && resOcultos.val && typeof resOcultos.val === 'object') {
+                this.ocultos = resOcultos.val;
+            }
+            this._saveLocalBackup();
             this._loadedCloud = true;
+            this._lastCloudFetchTs = Date.now();
+            this._stampSyncTime();
+            // Auto-importa TODOS os gaps das apresentações disponíveis sem exigir clique
+            const targetOp = this.filtroOperacao && this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : null;
+            await this.syncGapsOperacao(targetOp, { silent: true, renderAfter: false });
         } catch (e) {
-            console.warn('[PDCA Teste] Fallback local:', e);
+            console.warn('[PDCA] Fallback local:', e);
         } finally {
             this._loadingCloud = false;
             if (app.currentTab === 'pdca_teste') {
@@ -69821,34 +70175,80 @@ app.pdcaTeste = {
 
     async _persistCiclo(ciclo) {
         if (!ciclo || !ciclo.id) return;
-        this.ciclos[ciclo.id] = ciclo;
+        const enriched = {
+            ...ciclo,
+            operacao: String(ciclo.operacao || 'Geral').trim(),
+            atualizadoPor: app.currentUser?.nome || app.currentUser?.matricula || 'Gestão',
+            atualizadoEm: ciclo.atualizadoEm || new Date().toISOString()
+        };
+        this.ciclos[enriched.id] = enriched;
         this._saveLocalBackup();
         try {
-            const clean = app.storage.sanitizeFirebaseObject(ciclo);
-            await app.storage._writeFirebaseNodeFast(`${this.FIREBASE_NODE}/${ciclo.id}`, clean, 'PUT', 12000);
+            const clean = app.storage.sanitizeFirebaseObject(enriched);
+            await app.storage._writeFirebaseNodeFast(`${this.FIREBASE_NODE}/${enriched.id}`, clean, 'PUT', 12000);
+            this._stampSyncTime();
         } catch (e) {
-            console.warn('[PDCA Teste] Erro ao salvar ciclo na nuvem:', e);
+            console.warn('[PDCA] Erro ao salvar ciclo na nuvem:', e);
         }
+    },
+
+    async _persistBatchCiclos(novos) {
+        if (!Array.isArray(novos) || novos.length === 0) return 0;
+        const patchObj = {};
+        const userWho = app.currentUser?.nome || app.currentUser?.matricula || 'Sistema';
+        novos.forEach(c => {
+            if (!c || !c.id) return;
+            const enriched = {
+                ...c,
+                operacao: String(c.operacao || 'Geral').trim(),
+                atualizadoPor: c.atualizadoPor || userWho,
+                atualizadoEm: c.atualizadoEm || new Date().toISOString()
+            };
+            this.ciclos[enriched.id] = enriched;
+            patchObj[enriched.id] = app.storage.sanitizeFirebaseObject(enriched);
+        });
+        this._saveLocalBackup();
+        try {
+            await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, patchObj, 'PATCH', 15000);
+            this._stampSyncTime();
+        } catch (e) {
+            console.warn('[PDCA] Erro no lote PATCH, tentando individual:', e);
+            for (const c of novos) {
+                await this._persistCiclo(c);
+            }
+        }
+        return novos.length;
     },
 
     async _deleteCiclo(id) {
         if (!id || !this.ciclos[id]) return;
+        const removed = this.ciclos[id];
         delete this.ciclos[id];
+        const hideKey = removed.origemKey ? this._hashKey(removed.origemKey) : null;
+        if (hideKey && String(removed.origemKey || '').includes('|')) {
+            this.ocultos[hideKey] = removed.origemKey;
+        }
         this._saveLocalBackup();
         this.renderView();
         try {
             await app.storage._writeFirebaseNodeFast(`${this.FIREBASE_NODE}/${id}`, null, 'DELETE', 12000);
+            if (hideKey && this.ocultos[hideKey]) {
+                await app.storage._writeFirebaseNodeFast(`${this.HIDDEN_NODE}/${hideKey}`, removed.origemKey, 'PUT', 10000);
+            }
+            this._stampSyncTime();
         } catch (e) {
-            console.warn('[PDCA Teste] Erro ao remover ciclo na nuvem:', e);
+            console.warn('[PDCA] Erro ao remover ciclo na nuvem:', e);
         }
     },
 
-    _readConsolidadoFromApr(aprId) {
-        if (!aprId || aprId === '__atual__') {
+    _readConsolidadoFromApr(aprId, aprObjOverride = null) {
+        if (!aprObjOverride && (!aprId || aprId === '__atual__')) {
             return app.analiseCSVDinamicoData?.consolidado || null;
         }
-        const apr = (app.apresentacoesList || {})[aprId];
-        if (!apr || !apr.payloadData) return null;
+        const apr = aprObjOverride || (app.apresentacoesList || {})[aprId];
+        if (!apr) return null;
+        if (apr.consolidado) return apr.consolidado;
+        if (!apr.payloadData) return null;
         try {
             if (typeof apr.payloadData === 'object') {
                 return apr.payloadData?.consolidado || null;
@@ -69863,15 +70263,28 @@ app.pdcaTeste = {
     },
 
     _getOperacoesExistentes() {
-        const set = new Set();
+        const map = new Map();
+        const addOp = (raw) => {
+            const clean = String(raw || '').trim();
+            if (!clean || clean === 'Sessão Ativa' || clean === 'Geral') return;
+            const k = this._normTxt(clean);
+            if (!map.has(k)) map.set(k, clean.toUpperCase());
+        };
         try {
             if (app.admin && typeof app.admin.getOperacoesOficiaisLimpa === 'function') {
-                (app.admin.getOperacoesOficiaisLimpa() || []).forEach(op => { if (op) set.add(String(op).trim().toUpperCase()); });
+                (app.admin.getOperacoesOficiaisLimpa() || []).forEach(addOp);
             } else if (app.diarioBordo && typeof app.diarioBordo.getOperacoesDisponiveis === 'function') {
-                (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(op => { if (op) set.add(String(op).trim().toUpperCase()); });
+                (app.diarioBordo.getOperacoesDisponiveis() || []).forEach(addOp);
             }
         } catch (e) {}
-        return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        // Inclui operações presentes nas apresentações salvas e ciclos já gravados
+        Object.values(app.apresentacoesList || {}).forEach(a => {
+            if (a && (a.operacao || a.setor || a.pasta)) addOp(a.operacao || a.setor || a.pasta);
+        });
+        Object.values(this.ciclos || {}).forEach(c => {
+            if (c?.operacao) addOp(c.operacao);
+        });
+        return Array.from(map.values()).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     },
 
     _resolveOperacaoCiclo(c) {
@@ -69901,24 +70314,29 @@ app.pdcaTeste = {
             }
             app.ui?.showToast?.(`Apresentação vinculada à operação ${opVal}!`, 'success');
         } catch (e) {}
+        await this.syncGapsOperacao(opVal, { sourceIds: [aprId], renderAfter: false });
         this.renderView();
     },
 
     _getAvailableSources() {
         const list = [];
         if (app.analiseCSVDinamicoData?.consolidado) {
-            const atualSetor = app.analiseCSVDinamicoData.setor || app.analiseCSVDinamicoData.pasta || 'Sessão Ativa';
+            const rawInfoOp = String(app.analiseCSVDinamicoData.consolidado?.infoOperacao || '').replace('Filtro Ativo: ', '').trim();
+            const fallbackInfo = (rawInfoOp && rawInfoOp !== 'Visão Consolidada (Geral)') ? rawInfoOp : '';
+            const atualSetor = app.analiseCSVDinamicoData.setor || app.analiseCSVDinamicoData.pasta || fallbackInfo || 'Sessão Ativa';
+            const opAtual = app.analiseCSVDinamicoData.operacao || fallbackInfo || atualSetor;
             list.push({
                 id: '__atual__',
                 nome: 'Sessão Atual (Apres. de Resultados)',
                 pasta: atualSetor,
-                operacao: app.analiseCSVDinamicoData.operacao || atualSetor,
-                hasOperacaoExplicita: Boolean(app.analiseCSVDinamicoData.operacao),
-                label: `${atualSetor} • Sessão Atual`,
+                operacao: opAtual,
+                hasOperacaoExplicita: Boolean(app.analiseCSVDinamicoData.operacao || fallbackInfo),
+                label: `${opAtual} • Sessão Atual`,
                 dataStr: 'Agora',
                 criador: app.currentUser?.nome ? String(app.currentUser.nome).split(' ').slice(0, 2).join(' ') : 'Ativa',
                 tratCount: 0,
-                isAtual: true
+                isAtual: true,
+                timestamp: Date.now()
             });
         }
         const aprs = Object.entries(app.apresentacoesList || {})
@@ -69942,10 +70360,63 @@ app.pdcaTeste = {
                 dataStr: dataCurta,
                 criador,
                 tratCount,
-                isAtual: false
+                isAtual: false,
+                timestamp: Number(a.timestamp || 0)
             });
         });
         return list;
+    },
+
+    _sourceMatchesOperacao(src, opTarget) {
+        if (!src || !opTarget || opTarget === 'TODAS') return true;
+        const targetNorm = this._normTxt(opTarget);
+        if (!targetNorm) return true;
+        const candidatos = [src.operacao, src.pasta, src.nome].map(v => this._normTxt(v)).filter(Boolean);
+        if (candidatos.some(c => c === targetNorm)) return true;
+        return candidatos.some(c => c.length >= 3 && (c.includes(targetNorm) || targetNorm.includes(c)));
+    },
+
+    _findLatestSourcesForSync(opFilter = null) {
+        const allSources = this._getAvailableSources();
+        if (opFilter && opFilter !== 'TODAS') {
+            const matched = allSources.filter(s => this._sourceMatchesOperacao(s, opFilter));
+            // Prioriza sessão ativa compatível + apresentação mais recente da operação
+            const picked = [];
+            const atualMatch = matched.find(s => s.isAtual);
+            if (atualMatch) picked.push(atualMatch);
+            const savedMatch = matched.find(s => !s.isAtual);
+            if (savedMatch) picked.push(savedMatch);
+            return picked;
+        }
+        // Sem filtro de operação específico: pega sessão ativa + apresentação mais recente de CADA operação
+        const picked = [];
+        const opsSeen = new Set();
+        allSources.forEach(s => {
+            if (s.isAtual) {
+                picked.push(s);
+                return;
+            }
+            const opK = this._normTxt(s.operacao || s.pasta || 'GERAL');
+            if (!opsSeen.has(opK)) {
+                opsSeen.add(opK);
+                picked.push(s);
+            }
+        });
+        return picked;
+    },
+
+    async selecionarOperacao(op) {
+        const nextOp = op || 'TODAS';
+        this.filtroOperacao = nextOp;
+        if (nextOp !== 'TODAS') {
+            const matched = this._findLatestSourcesForSync(nextOp);
+            const bestSaved = matched.find(s => !s.isAtual) || matched[0] || null;
+            if (bestSaved) {
+                this.selectedAprId = bestSaved.id;
+            }
+        }
+        this.renderView();
+        await this.syncGapsOperacao(nextOp === 'TODAS' ? null : nextOp, { silent: true, renderAfter: true });
     },
 
     toggleSourceDropdown(forceState = null) {
@@ -69956,11 +70427,16 @@ app.pdcaTeste = {
         }
     },
 
-    selectSource(aprId) {
+    async selectSource(aprId) {
         this.selectedAprId = aprId;
         this.sourceDropdownOpen = false;
         this.sourceSearch = '';
+        const src = this._getAvailableSources().find(s => s.id === aprId);
+        if (src && src.operacao && src.operacao !== 'Sessão Ativa' && src.operacao !== 'Geral') {
+            this.filtroOperacao = String(src.operacao).trim().toUpperCase();
+        }
         this.renderView();
+        await this.syncGapsOperacao(src?.operacao || null, { sourceIds: [aprId], silent: true, renderAfter: true });
     },
 
     filterSourceList(query) {
@@ -69975,14 +70451,13 @@ app.pdcaTeste = {
         const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const q = norm(this.sourceSearch);
         const filtered = q
-            ? sources.filter(s => norm(`${s.pasta} ${s.nome} ${s.criador} ${s.dataStr}`).includes(q))
+            ? sources.filter(s => norm(`${s.pasta} ${s.operacao} ${s.nome} ${s.criador} ${s.dataStr}`).includes(q))
             : sources;
 
         if (filtered.length === 0) {
             return `<div class="py-8 text-center text-xs font-bold text-slate-400">Nenhuma apresentação encontrada para "${esc(this.sourceSearch)}".</div>`;
         }
 
-        // Agrupa por pasta/setor mantendo ordem do mais recente
         const groups = new Map();
         filtered.forEach(s => {
             const gKey = s.isAtual ? 'Em andamento agora' : (s.pasta || 'Geral');
@@ -70023,20 +70498,25 @@ app.pdcaTeste = {
         `).join('');
     },
 
-    _getQTContextStats() {
+    _getTratMapForApr(aprId) {
         let tratMap = {};
         try {
-            const selectedApr = (this.selectedAprId && this.selectedAprId !== '__atual__')
-                ? (app.apresentacoesList || {})[this.selectedAprId]
+            const selectedApr = (aprId && aprId !== '__atual__')
+                ? (app.apresentacoesList || {})[aprId]
                 : null;
             if (selectedApr && selectedApr.tratativasQT && typeof selectedApr.tratativasQT === 'object') {
                 tratMap = selectedApr.tratativasQT;
-            } else if (app.ui && typeof app.ui.getTratativasAtivasMap === 'function') {
+            } else if ((!aprId || aprId === '__atual__') && app.ui && typeof app.ui.getTratativasAtivasMap === 'function') {
                 tratMap = app.ui.getTratativasAtivasMap() || {};
             }
         } catch (e) {
             tratMap = {};
         }
+        return tratMap || {};
+    },
+
+    _getQTContextStats() {
+        const tratMap = this._getTratMapForApr(this.selectedAprId);
         const tratEntries = Object.entries(tratMap || {});
         const actsArr = Array.isArray(app.actionsList) ? app.actionsList : Object.values(app.actionsList || {});
         const pendingActions = actsArr.filter(a => a && a.status !== 'Concluída' && a.status !== 'Cancelada').length;
@@ -70055,120 +70535,312 @@ app.pdcaTeste = {
         return n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
     },
 
-    async importarDasDuasPaginas() {
-        const consolidado = this._readConsolidadoFromApr(this.selectedAprId);
-        const qt = this._getQTContextStats();
-        const sourceObj = this._getAvailableSources().find(s => s.id === this.selectedAprId) || null;
-        const sourceLabel = sourceObj?.label || 'Apresentação';
-        const operacaoFonte = sourceObj?.operacao || sourceObj?.pasta || 'Geral';
-
-        if (!consolidado && qt.tratCount === 0) {
-            app.ui?.showToast?.('Abra ou selecione uma Apresentação de Resultados ou clique em Exemplo para testar.', 'info');
-            return;
-        }
-
-        const existingKeys = new Set(Object.values(this.ciclos || {}).map(c => String(c.origemKey || '').toLowerCase()));
-        const novos = [];
+    _extractAllGapsFromSource(sourceObj, consolidado, tratMap, forcedOp = null) {
+        if (!consolidado || !sourceObj) return [];
+        const opBruta = forcedOp && forcedOp !== 'TODAS' ? forcedOp : (sourceObj.operacao || sourceObj.pasta || 'Geral');
+        const operacaoFonte = String(opBruta).trim().toUpperCase() || 'GERAL';
+        const sourceLabel = sourceObj.label || sourceObj.nome || 'Apresentação';
+        const aprRefId = !sourceObj.isAtual ? sourceObj.id : '';
         const mediaGeral = Number(consolidado?.mediaTotal || 0);
+        const userNow = app.currentUser?.nome || 'Sistema';
+        const nowIso = new Date().toISOString();
+        const gaps = [];
 
-        if (consolidado) {
-            // 1) Top falhas críticas da Apresentação de Resultados -> entram direto em P
-            const criticas = Array.isArray(consolidado.falhasCriticasArray) ? consolidado.falhasCriticasArray : [];
-            criticas.slice(0, 2).forEach((f, idx) => {
-                const nome = String(f?.nome || '').trim();
-                const qtd = Number(f?.qtd || 0);
-                if (!nome || existingKeys.has(`crit:${nome.toLowerCase()}`)) return;
-                const antes = mediaGeral > 0 ? Number(mediaGeral.toFixed(1)) : 75;
-                const meta = mediaGeral > 0 ? Number(Math.min(100, mediaGeral + 8).toFixed(1)) : 88;
-                const areaDona = qtd >= 5 ? 'Treinamento' : 'Qualidade + Treinamento';
-                novos.push({
-                    id: `pdca_${Date.now()}_c${idx}_${Math.random().toString(36).slice(2, 6)}`,
-                    origemKey: `crit:${nome.toLowerCase()}`,
-                    titulo: nome,
-                    alvo: `${qtd} ocorrência(s) crítica(s)`,
-                    criterioTipo: 'critica',
-                    criterioGap: `Top #${idx + 1} Falha Crítica (${qtd} ocorr.) • Impacto coletivo`,
-                    areaResponsavel: areaDona,
-                    operacao: operacaoFonte,
-                    aprId: this.selectedAprId !== '__atual__' ? this.selectedAprId : '',
-                    origemApres: sourceLabel,
-                    qtLink: areaDona === 'Treinamento' ? 'Reciclagem técnica em Treinamento' : 'Ação conjunta Qualidade + Treinamento',
-                    responsavel: app.currentUser?.nome || areaDona,
-                    etapa: 'P',
-                    acaoPlanejada: areaDona === 'Treinamento'
-                        ? 'Reciclagem técnica dirigida e material visual do processo crítico'
-                        : 'Checklist de auditoria + alinhamento corretivo em sala',
-                    antesValor: antes,
-                    metaValor: meta,
-                    depoisValor: null,
-                    cicloNumero: 1,
-                    atualizadoEm: new Date().toISOString()
+        // 1) TODAS as Falhas Críticas (usa dicionário completo falhasCriticas se disponível; senão array)
+        let criticasLista = [];
+        if (consolidado.falhasCriticas && typeof consolidado.falhasCriticas === 'object' && Object.keys(consolidado.falhasCriticas).length > 0) {
+            criticasLista = Object.entries(consolidado.falhasCriticas).map(([nome, info]) => ({
+                nome,
+                count: Number(info?.count ?? info?.qtd ?? 0),
+                operadores: Object.entries(info?.operadores || {}).map(([opName, qtd]) => ({ nome: opName, qtd })).sort((a, b) => b.qtd - a.qtd)
+            }));
+        } else if (Array.isArray(consolidado.falhasCriticasArray)) {
+            criticasLista = consolidado.falhasCriticasArray.map(f => ({
+                nome: f?.nome,
+                count: Number(f?.count ?? f?.qtd ?? 0),
+                operadores: Array.isArray(f?.operadores) ? f.operadores : []
+            }));
+        }
+        criticasLista.sort((a, b) => b.count - a.count).forEach((f, idx) => {
+            const nome = String(f?.nome || '').trim();
+            const qtd = Number(f?.count || 0);
+            if (!nome || qtd <= 0) return;
+            const topOps = (f.operadores || []).slice(0, 3).map(o => `${String(o.nome || '').split(' ')[0]} (${o.qtd})`).join(', ');
+            const antes = mediaGeral > 0 ? Number(mediaGeral.toFixed(1)) : 75;
+            const meta = mediaGeral > 0 ? Number(Math.min(100, mediaGeral + 8).toFixed(1)) : 88;
+            const areaDona = qtd >= 5 ? 'Treinamento' : 'Qualidade + Treinamento';
+            gaps.push({
+                id: this._buildAutoGapId(operacaoFonte, 'crit', nome),
+                origemKey: this._buildOrigemKey(operacaoFonte, 'crit', nome),
+                titulo: nome,
+                alvo: topOps ? `${qtd} ocorr. crítica(s) • ${topOps}` : `${qtd} ocorrência(s) crítica(s)`,
+                criterioTipo: 'critica',
+                criterioGap: `Falha Crítica #${idx + 1} (${qtd} ocorr.) • Impacto coletivo`,
+                areaResponsavel: areaDona,
+                operacao: operacaoFonte,
+                aprId: aprRefId,
+                origemApres: sourceLabel,
+                qtLink: areaDona === 'Treinamento' ? 'Reciclagem técnica em Treinamento' : 'Ação conjunta Qualidade + Treinamento',
+                responsavel: userNow,
+                etapa: 'P',
+                acaoPlanejada: areaDona === 'Treinamento'
+                    ? 'Reciclagem técnica dirigida e material visual do processo crítico'
+                    : 'Checklist de auditoria + alinhamento corretivo em sala',
+                antesValor: antes,
+                metaValor: meta,
+                depoisValor: null,
+                cicloNumero: 1,
+                atualizadoPor: userNow,
+                atualizadoEm: nowIso
+            });
+        });
+
+        // 2) TODOS os Gaps de Qualidade / Falhas Comuns (sem corte)
+        let comunsLista = [];
+        if (consolidado.falhasComuns && typeof consolidado.falhasComuns === 'object' && Object.keys(consolidado.falhasComuns).length > 0) {
+            comunsLista = Object.entries(consolidado.falhasComuns).map(([nome, info]) => ({
+                nome,
+                count: Number(info?.count ?? info?.qtd ?? 0),
+                operadores: Object.entries(info?.operadores || {}).map(([opName, qtd]) => ({ nome: opName, qtd })).sort((a, b) => b.qtd - a.qtd)
+            }));
+        } else if (Array.isArray(consolidado.falhasComunsArray)) {
+            comunsLista = consolidado.falhasComunsArray.map(f => ({
+                nome: f?.nome,
+                count: Number(f?.count ?? f?.qtd ?? 0),
+                operadores: Array.isArray(f?.operadores) ? f.operadores : []
+            }));
+        }
+        comunsLista.sort((a, b) => b.count - a.count).forEach((f, idx) => {
+            const nome = String(f?.nome || '').trim();
+            const qtd = Number(f?.count || 0);
+            if (!nome || qtd <= 0) return;
+            const topOps = (f.operadores || []).slice(0, 3).map(o => `${String(o.nome || '').split(' ')[0]} (${o.qtd})`).join(', ');
+            const antes = mediaGeral > 0 ? Number(mediaGeral.toFixed(1)) : 80;
+            const meta = mediaGeral > 0 ? Number(Math.min(100, mediaGeral + 6).toFixed(1)) : 90;
+            const areaDona = qtd >= 8 ? 'Qualidade + Treinamento' : 'Qualidade';
+            gaps.push({
+                id: this._buildAutoGapId(operacaoFonte, 'comum', nome),
+                origemKey: this._buildOrigemKey(operacaoFonte, 'comum', nome),
+                titulo: nome,
+                alvo: topOps ? `${qtd} ocorr. de qualidade • ${topOps}` : `${qtd} ocorrência(s) em monitoria`,
+                criterioTipo: 'comum',
+                criterioGap: `Gap de Qualidade #${idx + 1} (${qtd} ocorr.) • Item ofensor`,
+                areaResponsavel: areaDona,
+                operacao: operacaoFonte,
+                aprId: aprRefId,
+                origemApres: sourceLabel,
+                qtLink: areaDona === 'Qualidade + Treinamento' ? 'Alinhamento Qualidade + Treinamento' : 'Feedback dirigido e calibração',
+                responsavel: userNow,
+                etapa: 'P',
+                acaoPlanejada: areaDona === 'Qualidade + Treinamento'
+                    ? 'Calibração de item recorrente + reforço operacional'
+                    : 'Feedback pontual nas monitorias e acompanhamento amostral',
+                antesValor: antes,
+                metaValor: meta,
+                depoisValor: null,
+                cicloNumero: 1,
+                atualizadoPor: userNow,
+                atualizadoEm: nowIso
+            });
+        });
+
+        // 3) TODOS os Operadores abaixo da meta (< 92%) sem limite/slice
+        const opsBase = Array.isArray(consolidado.rankOperadores) && consolidado.rankOperadores.length > 0
+            ? [...consolidado.rankOperadores]
+            : Object.values(consolidado.operadores || {});
+        opsBase.sort((a, b) => Number(a?.media ?? a?.notaMedia ?? 999) - Number(b?.media ?? b?.notaMedia ?? 999));
+        opsBase.forEach(op => {
+            const opNome = String(op?.nome || op?.operador || '').trim();
+            if (!opNome) return;
+            const totalMon = Number(op?.monitorias ?? (Array.isArray(op?.notas) ? op.notas.length : 0));
+            if (totalMon <= 0 && op?.media === undefined && op?.notaMedia === undefined) return;
+            const nota = Number(op?.media ?? op?.notaMedia ?? 0);
+            if (!Number.isFinite(nota) || nota >= 92) return;
+            const normOp = this._normTxt(opNome);
+            const matchedTrat = Object.entries(tratMap || {}).find(([k]) => this._normTxt(k).includes(normOp));
+            const emTratativa = Boolean(matchedTrat);
+            const statusTrat = String(matchedTrat?.[1]?.status || '').toLowerCase();
+            const metaAlvo = Number(Math.min(95, Math.max(85, nota + 10)).toFixed(1));
+            const gapPP = Number(Math.max(0, metaAlvo - nota).toFixed(1));
+            const areaDona = (statusTrat.includes('trein') || statusTrat.includes('recicl'))
+                ? 'Treinamento'
+                : (nota < 75 ? 'Treinamento' : 'Qualidade');
+
+            gaps.push({
+                id: this._buildAutoGapId(operacaoFonte, 'op', opNome),
+                origemKey: this._buildOrigemKey(operacaoFonte, 'op', opNome),
+                titulo: opNome,
+                alvo: op?.setor ? `${op.setor} • ${totalMon} mon.` : `${totalMon} monitorias`,
+                criterioTipo: 'nota',
+                criterioGap: `Nota ${this._formatNum(nota)} (< 92%) • Faltam ${gapPP.toFixed(1)} p.p. p/ meta`,
+                areaResponsavel: areaDona,
+                operacao: operacaoFonte,
+                aprId: aprRefId,
+                origemApres: sourceLabel,
+                qtLink: emTratativa ? `Em tratativa Q&T (${matchedTrat[1]?.status || 'Ativa'})` : `Aguardando ação (${areaDona})`,
+                responsavel: op?.supervisor || userNow || areaDona,
+                etapa: emTratativa ? 'D' : 'P',
+                acaoPlanejada: emTratativa
+                    ? (matchedTrat[1]?.observacao || 'Acompanhamento ativo na aba Qualidade & Treinamento')
+                    : (areaDona === 'Treinamento'
+                        ? 'Reciclagem focada + simulado prático (nota abaixo de 75%)'
+                        : 'Feedback individual + monitoria assistida de qualidade'),
+                antesValor: Number(nota.toFixed(1)),
+                metaValor: metaAlvo,
+                depoisValor: null,
+                cicloNumero: 1,
+                atualizadoPor: userNow,
+                atualizadoEm: nowIso
+            });
+        });
+
+        return gaps;
+    },
+
+    async syncGapsOperacao(opTarget = null, options = {}) {
+        const { sourceIds = null, ignoreOcultos = false, silent = false, renderAfter = true } = options || {};
+        if (this._syncingAuto && !ignoreOcultos) return 0;
+        this._syncingAuto = true;
+        try {
+            let sources = [];
+            if (Array.isArray(sourceIds) && sourceIds.length > 0) {
+                const allSrc = this._getAvailableSources();
+                sources = sourceIds.map(id => allSrc.find(s => s.id === id)).filter(Boolean);
+            } else {
+                sources = this._findLatestSourcesForSync(opTarget);
+            }
+            if (sources.length === 0) {
+                if (!silent) app.ui?.showToast?.('Nenhuma Apresentação de Resultados encontrada para esta operação.', 'info');
+                return 0;
+            }
+
+            // Índice de cards já existentes (preserva movimentações P/D/C/A salvas na nuvem)
+            const existingByKey = new Set();
+            const existingBySemantic = new Set();
+            Object.values(this.ciclos || {}).forEach(c => {
+                if (!c) return;
+                if (c.origemKey) existingByKey.add(String(c.origemKey).toLowerCase());
+                const opK = this._normTxt(this._resolveOperacaoCiclo(c));
+                const semKey = `${opK}|${c.criterioTipo || ''}|${this._normTxt(c.titulo)}`;
+                existingBySemantic.add(semKey);
+                existingBySemantic.add(`ANY|${c.criterioTipo || ''}|${this._normTxt(c.titulo)}`);
+            });
+
+            if (ignoreOcultos) {
+                let clearedHidden = false;
+                sources.forEach(src => {
+                    const opK = this._normTxt(opTarget && opTarget !== 'TODAS' ? opTarget : (src.operacao || src.pasta || 'Geral'));
+                    Object.entries(this.ocultos || {}).forEach(([hk, okVal]) => {
+                        if (String(okVal || '').startsWith(opK + '|')) {
+                            delete this.ocultos[hk];
+                            clearedHidden = true;
+                        }
+                    });
+                });
+                if (clearedHidden) {
+                    this._saveLocalBackup();
+                    app.storage._writeFirebaseNodeFast(this.HIDDEN_NODE, app.storage.sanitizeFirebaseObject(this.ocultos), 'PUT', 10000).catch(() => {});
+                }
+            }
+
+            const novos = [];
+            const batchSeenKeys = new Set();
+            sources.forEach(src => {
+                const consolidado = this._readConsolidadoFromApr(src.id);
+                if (!consolidado) return;
+                const tratMap = this._getTratMapForApr(src.id);
+                const forcedOp = (opTarget && opTarget !== 'TODAS' && this._sourceMatchesOperacao(src, opTarget)) ? opTarget : null;
+                const candidateGaps = this._extractAllGapsFromSource(src, consolidado, tratMap, forcedOp);
+                candidateGaps.forEach(gap => {
+                    const kLower = String(gap.origemKey).toLowerCase();
+                    const hKey = this._hashKey(gap.origemKey);
+                    const opK = this._normTxt(gap.operacao);
+                    const semKey = `${opK}|${gap.criterioTipo}|${this._normTxt(gap.titulo)}`;
+                    if (existingByKey.has(kLower) || existingBySemantic.has(semKey) || batchSeenKeys.has(kLower)) return;
+                    if (this.ciclos[gap.id]) return;
+                    if (!ignoreOcultos && this.ocultos && this.ocultos[hKey]) return;
+                    batchSeenKeys.add(kLower);
+                    existingByKey.add(kLower);
+                    existingBySemantic.add(semKey);
+                    novos.push(gap);
                 });
             });
 
-            // 2) Top ofensores do ranking (< 92%) -> se já possuem tratativa em Q&T, já nascem em D!
-            const ops = Array.isArray(consolidado.rankOperadores) ? [...consolidado.rankOperadores] : [];
-            ops.sort((a, b) => Number(a?.media ?? a?.notaMedia ?? 999) - Number(b?.media ?? b?.notaMedia ?? 999));
-            ops.slice(0, 3).forEach((op, idx) => {
-                const opNome = String(op?.nome || op?.operador || '').trim();
-                if (!opNome || existingKeys.has(`op:${opNome.toLowerCase()}`)) return;
-                const nota = Number(op?.media ?? op?.notaMedia ?? 0);
-                if (nota >= 92) return;
-                const normOp = opNome.toUpperCase();
-                const matchedTrat = Object.entries(qt.tratMap).find(([k]) => String(k).toUpperCase().includes(normOp));
-                const emTratativa = Boolean(matchedTrat);
-                const statusTrat = String(matchedTrat?.[1]?.status || '').toLowerCase();
-                const metaAlvo = Number(Math.min(95, Math.max(85, nota + 10)).toFixed(1));
-                const gapPP = Number(Math.max(0, metaAlvo - nota).toFixed(1));
-                const areaDona = (statusTrat.includes('trein') || statusTrat.includes('recicl'))
-                    ? 'Treinamento'
-                    : (nota < 75 ? 'Treinamento' : 'Qualidade');
+            if (novos.length === 0) {
+                if (!silent) app.ui?.showToast?.('Todos os gaps disponíveis já estão sincronizados na nuvem.', 'info');
+                return 0;
+            }
 
-                novos.push({
-                    id: `pdca_${Date.now()}_o${idx}_${Math.random().toString(36).slice(2, 6)}`,
-                    origemKey: `op:${opNome.toLowerCase()}`,
-                    titulo: opNome,
-                    alvo: op?.setor ? `${op.setor} • ${op.monitorias || 0} mon.` : `${op.monitorias || 0} monitorias`,
-                    criterioTipo: 'nota',
-                    criterioGap: `Nota ${this._formatNum(nota)} (< 92%) • Faltam ${gapPP.toFixed(1)} p.p. p/ meta`,
-                    areaResponsavel: areaDona,
-                    operacao: op?.setor || operacaoFonte,
-                    aprId: this.selectedAprId !== '__atual__' ? this.selectedAprId : '',
-                    origemApres: sourceLabel,
-                    qtLink: emTratativa ? `Em tratativa Q&T (${matchedTrat[1]?.status || 'Ativa'})` : `Aguardando ação (${areaDona})`,
-                    responsavel: op?.supervisor || app.currentUser?.nome || areaDona,
-                    etapa: emTratativa ? 'D' : 'P',
-                    acaoPlanejada: emTratativa
-                        ? (matchedTrat[1]?.observacao || 'Acompanhamento ativo na aba Qualidade & Treinamento')
-                        : (areaDona === 'Treinamento'
-                            ? 'Reciclagem focada + simulado prático (nota abaixo de 75%)'
-                            : 'Feedback individual + monitoria assistida de qualidade'),
-                    antesValor: Number(nota.toFixed(1)),
-                    metaValor: metaAlvo,
-                    depoisValor: null,
-                    cicloNumero: 1,
-                    atualizadoEm: new Date().toISOString()
-                });
+            await this._persistBatchCiclos(novos);
+            if (!silent) {
+                app.ui?.showToast?.(`${novos.length} gap(s) sincronizado(s) na nuvem!`, 'success');
+            }
+            if (renderAfter && app.currentTab === 'pdca_teste') {
+                this.renderView();
+            }
+            return novos.length;
+        } finally {
+            this._syncingAuto = false;
+        }
+    },
+
+    async syncFromApresentacao(aprId, aprPayload) {
+        if (!aprId || !aprPayload) return 0;
+        try {
+            if (!this._loadedCloud) {
+                const res = await app.storage._fetchFirebaseNodeFast(this.FIREBASE_NODE, 350, 12000).catch(() => null);
+                if (res && res.ok && res.val && typeof res.val === 'object') {
+                    this.ciclos = res.val;
+                }
+                const resOc = await app.storage._fetchFirebaseNodeFast(this.HIDDEN_NODE, 350, 10000).catch(() => null);
+                if (resOc && resOc.ok && resOc.val && typeof resOc.val === 'object') {
+                    this.ocultos = resOc.val;
+                }
+                this._loadedCloud = true;
+                this._lastCloudFetchTs = Date.now();
+            }
+            const consolidado = this._readConsolidadoFromApr(aprId, aprPayload);
+            if (!consolidado) return 0;
+            const operacao = String(aprPayload.operacao || aprPayload.setor || aprPayload.pasta || 'Geral').trim();
+            const srcObj = {
+                id: aprId,
+                nome: String(aprPayload.nome || 'Apresentação').trim(),
+                pasta: String(aprPayload.pasta || aprPayload.setor || operacao).trim(),
+                operacao,
+                label: `[${operacao}] ${aprPayload.nome || 'Apresentação'}`,
+                isAtual: false
+            };
+            const tratMap = aprPayload.tratativasQT || {};
+            const candidates = this._extractAllGapsFromSource(srcObj, consolidado, tratMap, operacao);
+            const existingByKey = new Set(Object.values(this.ciclos || {}).map(c => String(c?.origemKey || '').toLowerCase()).filter(Boolean));
+            const novos = candidates.filter(g => {
+                const kLower = String(g.origemKey).toLowerCase();
+                const hKey = this._hashKey(g.origemKey);
+                if (existingByKey.has(kLower) || this.ciclos[g.id]) return false;
+                if (this.ocultos && this.ocultos[hKey]) return false;
+                return true;
             });
+            if (novos.length > 0) {
+                await this._persistBatchCiclos(novos);
+            }
+            return novos.length;
+        } catch (e) {
+            console.warn('[PDCA] Erro ao sincronizar nova apresentação:', e);
+            return 0;
         }
+    },
 
-        if (novos.length === 0) {
-            app.ui?.showToast?.('Todos os principais gaps desta apresentação já estão no quadro PDCA.', 'info');
-            return;
-        }
-
-        for (const c of novos) {
-            await this._persistCiclo(c);
-        }
-        app.ui?.showToast?.(`${novos.length} item(ns) importados conectando Apresentação + Q&T!`, 'success');
-        this.renderView();
+    async importarDasDuasPaginas() {
+        const opTarget = this.filtroOperacao && this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : null;
+        const sourceIds = (!opTarget && this.selectedAprId) ? [this.selectedAprId] : null;
+        await this.syncGapsOperacao(opTarget, { sourceIds, ignoreOcultos: true, silent: false, renderAfter: true });
     },
 
     async popularExemploTeste() {
         const now = Date.now();
         const opsDisp = this._getOperacoesExistentes();
-        const op0 = opsDisp[0] || 'SAC';
-        const op1 = opsDisp[1] || opsDisp[0] || 'RETENÇÃO';
+        const op0 = (this.filtroOperacao && this.filtroOperacao !== 'TODAS') ? this.filtroOperacao : (opsDisp[0] || 'SAC');
+        const op1 = (this.filtroOperacao && this.filtroOperacao !== 'TODAS') ? this.filtroOperacao : (opsDisp[1] || opsDisp[0] || 'RETENÇÃO');
         const exemplos = [
             {
                 id: `pdca_demo_p_${now}`,
@@ -70176,7 +70848,7 @@ app.pdcaTeste = {
                 titulo: 'Confirmação de Dados Cadastrais',
                 alvo: 'Gap Crítico #1 • 14 ocorrências',
                 criterioTipo: 'critica',
-                criterioGap: 'Top #1 Falha Crítica (14 ocorr.) • Impacto coletivo',
+                criterioGap: 'Falha Crítica #1 (14 ocorr.) • Impacto coletivo',
                 areaResponsavel: 'Qualidade',
                 operacao: op0,
                 origemApres: `[${op0}] Exemplo`,
@@ -70215,8 +70887,8 @@ app.pdcaTeste = {
                 origemKey: `demo:c:${now}`,
                 titulo: 'Tempo de Silêncio / Espera Ativa',
                 alvo: 'Reavaliação quinzenal',
-                criterioTipo: 'nota',
-                criterioGap: 'Nota 72,0% (< 75%) • Faltam 13,0 p.p. p/ meta',
+                criterioTipo: 'comum',
+                criterioGap: 'Gap de Qualidade (72,0%) • Reavaliação',
                 areaResponsavel: 'Qualidade + Treinamento',
                 operacao: op0,
                 origemApres: `[${op0}] Quinzenal`,
@@ -70251,22 +70923,41 @@ app.pdcaTeste = {
                 atualizadoEm: new Date().toISOString()
             }
         ];
-        for (const ex of exemplos) {
-            await this._persistCiclo(ex);
-        }
-        app.ui?.showToast?.('Cenário exemplo PDCA criado nas 4 etapas!', 'success');
+        await this._persistBatchCiclos(exemplos);
+        app.ui?.showToast?.('Cenário exemplo PDCA salvo na nuvem!', 'success');
         this.renderView();
     },
 
     async limparTudo() {
-        const ids = Object.keys(this.ciclos || {});
-        if (ids.length === 0) return;
-        this.ciclos = {};
+        const opAtiva = this.filtroOperacao && this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : null;
+        const targets = Object.values(this.ciclos || {}).filter(c => !opAtiva || this._normTxt(this._resolveOperacaoCiclo(c)) === this._normTxt(opAtiva));
+        if (targets.length === 0) return;
+        const msg = opAtiva
+            ? `Remover os ${targets.length} item(ns) da operação ${opAtiva} no quadro? (Clique em "Sincronizar Gaps" depois se quiser puxar de novo.)`
+            : `Limpar todos os ${targets.length} item(ns) do quadro PDCA na nuvem?`;
+        if (!window.confirm(msg)) return;
+
+        targets.forEach(c => {
+            delete this.ciclos[c.id];
+            if (c.origemKey && String(c.origemKey).includes('|')) {
+                this.ocultos[this._hashKey(c.origemKey)] = c.origemKey;
+            }
+        });
         this._saveLocalBackup();
         this.renderView();
         try {
-            await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, null, 'DELETE', 12000);
-            app.ui?.showToast?.('Quadro PDCA de teste limpo.', 'info');
+            if (!opAtiva) {
+                await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, null, 'DELETE', 12000);
+            } else {
+                const delPatch = {};
+                targets.forEach(c => { delPatch[c.id] = null; });
+                await app.storage._writeFirebaseNodeFast(this.FIREBASE_NODE, delPatch, 'PATCH', 12000);
+            }
+            if (Object.keys(this.ocultos || {}).length > 0) {
+                await app.storage._writeFirebaseNodeFast(this.HIDDEN_NODE, app.storage.sanitizeFirebaseObject(this.ocultos), 'PUT', 10000);
+            }
+            this._stampSyncTime();
+            app.ui?.showToast?.(opAtiva ? `Quadro de ${opAtiva} limpo na nuvem.` : 'Quadro PDCA limpo na nuvem.', 'info');
         } catch (e) {}
     },
 
@@ -70284,7 +70975,7 @@ app.pdcaTeste = {
             operacao: existing ? this._resolveOperacaoCiclo(existing) : (this.filtroOperacao !== 'TODAS' ? this.filtroOperacao : (srcAtual?.operacao || '')),
             acaoPlanejada: existing?.acaoPlanejada || '',
             qtLink: existing?.qtLink || 'Ação em Qualidade & Treinamento',
-            responsavel: existing?.responsavel || app.currentUser?.nome || 'Dev',
+            responsavel: existing?.responsavel || app.currentUser?.nome || 'Gestão',
             antesValor: existing?.antesValor ?? 75,
             metaValor: existing?.metaValor ?? 88,
             depoisValor: existing?.depoisValor ?? ''
@@ -70366,7 +71057,7 @@ app.pdcaTeste = {
 
         const ciclo = {
             id: existing?.id || `pdca_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            origemKey: existing?.origemKey || `manual:${titulo.toLowerCase()}`,
+            origemKey: existing?.origemKey || this._buildOrigemKey(operacaoSel, 'manual', titulo),
             titulo,
             alvo: getVal('pdca-m-alvo') || 'Gap operacional',
             criterioTipo: existing?.criterioTipo || 'manual',
@@ -70387,7 +71078,7 @@ app.pdcaTeste = {
         };
         this.modalState = null;
         await this._persistCiclo(ciclo);
-        app.ui?.showToast?.('Ciclo PDCA salvo!', 'success');
+        app.ui?.showToast?.('Movimentação salva na nuvem!', 'success');
         this.renderView();
     },
 
@@ -70395,7 +71086,9 @@ app.pdcaTeste = {
         const c = this.ciclos[id];
         if (!c) return;
         const next = { ...c, atualizadoEm: new Date().toISOString() };
-        if (destino === 'D') {
+        if (destino === 'P') {
+            next.etapa = 'P';
+        } else if (destino === 'D') {
             next.etapa = 'D';
             if (!next.qtLink || next.qtLink.includes('Aguardando')) {
                 next.qtLink = 'Executando em Qualidade & Treinamento';
@@ -70455,6 +71148,11 @@ app.pdcaTeste = {
         const areaMeta = this._getAreaMeta(areaDona);
         const opCiclo = this._resolveOperacaoCiclo(c);
         const criterioTxt = c.criterioGap || (c.alvo ? `Critério: ${c.alvo}` : `Antes ${this._formatNum(antes)} vs Meta ${this._formatNum(meta)}`);
+        const tipoMeta = c.criterioTipo === 'critica'
+            ? { cls: 'bg-rose-50/80 dark:bg-rose-950/35 border-rose-200/70 dark:border-rose-800/50 text-rose-700 dark:text-rose-300', icon: 'fa-fire' }
+            : (c.criterioTipo === 'comum'
+                ? { cls: 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200/70 dark:border-amber-800/50 text-amber-700 dark:text-amber-300', icon: 'fa-triangle-exclamation' }
+                : { cls: 'bg-sky-50/80 dark:bg-sky-950/30 border-sky-200/70 dark:border-sky-800/50 text-sky-700 dark:text-sky-300', icon: 'fa-chart-line' });
 
         const ctaHtml = (() => {
             if (stageKey === 'P') {
@@ -70523,8 +71221,8 @@ app.pdcaTeste = {
                 <h4 class="text-sm font-black text-slate-800 dark:text-white leading-snug mb-1.5">${esc(c.titulo)}</h4>
 
                 <!-- Por que virou Gap (Critério explícito) -->
-                <div class="mb-2 px-2.5 py-1 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40 text-[10px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1.5 tabular-nums">
-                    <i class="fa-solid fa-circle-exclamation text-[9px] shrink-0"></i>
+                <div class="mb-2 px-2.5 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 tabular-nums ${tipoMeta.cls}">
+                    <i class="fa-solid ${tipoMeta.icon} text-[9px] shrink-0"></i>
                     <span class="truncate" title="${esc(criterioTxt)}">${esc(criterioTxt)}</span>
                 </div>
 
@@ -70561,7 +71259,7 @@ app.pdcaTeste = {
                 <!-- Elo visual com Qualidade & Treinamento -->
                 <div class="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-3 px-1">
                     <span class="flex items-center gap-1.5 truncate"><i class="fa-solid fa-link text-amber-500"></i> ${esc(c.qtLink || 'Q&T')}</span>
-                    <span class="shrink-0 text-slate-400">${esc(c.responsavel || '')}</span>
+                    <span class="shrink-0 text-slate-400 truncate max-w-[110px]" title="${esc(c.atualizadoPor ? `Atualizado por ${c.atualizadoPor}` : (c.responsavel || ''))}">${esc(c.responsavel || '')}</span>
                 </div>
 
                 ${ctaHtml}
@@ -70668,7 +71366,7 @@ app.pdcaTeste = {
 
                     <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-white/10">
                         <button type="button" onclick="app.pdcaTeste.closeModal()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
-                        <button type="submit" class="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-sm font-black shadow-lg transition-all">Salvar no Quadro</button>
+                        <button type="submit" class="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-sm font-black shadow-lg transition-all">Salvar na Nuvem</button>
                     </div>
                 </form>
             </div>
@@ -70679,20 +71377,27 @@ app.pdcaTeste = {
         const container = containerArg || document.getElementById('view-container-pdca_teste') || document.getElementById('view-pdca_teste');
         if (!container) return;
 
-        if (!this._isDevUser()) {
+        if (!this._canAccess()) {
             container.innerHTML = '';
             return;
         }
-        if (!this._loadedCloud && !this._loadingCloud) {
-            this.ensureLoaded();
+        const stale = (Date.now() - Number(this._lastCloudFetchTs || 0)) > 20000;
+        if ((!this._loadedCloud || stale) && !this._loadingCloud) {
+            this.ensureLoaded(!this._loadedCloud || stale);
         }
 
         const esc = app.utils.escapeHtml;
         const allCiclos = Object.values(this.ciclos || {}).sort((a, b) => String(b?.atualizadoEm || '').localeCompare(String(a?.atualizadoEm || '')));
         const opsExistentes = this._getOperacoesExistentes();
+        const opCountMap = {};
+        allCiclos.forEach(c => {
+            const k = this._normTxt(this._resolveOperacaoCiclo(c));
+            opCountMap[k] = (opCountMap[k] || 0) + 1;
+        });
+
         const ciclosDaOperacao = this.filtroOperacao === 'TODAS'
             ? allCiclos
-            : allCiclos.filter(c => this._resolveOperacaoCiclo(c).toUpperCase() === String(this.filtroOperacao).toUpperCase());
+            : allCiclos.filter(c => this._normTxt(this._resolveOperacaoCiclo(c)) === this._normTxt(this.filtroOperacao));
 
         const cntQualidade = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Qualidade').length;
         const cntTreinamento = ciclosDaOperacao.filter(c => this._resolveArea(c) === 'Treinamento').length;
@@ -70700,9 +71405,12 @@ app.pdcaTeste = {
         const filtradosPorArea = this.filtroArea === 'TODOS'
             ? ciclosDaOperacao
             : ciclosDaOperacao.filter(c => this._resolveArea(c) === this.filtroArea);
+        const filtradosFinais = this.filtroTipoGap === 'TODOS'
+            ? filtradosPorArea
+            : filtradosPorArea.filter(c => c.criterioTipo === this.filtroTipoGap);
 
         const byStage = { P: [], D: [], C: [], A: [] };
-        filtradosPorArea.forEach(c => {
+        filtradosFinais.forEach(c => {
             const k = byStage[c?.etapa] ? c.etapa : 'P';
             byStage[k].push(c);
         });
@@ -70715,6 +71423,9 @@ app.pdcaTeste = {
         const consolidadoAtivo = this._readConsolidadoFromApr(this.selectedAprId);
         const mediaAtiva = consolidadoAtivo?.mediaTotal ? this._formatNum(consolidadoAtivo.mediaTotal) : '—';
         const selectedSourceObj = sources.find(s => s.id === this.selectedAprId) || null;
+        const cloudStatusText = this._loadingCloud || this._syncingAuto
+            ? 'Sincronizando nuvem...'
+            : (this._lastCloudSyncLabel ? `Nuvem • ${this._lastCloudSyncLabel}` : 'Nuvem ativa');
 
         container.innerHTML = `
             <div class="relative w-full max-w-[1680px] mx-auto pb-8 animate-fade-in">
@@ -70724,7 +71435,7 @@ app.pdcaTeste = {
                     <div class="absolute top-32 right-1/4 w-96 h-96 rounded-full bg-emerald-400/15 dark:bg-emerald-600/10 blur-3xl"></div>
                 </div>
 
-                <!-- HEADER ULTRA CLEAN & NEUTRO (COR APENAS NOS BLOCOS PDCA) -->
+                <!-- HEADER ULTRA CLEAN & NEUTRO -->
                 <div class="relative z-30 rounded-[24px] bg-white/80 dark:bg-slate-900/75 backdrop-blur-2xl border border-slate-200/80 dark:border-white/10 shadow-[0_10px_30px_-14px_rgba(15,23,42,0.1)] p-4 mb-5">
                     <!-- Linha 1: Título + Ponte Neutra + Controles Alinhados -->
                     <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
@@ -70735,7 +71446,9 @@ app.pdcaTeste = {
                             <div class="min-w-0">
                                 <div class="flex items-center gap-2">
                                     <h2 class="text-base font-black tracking-tight text-slate-900 dark:text-white leading-none">Ciclo PDCA</h2>
-                                    <span class="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300">DEV</span>
+                                    <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-700/50 flex items-center gap-1">
+                                        <i class="fa-solid fa-cloud-check text-[8px]"></i> ${esc(cloudStatusText)}
+                                    </span>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
                                     <button onclick="app.ui.renderTab('analise_csv_dinamico', true)" class="hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-1 cursor-pointer">
@@ -70748,12 +71461,12 @@ app.pdcaTeste = {
                                         <span>Qualidade &amp; Trein. (${qt.tratCount})</span>
                                     </button>
                                     <span class="opacity-40">➔</span>
-                                    <span class="font-bold text-slate-700 dark:text-slate-200">${allCiclos.length} no ciclo</span>
+                                    <span class="font-bold text-slate-700 dark:text-slate-200">${filtradosFinais.length} gap(s) visíveis (${allCiclos.length} total)</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ações Diretas (Sem quebra da lixeira) -->
+                        <!-- Ações Diretas -->
                         <div class="flex flex-wrap sm:flex-nowrap items-center gap-1.5 relative shrink-0">
                             ${this.sourceDropdownOpen ? `<div class="fixed inset-0 z-[90]" onclick="app.pdcaTeste.toggleSourceDropdown(false)"></div>` : ''}
                             <div class="relative z-[95]">
@@ -70780,9 +71493,9 @@ app.pdcaTeste = {
                                 ` : ''}
                             </div>
 
-                            <button onclick="app.pdcaTeste.importarDasDuasPaginas()" class="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-black shadow-xs flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap">
-                                <i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>
-                                <span>Importar Gaps</span>
+                            <button onclick="app.pdcaTeste.importarDasDuasPaginas()" title="Força re-sincronização de todos os gaps da apresentação e operação" class="h-9 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-black shadow-xs flex items-center gap-1.5 transition-all active:scale-95 whitespace-nowrap">
+                                <i class="fa-solid fa-rotate text-[11px]"></i>
+                                <span>Sincronizar Gaps</span>
                             </button>
 
                             <button onclick="app.pdcaTeste.openModalNovo()" class="h-9 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-white flex items-center gap-1.5 transition-all whitespace-nowrap">
@@ -70790,26 +71503,25 @@ app.pdcaTeste = {
                                 <span>Novo</span>
                             </button>
 
-                            <button onclick="app.pdcaTeste.popularExemploTeste()" title="Cria 1 card de exemplo em cada etapa" class="h-9 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 transition-all whitespace-nowrap">
-                                <i class="fa-solid fa-flask text-[11px]"></i>
-                                <span>Exemplo</span>
-                            </button>
-
                             ${allCiclos.length > 0 ? `
-                                <button onclick="app.pdcaTeste.limparTudo()" title="Limpar quadro teste" class="h-9 w-9 shrink-0 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-slate-200/80 dark:border-white/10 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-all">
+                                <button onclick="app.pdcaTeste.limparTudo()" title="${this.filtroOperacao !== 'TODAS' ? `Limpar quadro de ${esc(this.filtroOperacao)}` : 'Limpar quadro PDCA'}" class="h-9 w-9 shrink-0 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-slate-200/80 dark:border-white/10 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-all">
                                     <i class="fa-solid fa-trash-can text-xs"></i>
                                 </button>
                             ` : ''}
                         </div>
                     </div>
 
-                    <!-- Linha 2: Filtro de Operação + Área + Guia Rápido Neutro -->
+                    <!-- Linha 2: Lista Suspensa de Operação (traz todos os gaps automaticamente ao selecionar) + Filtros + Guia Rápido -->
                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5">
                         <div class="flex flex-wrap items-center gap-2">
-                            <!-- Operação -->
-                            <select onchange="app.pdcaTeste.filtroOperacao=this.value; app.pdcaTeste.renderView()" class="h-8 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
-                                <option value="TODAS" ${this.filtroOperacao === 'TODAS' ? 'selected' : ''}>Todas Operações</option>
-                                ${opsExistentes.map(op => `<option value="${esc(op)}" ${String(this.filtroOperacao).toUpperCase() === String(op).toUpperCase() ? 'selected' : ''}>${esc(op)}</option>`).join('')}
+                            <!-- Operação (Lista Suspensa) -->
+                            <select onchange="app.pdcaTeste.selecionarOperacao(this.value)" title="Selecione uma operação para carregar automaticamente todos os gaps dela" class="h-8 px-2.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                                <option value="TODAS" ${this.filtroOperacao === 'TODAS' ? 'selected' : ''}>Todas Operações (${allCiclos.length})</option>
+                                ${opsExistentes.map(op => {
+                                    const opCnt = opCountMap[this._normTxt(op)] || 0;
+                                    const hasApres = sources.some(s => this._sourceMatchesOperacao(s, op));
+                                    return `<option value="${esc(op)}" ${this._normTxt(this.filtroOperacao) === this._normTxt(op) ? 'selected' : ''}>${hasApres ? '● ' : ''}${esc(op)}${opCnt > 0 ? ` (${opCnt})` : ''}</option>`;
+                                }).join('')}
                             </select>
 
                             ${selectedSourceObj && !selectedSourceObj.isAtual ? `
@@ -70835,6 +71547,25 @@ app.pdcaTeste = {
                                             <span class="w-1.5 h-1.5 rounded-full ${f.dot}"></span>
                                             <span>${f.label}</span>
                                             <span class="text-[10px] opacity-60">${f.count}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <!-- Tipo de Gap -->
+                            <div class="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-white/10 text-[11px] font-bold">
+                                ${[
+                                    { id: 'TODOS', label: 'Todos Gaps' },
+                                    { id: 'critica', label: 'Críticas' },
+                                    { id: 'comum', label: 'Qualidade' },
+                                    { id: 'nota', label: 'Operadores' }
+                                ].map(t => {
+                                    const active = this.filtroTipoGap === t.id;
+                                    return `
+                                        <button type="button" onclick="app.pdcaTeste.filtroTipoGap='${t.id}'; app.pdcaTeste.renderView()" class="px-2.5 py-1 rounded-lg transition-all cursor-pointer ${active
+                                            ? 'bg-white dark:bg-slate-900 shadow-xs font-black text-slate-900 dark:text-white'
+                                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}">
+                                            ${t.label}
                                         </button>
                                     `;
                                 }).join('')}
@@ -70868,22 +71599,22 @@ app.pdcaTeste = {
                             <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
                                 <i class="fa-solid fa-fire text-rose-500 mt-0.5 shrink-0"></i>
                                 <div>
-                                    <div class="font-black text-slate-800 dark:text-white">1. Falha Crítica (Apres. de Resultados)</div>
-                                    <div class="text-slate-500 dark:text-slate-400">Top 2 falhas críticas. Com 5+ ocorr. vai p/ <strong>Treinamento</strong>; senão <strong>Conjunto</strong>.</div>
+                                    <div class="font-black text-slate-800 dark:text-white">1. Todas as Falhas Críticas</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Importa 100% das falhas críticas da operação. Com 5+ ocorr. vai p/ <strong>Treinamento</strong>; senão <strong>Conjunto</strong>.</div>
+                                </div>
+                            </div>
+                            <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-black text-slate-800 dark:text-white">2. Todos os Gaps de Qualidade</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Todos os itens ofensores apontados na apresentação entram automaticamente em <strong>P</strong>.</div>
                                 </div>
                             </div>
                             <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
                                 <i class="fa-solid fa-chart-line text-sky-500 mt-0.5 shrink-0"></i>
                                 <div>
-                                    <div class="font-black text-slate-800 dark:text-white">2. Nota Abaixo de 92% (Ranking)</div>
-                                    <div class="text-slate-500 dark:text-slate-400">Top 3 piores notas (&lt; 92%). &lt; 75% ➔ <strong>Treinamento</strong>; 75% a 91,9% ➔ <strong>Qualidade</strong>.</div>
-                                </div>
-                            </div>
-                            <div class="rounded-xl bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/70 dark:border-white/10 px-3 py-2 flex items-start gap-2">
-                                <i class="fa-solid fa-link text-amber-500 mt-0.5 shrink-0"></i>
-                                <div>
-                                    <div class="font-black text-slate-800 dark:text-white">3. Vínculo com Qualidade &amp; Treinamento</div>
-                                    <div class="text-slate-500 dark:text-slate-400">Se já tiver tratativa em Q&amp;T, nasce em <strong>D</strong>. Clique na etiqueta do card para trocar o dono.</div>
+                                    <div class="font-black text-slate-800 dark:text-white">3. Todos os Operadores &lt; 92%</div>
+                                    <div class="text-slate-500 dark:text-slate-400">Todos os operadores abaixo de 92% entram sem corte (&lt; 75% ➔ <strong>Treinamento</strong>). Quem já está em Q&amp;T nasce em <strong>D</strong>.</div>
                                 </div>
                             </div>
                         </div>
